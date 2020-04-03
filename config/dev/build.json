@@ -1,0 +1,49 @@
+[
+  {
+    "name": "install system dependencies",
+    "packages": [
+      "zsh",
+      "git"
+    ]
+  },
+  {
+    "name": "install oh my zsh",
+    "shell": [
+      "sh -c \"$(curl -fsSL https://raw.github.com/ohmyzsh/ohmyzsh/master/tools/install.sh)\" --unattended --skip-chsh --keep-zshrc"
+    ]
+  },
+  {
+    "name": "install build dependencies",
+    "packages": [
+      "golang", 
+      "clang",
+      "nodejs", 
+      "nodejs-yarn"
+    ]
+  },
+  {
+    "name": "install editor dependencies",
+    "packages": [
+      "neovim", 
+      "python3-neovim", 
+      "fzf", 
+      "ripgrep"
+    ]
+  },
+  {
+    "name": "link configs",
+    "shell": [
+      "mkdir ~/.config",
+      "rm -rf ~/.config/nvim && ln -s ~/config/nvim ~/.config/nvim",
+      "rm -rf ~/.zshrc && ln -s ~/config/zsh/.zshrc ~/.zshrc"
+    ]
+  },
+  {
+    "name": "setup editor",
+    "shell": [
+      "curl -fLo ~/.local/share/nvim/site/autoload/plug.vim --create-dirs https://raw.githubusercontent.com/junegunn/vim-plug/master/plug.vim",
+      "nvim --headless +PlugInstall +qall",
+      "nvim --headless +PlugUpdate +qall"
+    ]
+  }
+]
