@@ -39,8 +39,10 @@ def ip6(debugger, command, exe_ctx, *_):
     print(":".join(map(str, octets)))
 
 
-global most_caller_counter
-global most_caller_limit
+'''
+<breakpoint_id>: (counter, limit, done)
+'''
+most_caller_table = dict()
 
 '''
 usage: most_caller <location> <limit>
@@ -49,35 +51,39 @@ args:
     limit: an int which is being used to decide the most caller
 '''
 def most_caller(debugger, command, exe_ctx, *_):
-    global most_caller_counter
-    global most_caller_limit
+    global most_caller_table
 
     args = shlex.split(command)
     location = args[0]
     limit = args[1]
 
-    most_caller_counter = Counter()
-    most_caller_limit = int(limit)
+    limit = int(limit)
     target = debugger.GetSelectedTarget()
     breakpoint = target.BreakpointCreateByName(location)
     breakpoint.SetScriptCallbackFunction('{}.{}'.format(MODULE_NAME, most_caller_callback.__name__))
+    most_caller_table[breakpoint.GetID()] = (Counter(), limit, False)
 
 def most_caller_callback(frame, bp_loc, dict):
-    global most_caller_counter
-    global most_caller_limit
+    global most_caller_table
 
     parent = frame.get_parent_frame()
     fn_name = parent.GetDisplayFunctionName()
-    count = most_caller_counter[fn_name]
+    bp_id = bp_loc.GetBreakpoint().GetID()
+    counter, limit, done = most_caller_table[bp_id]
+    if done:
+        return False
+
+    count = counter[fn_name]
     count += 1
-    most_caller_counter[fn_name] = count
-    if count >= most_caller_limit:
-        most_callers = most_caller_counter.most_common()
+    counter[fn_name] = count
+    if count >= limit:
+        most_callers = counter.most_common()
         padding = 40
-        print('========================= Statistics =========================')
+        print('========================= Most Callers =========================')
         for fn_name, count in most_callers:
             padding_chars = ' ' * max((padding-len(fn_name)), 0)
             print('{}{}: {}'.format(fn_name, padding_chars, count))
+        most_caller_table[bp_id] = (counter, limit, True)
 
         return True
     return False
