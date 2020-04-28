@@ -72,7 +72,7 @@ def most_caller(debugger, command, exe_ctx, *_):
     target = debugger.GetSelectedTarget()
     breakpoint = target.BreakpointCreateByName(location)
     breakpoint.SetScriptCallbackFunction('{}.{}'.format(MODULE_NAME, most_caller_callback.__name__))
-    most_caller_table[breakpoint.GetID()] = (Counter(), limit, False)
+    most_caller_table[breakpoint.GetID()] = (Counter(), limit)
 
 def most_caller_callback(frame, bp_loc, dict):
     global most_caller_table
@@ -80,9 +80,7 @@ def most_caller_callback(frame, bp_loc, dict):
     parent = frame.get_parent_frame()
     fn_name = parent.GetDisplayFunctionName()
     bp_id = bp_loc.GetBreakpoint().GetID()
-    counter, limit, done = most_caller_table[bp_id]
-    if done:
-        return False
+    counter, limit = most_caller_table[bp_id]
 
     count = counter[fn_name]
     count += 1
@@ -94,7 +92,7 @@ def most_caller_callback(frame, bp_loc, dict):
         for fn_name, count in most_callers:
             padding_chars = ' ' * max((padding-len(fn_name)), 0)
             print('{}{}: {}'.format(fn_name, padding_chars, count))
-        most_caller_table[bp_id] = (counter, limit, True)
+        del most_caller_table[bp_id]
 
         return True
     return False
