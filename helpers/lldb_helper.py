@@ -54,38 +54,48 @@ most_caller_table = dict()
 
 def most_caller(debugger, command, exe_ctx, *_):
     '''
-    usage: h_most_caller <location> <limit>
+    usage: h_most_caller <location> <limit> [depth]
     args:
         location: a string of where to put a breakpoint, which is being used to increment the counter
         limit: an int which is being used to decide the most caller
+        depth: an optional argument to decide how deep of the stack should be include in the counter (default: 1)
     '''
     global most_caller_table
 
     args = shlex.split(command)
-    if len(args) != 2:
+    if not (2 <= len(args) <= 3):
         usage(most_caller)
         return
     location = args[0]
-    limit = args[1]
+    limit = int(args[1])
+    depth = int(args[2]) if len(args) == 3 else 1
 
-    limit = int(limit)
     target = debugger.GetSelectedTarget()
     breakpoint = target.BreakpointCreateByName(location)
     breakpoint.SetScriptCallbackFunction('{}.{}'.format(MODULE_NAME, most_caller_callback.__name__))
-    most_caller_table[breakpoint.GetID()] = (Counter(), limit)
+    most_caller_table[breakpoint.GetID()] = (Counter(), limit, depth)
 
 def most_caller_callback(frame, bp_loc, dict):
     global most_caller_table
 
-    parent = frame.get_parent_frame()
-    fn_name = parent.GetDisplayFunctionName()
     bp_id = bp_loc.GetBreakpoint().GetID()
-    counter, limit = most_caller_table[bp_id]
+    counter, limit, depth = most_caller_table[bp_id]
 
-    count = counter[fn_name]
-    count += 1
-    counter[fn_name] = count
-    if count >= limit:
+    found_most_caller = False
+    frame = frame.get_parent_frame()
+    while frame and depth > 0:
+        fn_name = frame.GetDisplayFunctionName()
+        frame = frame.get_parent_frame()
+        depth -= 1
+
+        count = counter[fn_name]
+        count += 1
+        counter[fn_name] = count
+        if count >= limit: 
+            found_most_caller = True
+
+
+    if found_most_caller:
         most_callers = counter.most_common()
         padding = 40
         print('========================= Most Callers =========================')
