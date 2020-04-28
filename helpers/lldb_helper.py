@@ -5,14 +5,18 @@ from collections import Counter
 
 MODULE_NAME='lldb_helper'
 NAMESPACE='h_'
+HANDLERS = []
 
-'''
-usage: ip4 <address>
-args:
-    address: a byte array in network byte order with a length of 4
-'''
 def ip4(debugger, command, exe_ctx, *_):
+    '''
+    usage: h_ip4 <address>
+    args:
+        address: a byte array in network byte order with a length of 4
+    '''
     args = shlex.split(command)
+    if len(args) != 1:
+        usage(ip4)
+        return
     address = args[0]
 
     frame = exe_ctx.frame
@@ -20,13 +24,16 @@ def ip4(debugger, command, exe_ctx, *_):
     octets = va.GetData().uint8s[:4]
     print(".".join(map(str, octets)))
 
-'''
-usage: ip6 <address>
-args:
-    address: a byte array in network byte order with a length of 16
-'''
 def ip6(debugger, command, exe_ctx, *_):
+    '''
+    usage: h_ip6 <address>
+    args:
+        address: a byte array in network byte order with a length of 16
+    '''
     args = shlex.split(command)
+    if len(args) != 1:
+        usage(ip6)
+        return
     address = args[0]
 
     frame = exe_ctx.frame
@@ -45,16 +52,19 @@ def ip6(debugger, command, exe_ctx, *_):
 '''
 most_caller_table = dict()
 
-'''
-usage: most_caller <location> <limit>
-args:
-    location: a string of where to put a breakpoint, which is being used to increment the counter
-    limit: an int which is being used to decide the most caller
-'''
 def most_caller(debugger, command, exe_ctx, *_):
+    '''
+    usage: h_most_caller <location> <limit>
+    args:
+        location: a string of where to put a breakpoint, which is being used to increment the counter
+        limit: an int which is being used to decide the most caller
+    '''
     global most_caller_table
 
     args = shlex.split(command)
+    if len(args) != 2:
+        usage(most_caller)
+        return
     location = args[0]
     limit = args[1]
 
@@ -88,8 +98,22 @@ def most_caller_callback(frame, bp_loc, dict):
 
         return True
     return False
+
+def usage(handler):
+    print('{}{}\n{}\n'.format(NAMESPACE, handler.__name__, handler.__doc__))
+
+def cmds(*_):
+    '''
+    usage: h_cmds
+    description: list all of available commands
+    '''
+    global HANDLERS
+    print('=========================== Commands ===========================')
+    for handler in HANDLERS:
+        usage(handler)
     
 def __lldb_init_module(debugger, internal_dict):
-    handlers = [ip4, ip6, most_caller]
-    for handler in handlers:
+    global HANDLERS
+    HANDLERS = [ip4, ip6, most_caller, cmds]
+    for handler in HANDLERS:
         debugger.HandleCommand('command script add -f {0}.{2} {1}{2}'.format(MODULE_NAME, NAMESPACE, handler.__name__))
