@@ -4,6 +4,7 @@ from socket import ntohs
 from collections import Counter
 
 MODULE_NAME='lldb_helper'
+NAMESPACE='h_'
 
 '''
 usage: ip4 <address>
@@ -91,4 +92,4 @@ def most_caller_callback(frame, bp_loc, dict):
 def __lldb_init_module(debugger, internal_dict):
     handlers = [ip4, ip6, most_caller]
     for handler in handlers:
-        debugger.HandleCommand('command script add -f {0}.{1} {1}'.format(MODULE_NAME, handler.__name__))
+        debugger.HandleCommand('command script add -f {0}.{2} {1}{2}'.format(MODULE_NAME, NAMESPACE, handler.__name__))
