@@ -9,6 +9,7 @@ Plug 'preservim/nerdtree'
 Plug 'morhetz/gruvbox'
 Plug 'johngrib/vim-game-snake'
 Plug 'vim-airline/vim-airline'
+Plug 'airblade/vim-gitgutter'
 
 " language specific
 Plug 'fatih/vim-go', { 'do': ':GoUpdateBinaries' }
