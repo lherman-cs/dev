@@ -47,61 +47,73 @@ def ip6(debugger, command, exe_ctx, *_):
     print(":".join(map(str, octets)))
 
 
+class MostCallerNode:
+    def __init__(self, fn_name="", count=0):
+        self.fn_name = fn_name
+        self.children = dict()
+        self.count = count
+
+    def print_count(self, level=0, indent=4):
+        space = ' ' * indent * level
+        print('{}{}: {}'.format(space, self.fn_name, self.count))
+        children = self.children.values()
+        children.sort(key=lambda n: n.count, reverse=True)
+        for child in children:
+            child.print_count(level+1, indent)
+
+
 '''
-<breakpoint_id>: (counter, limit, done)
+<breakpoint_id>: (MostCallerNode, limit, depth, indentation)
 '''
 most_caller_table = dict()
 
 def most_caller(debugger, command, exe_ctx, *_):
     '''
-    usage: h_most_caller <location> <limit> [depth]
+    usage: h_most_caller <location> <limit> [depth] [indentation]
     args:
         location: a string of where to put a breakpoint, which is being used to increment the counter
         limit: an int which is being used to decide the most caller
         depth: an optional argument to decide how deep of the stack should be include in the counter (default: 1)
+        indentation: an int to modify the number of spaces should be used for indentation (default: 4)
     '''
     global most_caller_table
 
     args = shlex.split(command)
-    if not (2 <= len(args) <= 3):
+    if not (2 <= len(args) <= 4):
         usage(most_caller)
         return
     location = args[0]
     limit = int(args[1])
-    depth = int(args[2]) if len(args) == 3 else 1
+    depth = int(args[2]) if len(args) >= 3 else 1
+    indentation = int(args[3]) if len(args) >= 4 else 4
 
     target = debugger.GetSelectedTarget()
     breakpoint = target.BreakpointCreateByName(location)
     breakpoint.SetScriptCallbackFunction('{}.{}'.format(MODULE_NAME, most_caller_callback.__name__))
-    most_caller_table[breakpoint.GetID()] = (Counter(), limit, depth)
+    most_caller_table[breakpoint.GetID()] = (MostCallerNode("root"), limit, depth, indentation)
 
 def most_caller_callback(frame, bp_loc, dict):
     global most_caller_table
 
     bp_id = bp_loc.GetBreakpoint().GetID()
-    counter, limit, depth = most_caller_table[bp_id]
+    graph, limit, depth, indentation = most_caller_table[bp_id]
 
-    found_most_caller = False
-    frame = frame.get_parent_frame()
+    node = graph
+    node.count += 1
     while frame and depth > 0:
         fn_name = frame.GetDisplayFunctionName()
+        if fn_name not in node.children:
+            node.children[fn_name] = MostCallerNode(fn_name)
+
+        node = node.children[fn_name]
+        node.count += 1
         frame = frame.get_parent_frame()
         depth -= 1
 
-        count = counter[fn_name]
-        count += 1
-        counter[fn_name] = count
-        if count >= limit: 
-            found_most_caller = True
 
-
-    if found_most_caller:
-        most_callers = counter.most_common()
-        padding = 40
-        print('========================= Most Callers =========================')
-        for fn_name, count in most_callers:
-            padding_chars = ' ' * max((padding-len(fn_name)), 0)
-            print('{}{}: {}'.format(fn_name, padding_chars, count))
+    if graph.count >= limit:
+        print('========================= Statistics =========================')
+        graph.print_count(indent=indentation)
         del most_caller_table[bp_id]
 
         return True
