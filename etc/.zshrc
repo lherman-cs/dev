@@ -109,5 +109,12 @@ export EDITOR="nvim"
 [ -f "$HOME/.secret/aws" ] && source "$HOME/.secret/aws"
 
 # Mac Specific
-export PATH="/usr/local/opt/llvm/bin/:$PATH"
+#export PATH="/usr/local/opt/llvm/bin/:$PATH"
+#export PATH="/usr/local/sbin:$PATH"
 alias lldb="/usr/bin/lldb"
+export CPATH=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include
+export PATH="$PATH:$HOME/Documents/flutter/flutter/bin"
+export PATH="/usr/local/anaconda3/bin:$PATH"
+
+# Ubuntu Specific
+export PATH="$PATH:$HOME/Android/Sdk/emulator"

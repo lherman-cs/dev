@@ -13,6 +13,8 @@ Plug 'airblade/vim-gitgutter'
 
 " language specific
 Plug 'fatih/vim-go', { 'do': ':GoUpdateBinaries' }
+Plug 'leafgarland/typescript-vim'
+Plug 'peitalin/vim-jsx-typescript'
 
 " coc extensions
 Plug 'neoclide/coc-json', { 'do': 'yarn install --frozen-lockfile' }
@@ -20,6 +22,8 @@ Plug 'neoclide/coc-java', { 'do': 'yarn install --frozen-lockfile' }
 Plug 'neoclide/coc-tsserver', { 'do': 'yarn install --frozen-lockfile' }
 Plug 'neoclide/coc-python', { 'do': 'yarn install --frozen-lockfile' }
 Plug 'iamcco/coc-angular', { 'do': 'yarn install --frozen-lockfile' }
+Plug 'neoclide/coc-css', { 'do': 'yarn install --frozen-lockfile' }
+Plug 'neoclide/coc-vetur', { 'do': 'yarn install --frozen-lockfile' }
 
 call plug#end()
 
@@ -194,13 +198,18 @@ nnoremap <C-f> :Files<CR>
 inoremap <C-f> <Esc>:Lines<CR>
 nnoremap <C-A-f> :Rg<CR>
 nnoremap <C-l> <C-i>
-nnoremap <Left>  :echoe "Use h"<CR>
-nnoremap <Right> :echoe "Use l"<CR>
-nnoremap <Up>    :echoe "Use k"<CR>
-nnoremap <Down>  :echoe "Use j"<CR>
+" nnoremap <Left>  :echoe "Use h"<CR>
+" nnoremap <Right> :echoe "Use l"<CR>
+" nnoremap <Up>    :echoe "Use k"<CR>
+" nnoremap <Down>  :echoe "Use j"<CR>
 
 command! -nargs=* T below split | resize 20 | terminal <args>
 
 " performmance stuff
 set ttyfast
 set lazyredraw
+
+if has('persistent_undo')      "check if your vim version supports it
+  set undofile                 "turn on the feature  
+  set undodir=$HOME/.vim/undo  "directory where the undo files will be stored
+endif

@@ -1,6 +1,8 @@
 {
   "suggest.enablePreview": true,
   "coc.preferences.currentFunctionSymbolAutoUpdate": true,
+  "coc.preferences.formatOnType": true,
+  "coc.preferences.formatOnSaveFiletypes": ["*"],
   "languageserver": {
     "golang": {
       "command": "gopls",
