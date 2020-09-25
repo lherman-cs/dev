@@ -24,6 +24,8 @@ Plug 'neoclide/coc-python', { 'do': 'yarn install --frozen-lockfile' }
 Plug 'iamcco/coc-angular', { 'do': 'yarn install --frozen-lockfile' }
 Plug 'neoclide/coc-css', { 'do': 'yarn install --frozen-lockfile' }
 Plug 'neoclide/coc-vetur', { 'do': 'yarn install --frozen-lockfile' }
+Plug 'neoclide/coc-eslint', { 'do': 'yarn install --frozen-lockfile' }
+Plug 'dansomething/coc-groovy', { 'do': 'yarn install --frozen-lockfile' }
 
 call plug#end()
 

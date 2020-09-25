@@ -115,6 +115,7 @@ alias lldb="/usr/bin/lldb"
 export CPATH=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include
 export PATH="$PATH:$HOME/Documents/flutter/flutter/bin"
 export PATH="/usr/local/anaconda3/bin:$PATH"
+export PATH="$HOME/.toolbox/bin:$PATH"
 
 # Ubuntu Specific
 export PATH="$PATH:$HOME/Android/Sdk/emulator"
