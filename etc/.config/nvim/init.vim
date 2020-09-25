@@ -2,7 +2,7 @@ call plug#begin()
 
 " general things
 Plug 'tpope/vim-fugitive'
-Plug 'neoclide/coc.nvim', {'branch': 'release', 'do': { -> coc#util#install()}}
+Plug 'neoclide/coc.nvim', {'branch': 'release'}
 Plug 'junegunn/fzf', { 'do': { -> fzf#install() } }
 Plug 'junegunn/fzf.vim'
 Plug 'preservim/nerdtree'
