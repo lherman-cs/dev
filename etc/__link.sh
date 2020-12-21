@@ -5,9 +5,9 @@ cd ${ROOT_DIR}
 FILES=$(find . -type f ! -name "__*")
 
 for file in ${FILES[@]}; do
-  mkdir -p $(dirname "$file")
   src="${ROOT_DIR}/${file}"
   target="${HOME}/${file}"
+  mkdir -p $(dirname "$target")
   if ! [ -f "$target" ]; then
     ln -s "$src" "$target"
     echo "linked ${src} to ${target}"
