@@ -115,7 +115,21 @@ alias lldb="/usr/bin/lldb"
 export CPATH=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include
 export PATH="$PATH:$HOME/Documents/flutter/flutter/bin"
 export PATH="/usr/local/anaconda3/bin:$PATH"
-export PATH="$HOME/.toolbox/bin:$PATH"
 
 # Ubuntu Specific
 export PATH="$PATH:$HOME/Android/Sdk/emulator"
+
+# >>> conda initialize >>>
+# !! Contents within this block are managed by 'conda init' !!
+__conda_setup="$('/home/lukas/anaconda3/bin/conda' 'shell.zsh' 'hook' 2> /dev/null)"
+if [ $? -eq 0 ]; then
+    eval "$__conda_setup"
+else
+    if [ -f "/home/lukas/anaconda3/etc/profile.d/conda.sh" ]; then
+        . "/home/lukas/anaconda3/etc/profile.d/conda.sh"
+    else
+        export PATH="/home/lukas/anaconda3/bin:$PATH"
+    fi
+fi
+unset __conda_setup
+# <<< conda initialize <<<
