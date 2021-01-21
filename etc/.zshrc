@@ -109,15 +109,23 @@ export EDITOR="nvim"
 [ -f "$HOME/.secret/aws" ] && source "$HOME/.secret/aws"
 
 # Mac Specific
-#export PATH="/usr/local/opt/llvm/bin/:$PATH"
-#export PATH="/usr/local/sbin:$PATH"
-alias lldb="/usr/bin/lldb"
-export CPATH=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include
-export PATH="$PATH:$HOME/Documents/flutter/flutter/bin"
-export PATH="/usr/local/anaconda3/bin:$PATH"
-
-# Ubuntu Specific
-export PATH="$PATH:$HOME/Android/Sdk/emulator"
+if [[ "$OSTYPE" == "darwin"* ]]; then
+  #export PATH="/usr/local/opt/llvm/bin/:$PATH"
+  #export PATH="/usr/local/sbin:$PATH"
+  alias lldb="/usr/bin/lldb"
+  export CPATH=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include
+  export PATH="$PATH:$HOME/Documents/flutter/flutter/bin"
+  export PATH="/usr/local/anaconda3/bin:$PATH"
+elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
+  # Ubuntu Specific
+  export SHARED_DRIVE_PATH=/mnt/shared
+  export PATH="$PATH:$HOME/Android/Sdk/emulator"
+  export PATH="$PATH:$HOME/Android/Sdk/platform-tools"
+  export PATH=$PATH:/usr/local/go/bin
+  export ANDROID_SDK_ROOT=$HOME/Android/Sdk
+  # Export ROS envs
+  [ -f "/opt/ros/melodic/setup.zsh" ] && source /opt/ros/melodic/setup.zsh
+fi
 
 # >>> conda initialize >>>
 # !! Contents within this block are managed by 'conda init' !!
@@ -133,3 +141,6 @@ else
 fi
 unset __conda_setup
 # <<< conda initialize <<<
+
+export NVM_DIR="$([ -z "${XDG_CONFIG_HOME-}" ] && printf %s "${HOME}/.nvm" || printf %s "${XDG_CONFIG_HOME}/nvm")"
+[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh" # This loads nvm

@@ -27,6 +27,10 @@ Plug 'neoclide/coc-vetur', { 'do': 'yarn install --frozen-lockfile' }
 Plug 'neoclide/coc-eslint', { 'do': 'yarn install --frozen-lockfile' }
 Plug 'dansomething/coc-groovy', { 'do': 'yarn install --frozen-lockfile' }
 
+" bazel stuff
+Plug 'google/vim-maktaba'
+Plug 'bazelbuild/vim-bazel'
+
 call plug#end()
 
 " coc settings
