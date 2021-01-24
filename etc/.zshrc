@@ -116,6 +116,15 @@ if [[ "$OSTYPE" == "darwin"* ]]; then
   export CPATH=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include
   export PATH="$PATH:$HOME/Documents/flutter/flutter/bin"
   export PATH="/usr/local/anaconda3/bin:$PATH"
+  export ANDROID_HOME=$HOME/Library/Android/sdk
+  export PATH=$PATH:$ANDROID_HOME/emulator
+  export PATH=$PATH:$ANDROID_HOME/tools
+  export PATH=$PATH:$ANDROID_HOME/tools/bin
+  export PATH=$PATH:$ANDROID_HOME/platform-tools
+
+  export NVM_DIR="$HOME/.nvm"
+    [ -s "$(brew --prefix)/opt/nvm/nvm.sh" ] && . "$(brew --prefix)/opt/nvm/nvm.sh" # This loads nvm
+    [ -s "$(brew --prefix)/opt/nvm/etc/bash_completion.d/nvm" ] && . "$(brew --prefix)/opt/nvm/etc/bash_completion.d/nvm" # This loads nvm bash_completion
 elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
   # Ubuntu Specific
   export SHARED_DRIVE_PATH=/mnt/shared
@@ -125,6 +134,9 @@ elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
   export ANDROID_SDK_ROOT=$HOME/Android/Sdk
   # Export ROS envs
   [ -f "/opt/ros/melodic/setup.zsh" ] && source /opt/ros/melodic/setup.zsh
+
+  export NVM_DIR="$([ -z "${XDG_CONFIG_HOME-}" ] && printf %s "${HOME}/.nvm" || printf %s "${XDG_CONFIG_HOME}/nvm")"
+  [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh" # This loads nvm
 fi
 
 # >>> conda initialize >>>
@@ -142,5 +154,3 @@ fi
 unset __conda_setup
 # <<< conda initialize <<<
 
-export NVM_DIR="$([ -z "${XDG_CONFIG_HOME-}" ] && printf %s "${HOME}/.nvm" || printf %s "${XDG_CONFIG_HOME}/nvm")"
-[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh" # This loads nvm

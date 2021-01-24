@@ -1,10 +1,7 @@
 {
   "suggest.enablePreview": true,
   "coc.preferences.currentFunctionSymbolAutoUpdate": true,
-  "coc.preferences.formatOnSaveFiletypes": [
-    "*"
-  ],
-  "eslint.autoFixOnSave": true,
+  "eslint.autoFixOnSave": false,
   "eslint.filetypes": [
     "javascript",
     "typescript",
