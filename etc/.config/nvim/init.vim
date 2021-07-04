@@ -182,17 +182,22 @@ let g:go_def_mapping_enabled = 0
 " nerdtree settings
 
 " open a NERDTree automatically when vim starts up
-" autocmd vimenter * NERDTree
+autocmd vimenter * NERDTree
 
 " open a NERDTree automatically when vim starts up if no files were specified
 " autocmd StdinReadPre * let s:std_in=1
 " autocmd VimEnter * if argc() == 0 && !exists("s:std_in") | NERDTree | endif
 
 " tell vim to go to the code initially instead of the file browser
-" autocmd VimEnter * wincmd l 
+autocmd VimEnter * wincmd l 
 
 " tell vim to exit when NERDTree is the only buffer left
 autocmd bufenter * if (winnr("$") == 1 && exists("b:NERDTree") && b:NERDTree.isTabTree()) | q | endif
+
+function! s:updateNerdTreeDir()
+  if exists("g:NERDTree") && g:NERDTree.IsOpen() | exec ":NERDTreeFind" | endif
+endfunction
+autocmd BufWinEnter * call s:updateNerdTreeDir()
 
 " editor settings
 set tabstop=2 shiftwidth=2 expandtab
