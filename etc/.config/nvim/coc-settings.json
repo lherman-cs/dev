@@ -1,10 +1,17 @@
 {
   "suggest.enablePreview": true,
   "coc.preferences.currentFunctionSymbolAutoUpdate": true,
-  "eslint.autoFixOnSave": true,
+  "coc.preferences.formatOnSaveFiletypes": [
+    "rust",
+    "json",
+    "typescript",
+    "typescriptreact"
+  ],
+  "eslint.autoFixOnSave": false,
   "eslint.filetypes": [
     "javascript",
     "typescript",
+    "typescriptreact",
     "vue"
   ],
   "languageserver": {
