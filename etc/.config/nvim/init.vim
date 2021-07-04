@@ -219,3 +219,6 @@ if has('persistent_undo')      "check if your vim version supports it
   set undofile                 "turn on the feature  
   set undodir=$HOME/.vim/undo  "directory where the undo files will be stored
 endif
+
+" ignore gitignore in fzf
+let $FZF_DEFAULT_COMMAND = 'rg --files --hidden'
