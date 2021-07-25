@@ -195,9 +195,14 @@ autocmd VimEnter * wincmd l
 autocmd bufenter * if (winnr("$") == 1 && exists("b:NERDTree") && b:NERDTree.isTabTree()) | q | endif
 
 function! s:updateNerdTreeDir()
-  if exists("g:NERDTree") && g:NERDTree.IsOpen() | exec ":NERDTreeFind" | endif
+  if exists("g:NERDTree") && g:NERDTree.IsOpen() 
+    exec ":NERDTreeFind" 
+    call feedkeys("\<CR>") 
+  endif
 endfunction
-autocmd BufWinEnter * call s:updateNerdTreeDir()
+" Auto lookup to nerd tree after FZF
+" autocmd BufWinEnter * call s:updateNerdTreeDir()
+ map <leader>f :NERDTreeFind<cr>
 
 " editor settings
 set tabstop=2 shiftwidth=2 expandtab
