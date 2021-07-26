@@ -5,6 +5,8 @@ function install_nvim() {
 	mkdir -p $HOME/.config
 	rm -f ${HOME}/.config/nvim 
   ln -s ${ROOT_DIR}/nvim $HOME/.config/nvim
+
+  nvim --headless +PackerInstall +qa
 }
 
 function install_nvim_linux-gnu() {
