@@ -154,3 +154,5 @@ fi
 unset __conda_setup
 # <<< conda initialize <<<
 
+# 10ms for key sequences
+export KEYTIMEOUT=1
