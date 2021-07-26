@@ -21,6 +21,13 @@ function setup_plugins()
     requires = {'kyazdani42/nvim-web-devicons'}
   }
 
+  use {
+    'lewis6991/gitsigns.nvim',
+    requires = {
+      'nvim-lua/plenary.nvim'
+    }
+  }
+
   use 'preservim/nerdtree'
 end
 
@@ -156,11 +163,11 @@ function setup_shortcuts()
   local map = vim.api.nvim_set_keymap
   options = { noremap = true }
 
-  map('n', '<space>f', ':Telescope find_files<cr>', options)
+  map('n', '<space><space>', ':Telescope find_files<cr>', options)
   map('n', '<space>fg', ':Telescope live_grep<cr>', options)
   map('n', '<space>fb', ':Telescope buffers<cr>', options)
   map('n', '<space>fh', ':Telescope help_tags<cr>', options)
-  map('n', '<space>e', ':NERDTreeToggle<cr>', options)
+  map('n', '<space>ee', ':NERDTreeToggle<cr>', options)
   map('n', '<space>ef', ':NERDTreeFind<cr>', options)
 
   -- lsp shortcuts
@@ -180,6 +187,7 @@ require('packer').startup(setup_plugins)
 require('lualine').setup{
   options = {theme = 'dracula'}
 }
+require('gitsigns').setup()
 setup_lsps()
 setup_editor()
 setup_shortcuts()
