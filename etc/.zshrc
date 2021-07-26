@@ -105,6 +105,7 @@ export PATH="$HOME/go/bin:$PATH"
 export PATH="$HOME/bin:$PATH"
 export PATH="$HOME/.cargo/bin:$PATH"
 export EDITOR="nvim"
+export GIT_EDITOR="nvim"
 
 [ -f "$HOME/.secret/aws" ] && source "$HOME/.secret/aws"
 
