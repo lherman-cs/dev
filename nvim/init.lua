@@ -27,6 +27,7 @@ end
 function setup_lsps()
   require'lspconfig'.gopls.setup{}
   require'lspconfig'.rust_analyzer.setup{}
+  require'lspconfig'.tsserver.setup{}
 
   vim.o.completeopt = 'menuone,noselect'
 
