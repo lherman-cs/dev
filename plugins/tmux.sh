@@ -7,5 +7,6 @@ function install_tmux_darwin() {
 }
 
 function install_tmux() {
+  rm $HOME/.tmux.conf
   ln -s ${ROOT_DIR}/etc/.tmux.conf $HOME/.tmux.conf
 }

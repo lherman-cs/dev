@@ -8,5 +8,6 @@ function install_zsh_darwin() {
 
 function install_zsh() {
   sh -c "$(curl -fsSL https://raw.github.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"
-  sudo ln -s ${ROOT_DIR}/etc/.zshrc ${HOME}/.zshrc
+  rm ${HOME}/.zshrc
+  ln -s ${ROOT_DIR}/etc/.zshrc ${HOME}/.zshrc
 }
