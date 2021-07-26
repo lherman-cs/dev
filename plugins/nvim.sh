@@ -3,7 +3,8 @@ function install_nvim() {
 	git clone https://github.com/wbthomason/packer.nvim ~/.local/share/nvim/site/pack/packer/start/packer.nvim
 
 	mkdir -p $HOME/.config
-	rm -f ${HOME}/.config/nvim && ln -s ${ROOT_DIR}/nvim $HOME/.config/nvim
+	rm -f ${HOME}/.config/nvim 
+  ln -s ${ROOT_DIR}/nvim $HOME/.config/nvim
 }
 
 function install_nvim_linux-gnu() {
