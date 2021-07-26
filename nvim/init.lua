@@ -29,6 +29,11 @@ function setup_plugins()
   }
 
   use 'preservim/nerdtree'
+
+  use {
+	  "folke/todo-comments.nvim",
+	  requires = "nvim-lua/plenary.nvim",
+  }
 end
 
 function setup_lsps()
@@ -169,6 +174,7 @@ function setup_shortcuts()
   map('n', '<space>fh', ':Telescope help_tags<cr>', options)
   map('n', '<space>ee', ':NERDTreeToggle<cr>', options)
   map('n', '<space>ef', ':NERDTreeFind<cr>', options)
+  map('n', '<space>tt', ':TodoTelescope<cr>', options)
 
   -- lsp shortcuts
   map('n', 'gD', '<Cmd>lua vim.lsp.buf.declaration()<CR>', options)
@@ -188,6 +194,7 @@ require('lualine').setup{
   options = {theme = 'dracula'}
 }
 require('gitsigns').setup()
+require('todo-comments').setup()
 setup_lsps()
 setup_editor()
 setup_shortcuts()
