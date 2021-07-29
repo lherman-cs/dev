@@ -4,6 +4,22 @@ BIN_DIR=/usr/local/bin
 ROOT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
 PLUGINS_DIR=${ROOT_DIR}/plugins
 
+if [[ "$OSTYPE" == "linux-gnu"* ]]; then
+  OS=linux-gnu
+elif [[ "$OSTYPE" == "darwin"* ]]; then
+  OS=darwin
+elif [[ "$OSTYPE" == "cygwin" ]]; then
+  OS=cygwin
+elif [[ "$OSTYPE" == "msys" ]]; then
+  OS=msys
+elif [[ "$OSTYPE" == "win32" ]]; then
+  OS=win32
+elif [[ "$OSTYPE" == "freebsd"* ]]; then
+  OS=freebsg
+else
+        # Unknown.
+fi
+
 function confirm() {
   if ! [ -f "$1" ]; then
     return 0
@@ -20,8 +36,8 @@ function confirm() {
 }
 
 function install() {
-  if command -v install_$1_${OSTYPE}; then
-    install_$1_${OSTYPE}
+  if command -v install_$1_${OS}; then
+    install_$1_${OS}
   fi
   
   if command -v install_$1; then
