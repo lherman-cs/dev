@@ -7,7 +7,9 @@ function install_zsh_darwin() {
 }
 
 function install_zsh() {
+  target=${HOME}/.zshrc
+
   sh -c "$(curl -fsSL https://raw.github.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"
-  rm ${HOME}/.zshrc
-  ln -s ${ROOT_DIR}/etc/.zshrc ${HOME}/.zshrc
+  confirm ${target} && rm ${target}
+  ln -s ${ROOT_DIR}/etc/.zshrc ${target}
 }
