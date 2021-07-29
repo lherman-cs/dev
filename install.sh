@@ -17,7 +17,7 @@ elif [[ "$OSTYPE" == "win32" ]]; then
 elif [[ "$OSTYPE" == "freebsd"* ]]; then
   OS=freebsg
 else
-        # Unknown.
+  OS=
 fi
 
 function confirm() {
