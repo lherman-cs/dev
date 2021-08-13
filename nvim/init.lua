@@ -1,5 +1,14 @@
 local home_dir = os.getenv("HOME")
 
+function prequire(module, fn)
+  local ok, res = pcall(require, module)
+  if ok then
+    fn(res)
+  else
+    print("gitsigns doesn't exist") 
+  end
+end
+
 function setup_plugins()
 	-- Packer can manage itself
   use 'wbthomason/packer.nvim'
@@ -44,7 +53,7 @@ function setup_lsps()
 
   vim.o.completeopt = 'menuone,noselect'
 
-  require'compe'.setup {
+  prequire('compe', function(m) m.setup {
     enabled = true;
     autocomplete = true;
     debug = false;
@@ -77,6 +86,7 @@ function setup_lsps()
       luasnip = true;
     };
   }
+  end)
 
   local t = function(str)
     return vim.api.nvim_replace_termcodes(str, true, true, true)
@@ -195,7 +205,7 @@ function setup_shortcuts()
   map("n", "<space>ff", "<cmd>lua vim.lsp.buf.formatting()<CR>", options)
 end
 
-require('telescope').setup{
+prequire('telescope', function(m) m.setup{
   defaults = {
     vimgrep_arguments = {
       'rg',
@@ -239,12 +249,15 @@ require('telescope').setup{
     buffer_previewer_maker = require'telescope.previewers'.buffer_previewer_maker
   }
 }
-require('packer').startup(setup_plugins)
-require('lualine').setup{
+end)
+prequire('packer', function(m) m.startup(setup_plugins) end)
+prequire('lualine', function(m) m.setup{
   options = {theme = 'dracula'}
 }
-require('gitsigns').setup()
-require('todo-comments').setup()
+end)
+
+prequire('gitsigns', function(m) m.setup() end)
+prequire('todo-comments', function(m) m.setup() end)
 setup_lsps()
 setup_editor()
 setup_shortcuts()
