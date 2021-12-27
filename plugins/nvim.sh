@@ -10,7 +10,7 @@ function install_nvim() {
 
 function install_nvim_linux-gnu() {
 	bin_path=${BIN_DIR}/nvim
-	sudo curl -L --output ${bin_path} https://github.com/neovim/neovim/releases/download/v0.5.0/nvim.appimage
+	sudo curl -L --output ${bin_path} https://github.com/neovim/neovim/releases/download/v0.6.0/nvim.appimage
 	sudo chmod +x ${bin_path}
 
 	sudo snap install --classic ripgrep
