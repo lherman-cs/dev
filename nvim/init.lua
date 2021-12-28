@@ -5,7 +5,7 @@ function prequire(module, fn)
   if ok then
     fn(res)
   else
-    print("gitsigns doesn't exist") 
+    print(module .. " doesn't exist") 
   end
 end
 
