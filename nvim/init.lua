@@ -9,6 +9,10 @@ function prequire(module, fn)
   end
 end
 
+function set(cmd)
+	vim.api.nvim_command('set ' .. cmd)
+end
+
 function setup_plugins()
 	-- Packer can manage itself
   use 'wbthomason/packer.nvim'
@@ -19,13 +23,17 @@ function setup_plugins()
 	}
 
 	use 'neovim/nvim-lspconfig'
-	use {
-    'hrsh7th/nvim-compe',
-    requires = {{'hrsh7th/vim-vsnip'}, {'hrsh7th/vim-vsnip-integ'}}
-  }
-	use 'folke/tokyonight.nvim'
-
-  use {
+  use 'hrsh7th/cmp-nvim-lsp'
+  use 'hrsh7th/cmp-buffer'
+  use 'hrsh7th/cmp-path'
+  use 'hrsh7th/cmp-cmdline'
+  use 'hrsh7th/nvim-cmp'
+  use 'hrsh7th/cmp-vsnip'
+  use 'hrsh7th/vim-vsnip'
+ 
+ 	use 'folke/tokyonight.nvim'
+ 
+   use {
     'hoob3rt/lualine.nvim',
     requires = {'kyazdani42/nvim-web-devicons'}
   }
@@ -52,40 +60,6 @@ function setup_lsps()
   require'lspconfig'.ccls.setup{}
 
   vim.o.completeopt = 'menuone,noselect'
-
-  prequire('compe', function(m) m.setup {
-    enabled = true;
-    autocomplete = true;
-    debug = false;
-    min_length = 1;
-    preselect = 'enable';
-    throttle_time = 80;
-    source_timeout = 200;
-    resolve_timeout = 800;
-    incomplete_delay = 400;
-    max_abbr_width = 100;
-    max_kind_width = 100;
-    max_menu_width = 100;
-    documentation = {
-      border = { '', '' ,'', ' ', '', '', '', ' ' }, -- the border option is the same as `|help nvim_open_win|`
-      winhighlight = "NormalFloat:CompeDocumentation,FloatBorder:CompeDocumentationBorder",
-      max_width = 120,
-      min_width = 60,
-      max_height = math.floor(vim.o.lines * 0.3),
-      min_height = 1,
-    };
-
-    source = {
-      path = true;
-      buffer = true;
-      calc = true;
-      nvim_lsp = true;
-      nvim_lua = true;
-      vsnip = true;
-      ultisnips = true;
-      luasnip = true;
-    };
-  }
   end)
 
   local t = function(str)
@@ -126,10 +100,6 @@ function setup_lsps()
   vim.api.nvim_set_keymap("s", "<Tab>", "v:lua.tab_complete()", {expr = true})
   vim.api.nvim_set_keymap("i", "<S-Tab>", "v:lua.s_tab_complete()", {expr = true})
   vim.api.nvim_set_keymap("s", "<S-Tab>", "v:lua.s_tab_complete()", {expr = true})
-end
-
-function set(cmd)
-	vim.api.nvim_command('set ' .. cmd)
 end
 
 function setup_editor() 
@@ -178,6 +148,9 @@ function setup_editor()
   set('cindent')         -- Like smartindent, but stricter and more customisable
 
   set('timeoutlen=1000 ttimeoutlen=0')
+
+  -- IDE related
+  set('completeopt=menu,menuone,noselect')
 end
 
 function setup_shortcuts()
