@@ -174,6 +174,7 @@ function setup_shortcuts()
   map("n", "<space>ff", "<cmd>lua vim.lsp.buf.formatting()<CR>", options)
 
   -- window management
+  map('n', 'st', '<cmd>split<CR><C-w>w<cmd>term<CR>', options)
   map('n', 'ss', '<cmd>split<CR><C-w>w<CR>', options)
   map('n', 'sv', '<cmd>vsplit<CR><C-w>w<CR>', options)
   map('', 'sh', '<C-w>h', options)
