@@ -172,6 +172,23 @@ function setup_shortcuts()
   map('n', '[g', '<cmd>lua vim.lsp.diagnostic.goto_prev()<CR>', options)
   map('n', ']g', '<cmd>lua vim.lsp.diagnostic.goto_next()<CR>', options)
   map("n", "<space>ff", "<cmd>lua vim.lsp.buf.formatting()<CR>", options)
+
+  -- window management
+  map('n', 'ss', '<cmd>split<CR><C-w>w<CR>', options)
+  map('n', 'sv', '<cmd>vsplit<CR><C-w>w<CR>', options)
+  map('', 'sh', '<C-w>h', options)
+  map('', 'sk', '<C-w>k', options)
+  map('', 'sj', '<C-w>j', options)
+  map('', 'sl', '<C-w>l', options)
+
+  map('n', '<C-left>', '<cmd>vertical resize -3<CR>', options)
+  map('n', '<C-right>', '<cmd>vertical resize +3<CR>', options)
+  map('n', '<C-up>', '<cmd>resize +3<CR>', options)
+  map('n', '<C-down>', '<cmd>resize -3<CR>', options)
+
+  -- tab management
+  map('n', '<S-Tab>', '<cmd>tabprev<CR>', options)
+  map('n', '<Tab>', '<cmd>tabnext<CR>', options)
 end
 
 prequire('telescope', function(m) m.setup{
