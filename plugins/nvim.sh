@@ -6,6 +6,7 @@ function install_nvim() {
   target=${HOME}/.config/nvim
 	confirm ${target} rm -rf ${target}
   ln -s ${ROOT_DIR}/nvim ${target}
+  nvim -c 'PackerUpdate'
 }
 
 function install_nvim_linux-gnu() {
