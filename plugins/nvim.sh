@@ -15,6 +15,8 @@ function install_nvim_linux-gnu() {
 	sudo chmod +x ${bin_path}
 
 	sudo snap install --classic ripgrep
+  # Enable clipboard
+  sudo apt install -y wl-clipboard
 }
 
 function install_nvim_darwin() {

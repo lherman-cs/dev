@@ -6,4 +6,5 @@ function install_bootstrap() {
   install go
   install rust 
   install node 
+  install bin
 }
