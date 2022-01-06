@@ -33,7 +33,9 @@ function setup_plugins()
   use 'onsails/lspkind-nvim'
  
  	use 'folke/tokyonight.nvim'
- 
+
+  use 'preservim/nerdtree'
+
   use {
     'hoob3rt/lualine.nvim',
     requires = {'kyazdani42/nvim-web-devicons'}
