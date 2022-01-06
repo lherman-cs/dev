@@ -87,6 +87,7 @@ end
 function setup_editor() 
   vim.cmd[[colorscheme tokyonight]]
 
+  -- Hide files in the background instead of closing them.
   set('hidden')
 
   -- Some servers have issues with backup files, see #649.
@@ -108,7 +109,6 @@ function setup_editor()
   set('signcolumn=yes')
 
   -- editor settings
-  set('tabstop=2 shiftwidth=2 expandtab')
   set('relativenumber')
 
   -- performmance stuff
