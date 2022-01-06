@@ -37,6 +37,14 @@ function setup_plugins()
   use 'preservim/nerdtree'
 
   use {
+    'lewis6991/gitsigns.nvim',
+    requires = {
+      'nvim-lua/plenary.nvim'
+    },
+    -- tag = 'release' -- To use the latest release
+  }
+
+  use {
     'hoob3rt/lualine.nvim',
     requires = {'kyazdani42/nvim-web-devicons'}
   }
@@ -185,6 +193,7 @@ prequire('lualine', function(m) m.setup{
   options = {theme = 'tokyonight'}
 }
 end)
+prequire('gitsigns', function(m) m.setup() end)
 
 setup_lsps()
 setup_editor()
