@@ -19,7 +19,7 @@ function setup_plugins()
 
 	use {
 	  'nvim-telescope/telescope.nvim',
-	  requires = {{'nvim-lua/popup.nvim'}, {'nvim-lua/plenary.nvim'}}
+    requires = { {'nvim-lua/plenary.nvim'} }
 	}
 
 	use 'neovim/nvim-lspconfig'
@@ -34,23 +34,9 @@ function setup_plugins()
  
  	use 'folke/tokyonight.nvim'
  
-   use {
+  use {
     'hoob3rt/lualine.nvim',
     requires = {'kyazdani42/nvim-web-devicons'}
-  }
-
-  use {
-    'lewis6991/gitsigns.nvim',
-    requires = {
-      'nvim-lua/plenary.nvim'
-    }
-  }
-
-  use 'preservim/nerdtree'
-
-  use {
-	  "folke/todo-comments.nvim",
-	  requires = "nvim-lua/plenary.nvim",
   }
 end
 
@@ -192,59 +178,12 @@ function setup_shortcuts()
   map('n', '<Tab>', '<cmd>tabnext<CR>', options)
 end
 
-prequire('telescope', function(m) m.setup{
-  defaults = {
-    vimgrep_arguments = {
-      'rg',
-      '-i',
-      '--color=never',
-      '--no-heading',
-      '--with-filename',
-      '--line-number',
-      '--column'
-    },
-    prompt_prefix = "> ",
-    selection_caret = "> ",
-    entry_prefix = "  ",
-    initial_mode = "insert",
-    selection_strategy = "reset",
-    sorting_strategy = "descending",
-    layout_strategy = "horizontal",
-    layout_config = {
-      horizontal = {
-        mirror = false,
-      },
-      vertical = {
-        mirror = false,
-      },
-    },
-    file_sorter =  require'telescope.sorters'.get_fuzzy_file,
-    file_ignore_patterns = {},
-    generic_sorter =  require'telescope.sorters'.get_generic_fuzzy_sorter,
-    winblend = 0,
-    border = {},
-    borderchars = { '─', '│', '─', '│', '╭', '╮', '╯', '╰' },
-    color_devicons = true,
-    use_less = true,
-    path_display = {},
-    set_env = { ['COLORTERM'] = 'truecolor' }, -- default = nil,
-    file_previewer = require'telescope.previewers'.vim_buffer_cat.new,
-    grep_previewer = require'telescope.previewers'.vim_buffer_vimgrep.new,
-    qflist_previewer = require'telescope.previewers'.vim_buffer_qflist.new,
-
-    -- Developer configurations: Not meant for general override
-    buffer_previewer_maker = require'telescope.previewers'.buffer_previewer_maker
-  }
-}
-end)
 prequire('packer', function(m) m.startup(setup_plugins) end)
 prequire('lualine', function(m) m.setup{
-  options = {theme = 'dracula'}
+  options = {theme = 'tokyonight'}
 }
 end)
 
-prequire('gitsigns', function(m) m.setup() end)
-prequire('todo-comments', function(m) m.setup() end)
 setup_lsps()
 setup_editor()
 setup_shortcuts()
