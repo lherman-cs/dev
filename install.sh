@@ -1,7 +1,6 @@
 #!/bin/bash
 
-BIN_DIR=/usr/local/bin
-ROOT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
+HOME_DIR=home
 
 function confirm() {
   if ! [ -f "$1" ]; then
@@ -19,16 +18,17 @@ function confirm() {
 }
 
 function link() {
-  for file in ${FILES[@]}; do
-    src="${ROOT_DIR}/${file}"
-    target="${HOME}/${file}"
+  files=$(find ${HOME_DIR} -type f)
+  for file in ${files[@]}; do
+    src="${PWD}/${file}"
+    target="${HOME}/${file#$HOME_DIR/}"
+
     mkdir -p $(dirname "$target")
-    if ! [ -f "$target" ]; then
-      ln -s "$src" "$target"
-      echo "linked ${src} to ${target}"
-    fi
+    confirm "$target" && rm -rf "$target" && ln -s "$src" "$target"
   done
 }
+
+cd "$(dirname "${BASH_SOURCE[0]}")"
 
 sudo apt install -y \
   gcc \
@@ -46,3 +46,5 @@ sudo snap install --classic \
 
 # Install rust
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+
+link
