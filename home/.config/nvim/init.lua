@@ -48,6 +48,8 @@ function setup_plugins()
     'hoob3rt/lualine.nvim',
     requires = {'kyazdani42/nvim-web-devicons'}
   }
+
+  use 'williamboman/nvim-lsp-installer'
 end
 
 function setup_lsps()
@@ -194,6 +196,13 @@ prequire('lualine', function(m) m.setup{
 }
 end)
 prequire('gitsigns', function(m) m.setup() end)
+require('telescope').setup {
+  pickers = {
+    find_files = {
+      hidden = true
+    }
+  }
+}
 
 setup_lsps()
 setup_editor()
