@@ -42,7 +42,8 @@ sudo snap install --classic \
   zsh \
   ripgrep \
   nvim \
-  htop
+  htop \
+  curl
 
 # Install rust
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
