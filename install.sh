@@ -33,17 +33,23 @@ cd "$(dirname "${BASH_SOURCE[0]}")"
 sudo apt install -y \
   gcc \
   g++ \
+  zsh \
   wl-clipboard
 
-sudo snap install --classic \
-  go \
-  node \
-  tmux \
-  zsh \
-  ripgrep \
-  nvim \
-  htop \
+snaps=(
+  go
+  node
+  tmux
+  ripgrep
+  nvim
+  htop
   curl
+)
+
+for snap in ${snaps[@]}
+do
+  sudo snap install --classic ${snap}
+done
 
 # Install rust
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
