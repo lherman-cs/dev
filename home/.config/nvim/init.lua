@@ -9,10 +9,6 @@ function prequire(module, fn)
   end
 end
 
-function set(cmd)
-	vim.api.nvim_command('set ' .. cmd)
-end
-
 function setup_plugins()
 	-- Packer can manage itself
   use 'wbthomason/packer.nvim'
@@ -100,51 +96,49 @@ function setup_editor()
   vim.cmd[[colorscheme tokyonight]]
 
   -- Hide files in the background instead of closing them.
-  set('hidden')
+  vim.opt.hidden = true
 
   -- Some servers have issues with backup files, see #649.
-  set('nobackup')
-  set('nowritebackup')
+  -- vim.opt.nobackup = true
+  -- vim.opt.nowritebackup = true
 
   -- Give more space for displaying messages.
-  set('cmdheight=2')
+  vim.opt.cmdheight = 2
 
   -- Having longer updatetime (default is 4000 ms = 4 s) leads to noticeable
   -- delays and poor user experience.
-  set('updatetime=100')
-
-  -- Don't pass messages to |ins-completion-menu|.
-  set('shortmess+=c')
+  vim.opt.updatetime = 100
 
   -- Always show the signcolumn, otherwise it would shift the text each time
   -- diagnostics appear/become resolved.
-  set('signcolumn=yes')
+  vim.opt.signcolumn = "yes"
 
   -- editor settings
-  set('relativenumber')
+  vim.opt.relativenumber = true
 
   -- performmance stuff
-  set('ttyfast')
-  set('lazyredraw')
+  vim.opt.ttyfast = true
+  vim.opt.lazyredraw = true
 
   -- storage backup
-  set('undofile')
-  set('undodir=' .. home_dir .. '/.vim/undo')
+  vim.opt.undofile = true
+  vim.opt.undodir = home_dir .. '/.vim/undo'
 
   -- spacing
-  set('tabstop=2')
-  set('expandtab')       -- Use softtabstop spaces instead of tab characters for indentation
-  set('shiftwidth=2')    -- Indent by 2 spaces when using >>, <<, == etc.
-  set('softtabstop=2')   -- Indent by 2 spaces when pressing <TAB>
+  vim.opt.tabstop = 2
+  vim.opt.expandtab = true  -- Use softtabstop spaces instead of tab characters for indentation
+  vim.opt.shiftwidth = 2    -- Indent by 2 spaces when using >>, <<, == etc.
+  vim.opt.softtabstop = 2   -- Indent by 2 spaces when pressing <TAB>
   
-  set('autoindent')      -- Keep indentation from previous line
-  set('smartindent')     -- Automatically inserts indentation in some cases
-  set('cindent')         -- Like smartindent, but stricter and more customisable
+  vim.opt.autoindent = true      -- Keep indentation from previous line
+  vim.opt.smartindent = true     -- Automatically inserts indentation in some cases
+  vim.opt.cindent = true         -- Like smartindent, but stricter and more customisable
 
-  set('timeoutlen=1000 ttimeoutlen=0')
+  vim.opt.timeoutlen = 1000 
+  vim.opt.ttimeoutlen = 0
 
   -- IDE related
-  set('completeopt=menu,menuone,noselect')
+  vim.opt.completeopt = "menu,menuone,noselect"
 end
 
 function setup_shortcuts()
