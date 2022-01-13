@@ -119,6 +119,7 @@ alias vim='nvim'
 alias vi='vim'
 alias v='vim'
 
+export PATH="/snap/bin:$PATH"
 export PATH="$HOME/go/bin:$PATH"
 export PATH="$HOME/bin:$PATH"
 export PATH="$HOME/.cargo/bin:$PATH"
