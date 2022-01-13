@@ -35,7 +35,8 @@ sudo apt install -y \
   g++ \
   zsh \
   wl-clipboard \
-  fd-find
+  fd-find \
+  python3-venv
 
 snaps=(
   go
