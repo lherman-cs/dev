@@ -123,6 +123,7 @@ export PATH="/snap/bin:$PATH"
 export PATH="$HOME/go/bin:$PATH"
 export PATH="$HOME/bin:$PATH"
 export PATH="$HOME/.cargo/bin:$PATH"
+export PATH="$HOME/Applications:$PATH"
 export EDITOR="nvim"
 export GIT_EDITOR="nvim"
 
