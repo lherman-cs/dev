@@ -50,10 +50,7 @@ function setup_plugins()
   use 'williamboman/nvim-lsp-installer'
 
   use {
-    'lewis6991/gitsigns.nvim',
-    requires = {
-      'nvim-lua/plenary.nvim'
-    }
+    'tpope/vim-fugitive'
   }
 end
 
@@ -168,25 +165,25 @@ function setup_shortcuts()
   local map = vim.api.nvim_set_keymap
   options = { noremap = true }
 
-  map('n', '<space><space>', ':Telescope find_files<cr>', options)
-  map('n', '<space>fg', ':Telescope live_grep<cr>', options)
-  map('n', '<space>fb', ':Telescope buffers<cr>', options)
-  map('n', '<space>fh', ':Telescope help_tags<cr>', options)
-  map('n', '<space>ee', ':NERDTreeToggle<cr>', options)
-  map('n', '<space>ef', ':NERDTreeFind<cr>', options)
-  map('n', '<space>tt', ':TodoTelescope<cr>', options)
+  map('n', '<leader><leader>', ':Telescope find_files<cr>', options)
+  map('n', '<leader>fg', ':Telescope live_grep<cr>', options)
+  map('n', '<leader>fb', ':Telescope buffers<cr>', options)
+  map('n', '<leader>fh', ':Telescope help_tags<cr>', options)
+  map('n', '<leader>ee', ':NERDTreeToggle<cr>', options)
+  map('n', '<leader>ef', ':NERDTreeFind<cr>', options)
+  map('n', '<leader>tt', ':TodoTelescope<cr>', options)
 
   -- lsp shortcuts
   map('n', 'gD', '<Cmd>lua vim.lsp.buf.declaration()<CR>', options)
   map('n', 'gd', '<Cmd>lua vim.lsp.buf.definition()<CR>', options)
   map('n', 'K', '<Cmd>lua vim.lsp.buf.hover()<CR>', options)
   map('n', 'gi', '<cmd>lua vim.lsp.buf.implementation()<CR>', options)
-  map('n', '<space>D', '<cmd>lua vim.lsp.buf.type_definition()<CR>', options)
-  map('n', '<space>rn', '<cmd>lua vim.lsp.buf.rename()<CR>', options)
+  map('n', '<leader>D', '<cmd>lua vim.lsp.buf.type_definition()<CR>', options)
+  map('n', '<leader>rn', '<cmd>lua vim.lsp.buf.rename()<CR>', options)
   map('n', 'gr', '<cmd>lua vim.lsp.buf.references()<CR>', options)
   map('n', '[g', '<cmd>lua vim.lsp.diagnostic.goto_prev()<CR>', options)
   map('n', ']g', '<cmd>lua vim.lsp.diagnostic.goto_next()<CR>', options)
-  map("n", "<space>ff", "<cmd>lua vim.lsp.buf.formatting()<CR>", options)
+  map("n", "<leader>ff", "<cmd>lua vim.lsp.buf.formatting()<CR>", options)
 
   -- window management
   map('n', 'st', '<cmd>split<CR><C-w>w<cmd>term<CR>', options)
@@ -205,9 +202,14 @@ function setup_shortcuts()
   -- tab management
   map('n', '<S-Tab>', '<cmd>tabprev<CR>', options)
   map('n', '<Tab>', '<cmd>tabnext<CR>', options)
+
+  -- Git management
+  map('n', '<leader>gs', '<cmd>Git<CR>', options)
+  map('n', '<leader>gc', '<cmd>Git commit<CR>', options)
+  map('n', '<leader>gp', '<cmd>Git push<CR>', options)
 end
 
- vim.g.mapleader = " "
+vim.g.mapleader = " "
 prequire('packer', function(m) m.startup(setup_plugins) end)
 prequire('lualine', function(m) m.setup{
   options = {theme = 'tokyonight'}
