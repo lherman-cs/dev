@@ -146,9 +146,10 @@ function setup_editor()
 
   -- spacing
   vim.opt.tabstop = 2
-  vim.opt.expandtab = true  -- Use softtabstop spaces instead of tab characters for indentation
   vim.opt.shiftwidth = 2    -- Indent by 2 spaces when using >>, <<, == etc.
   vim.opt.softtabstop = 2   -- Indent by 2 spaces when pressing <TAB>
+  vim.opt.expandtab = true  -- Use softtabstop spaces instead of tab characters for indentation
+  vim.opt.smarttab = true
   
   vim.opt.autoindent = true      -- Keep indentation from previous line
   vim.opt.smartindent = true     -- Automatically inserts indentation in some cases
