@@ -13,12 +13,12 @@ function setup_plugins()
 	-- Packer can manage itself
   use 'wbthomason/packer.nvim'
 
-	use {
-	  'nvim-telescope/telescope.nvim',
-    requires = { {'nvim-lua/plenary.nvim'} }
-	}
+  use {
+      'nvim-telescope/telescope.nvim',
+      requires = { {'nvim-lua/plenary.nvim'} }
+  }
 
-	use 'neovim/nvim-lspconfig'
+  use 'neovim/nvim-lspconfig'
   use 'hrsh7th/cmp-nvim-lsp'
   use 'hrsh7th/cmp-buffer'
   use 'hrsh7th/cmp-path'
@@ -30,7 +30,7 @@ function setup_plugins()
   use 'L3MON4D3/LuaSnip'
   use 'saadparwaiz1/cmp_luasnip'
  
- 	use 'folke/tokyonight.nvim'
+  use 'folke/tokyonight.nvim'
 
   use {
     'kyazdani42/nvim-tree.lua',
@@ -53,9 +53,9 @@ function setup_plugins()
 
   use 'williamboman/nvim-lsp-installer'
 
-  use {
-    'tpope/vim-fugitive'
-  }
+  use 'tpope/vim-fugitive'
+  use 'tpope/vim-sleuth'
+  
 end
 
 function setup_lsps()
@@ -149,15 +149,15 @@ function setup_editor()
   vim.opt.undodir = home_dir .. '/.vim/undo'
 
   -- spacing
-  vim.opt.tabstop = 2
-  vim.opt.shiftwidth = 2    -- Indent by 2 spaces when using >>, <<, == etc.
-  vim.opt.softtabstop = 2   -- Indent by 2 spaces when pressing <TAB>
-  vim.opt.expandtab = true  -- Use softtabstop spaces instead of tab characters for indentation
-  vim.opt.smarttab = true
+  -- vim.opt.tabstop = 2
+  -- vim.opt.shiftwidth = 2    -- Indent by 2 spaces when using >>, <<, == etc.
+  -- vim.opt.softtabstop = 2   -- Indent by 2 spaces when pressing <TAB>
+  -- vim.opt.expandtab = true  -- Use softtabstop spaces instead of tab characters for indentation
+  -- vim.opt.smarttab = true
   
-  vim.opt.autoindent = true      -- Keep indentation from previous line
-  vim.opt.smartindent = true     -- Automatically inserts indentation in some cases
-  vim.opt.cindent = true         -- Like smartindent, but stricter and more customisable
+  -- vim.opt.autoindent = true      -- Keep indentation from previous line
+  -- vim.opt.smartindent = true     -- Automatically inserts indentation in some cases
+  -- vim.opt.cindent = true         -- Like smartindent, but stricter and more customisable
 
   vim.opt.timeoutlen = 1000 
   vim.opt.ttimeoutlen = 0
@@ -294,6 +294,11 @@ end)
 -- empty setup using defaults: add your own options
 prequire('nvim-tree', function(m)
   m.setup {
+    actions = {
+      open_file = {
+          resize_window = true
+      }
+    }
   }
 end)
 
