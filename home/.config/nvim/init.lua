@@ -10,8 +10,12 @@ function prequire(module, fn)
 end
 
 function setup_plugins()
-	-- Packer can manage itself
+  -- Packer can manage itself
   use 'wbthomason/packer.nvim'
+
+  -- Cache modules to speed up startup time
+  use 'lewis6991/impatient.nvim'
+  require "impatient"
 
   use {
       'nvim-telescope/telescope.nvim',
