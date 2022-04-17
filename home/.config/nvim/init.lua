@@ -193,6 +193,9 @@ function setup_shortcuts()
   map('n', ']g', '<cmd>lua vim.lsp.diagnostic.goto_next()<CR>', options)
   map("n", "<leader>ff", "<cmd>lua vim.lsp.buf.formatting()<CR>", options)
 
+  map("n", "g,", "<C-o>", options)
+  map("n", "g.", "<C-i>", options)
+
   -- window management
   map('n', 'st', '<cmd>split<CR><C-w>w<cmd>term<CR>', options)
   map('n', 'ss', '<cmd>split<CR><C-w>w<CR>', options)
