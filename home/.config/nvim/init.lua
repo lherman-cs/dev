@@ -32,7 +32,11 @@ function setup_plugins()
  
  	use 'folke/tokyonight.nvim'
 
-  use 'preservim/nerdtree'
+  use {
+    'kyazdani42/nvim-tree.lua',
+    requires = {'kyazdani42/nvim-web-devicons'}
+  }
+
 
   use {
     'lewis6991/gitsigns.nvim',
@@ -170,9 +174,8 @@ function setup_shortcuts()
   map('n', '<leader>fg', ':Telescope live_grep<cr>', options)
   map('n', '<leader>fb', ':Telescope buffers<cr>', options)
   map('n', '<leader>fh', ':Telescope help_tags<cr>', options)
-  map('n', '<leader>ee', ':NERDTreeToggle<cr>', options)
-  map('n', '<leader>ef', ':NERDTreeFind<cr>', options)
-  map('n', '<leader>tt', ':TodoTelescope<cr>', options)
+  map('n', '<leader>ee', ':NvimTreeToggle<cr>', options)
+  map('n', '<leader>ef', ':NvimTreeFindFile<cr>', options)
 
   -- lsp shortcuts
   map('n', 'gD', '<Cmd>lua vim.lsp.buf.declaration()<CR>', options)
@@ -285,6 +288,12 @@ prequire('gitsigns', function(m)
       -- Text object
       map({'o', 'x'}, 'ih', ':<C-U>Gitsigns select_hunk<CR>')
     end
+  }
+end)
+
+-- empty setup using defaults: add your own options
+prequire('nvim-tree', function(m)
+  m.setup {
   }
 end)
 
