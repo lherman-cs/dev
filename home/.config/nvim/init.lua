@@ -144,10 +144,6 @@ function setup_editor()
   -- editor settings
   vim.opt.relativenumber = true
 
-  -- performmance stuff
-  vim.opt.ttyfast = true
-  vim.opt.lazyredraw = true
-
   -- storage backup
   vim.opt.undofile = true
   vim.opt.undodir = home_dir .. '/.vim/undo'
