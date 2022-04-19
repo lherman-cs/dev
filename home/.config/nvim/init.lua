@@ -34,6 +34,7 @@ function setup_plugins(use)
       requires = { {'nvim-lua/plenary.nvim'} }
   }
 
+  use 'tpope/vim-surround'
   use 'neovim/nvim-lspconfig'
   use 'hrsh7th/cmp-nvim-lsp'
   use 'hrsh7th/cmp-buffer'
