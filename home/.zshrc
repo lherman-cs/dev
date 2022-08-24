@@ -152,6 +152,7 @@ elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
   export PATH="$PATH:$HOME/Android/Sdk/emulator"
   export PATH="$PATH:$HOME/Android/Sdk/platform-tools"
   export PATH=$PATH:/usr/local/go/bin
+  export PATH=$PATH:$HOME/.local/bin
   export ANDROID_SDK_ROOT=$HOME/Android/Sdk
   # Export ROS envs
   [ -f "/opt/ros/noetic/setup.zsh" ] && source /opt/ros/noetic/setup.zsh
