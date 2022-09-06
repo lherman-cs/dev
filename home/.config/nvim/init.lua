@@ -70,6 +70,7 @@ function setup_plugins(use)
 
   use 'tpope/vim-fugitive'
   use 'tpope/vim-sleuth'
+  use { "rcarriga/nvim-dap-ui", requires = {"mfussenegger/nvim-dap"} }
 end
 
 function setup_lsps()
@@ -232,6 +233,48 @@ function setup_shortcuts()
   map('n', '<leader>gs', '<cmd>Git<CR>', options)
   map('n', '<leader>gc', '<cmd>Git commit<CR>', options)
   map('n', '<leader>gp', '<cmd>Git push<CR>', options)
+
+  -- Debug
+  map('n', '<leader>db', "<cmd>lua require'dap'.toggle_breakpoint()<CR>", options)
+  map('n', '<leader>dc', "<cmd>lua require'dap'.continue()<CR>", options)
+  map('n', '<leader>dss', "<cmd>lua require'dap'.step_over()<CR>", options)
+  map('n', '<leader>dsi', "<cmd>lua require'dap'.step_into()<CR>", options)
+  map('n', '<leader>dso', "<cmd>lua require'dap'.step_out()<CR>", options)
+  map('n', '<leader>di', "<cmd>lua require'dap'.repl.open()<CR>", options)
+  map('n', '<leader>du', "<cmd>lua require'dapui'.toggle()<CR>", options)
+end
+
+function setup_dap()
+  local dap, dapui = require("dap"), require("dapui")
+  dap.listeners.after.event_initialized["dapui_config"] = function()
+    dapui.open()
+  end
+  dap.listeners.before.event_terminated["dapui_config"] = function()
+    dapui.close()
+  end
+  dap.listeners.before.event_exited["dapui_config"] = function()
+    dapui.close()
+  end
+
+  dap.adapters.cppdbg = {
+    id = 'cppdbg',
+    type = 'executable',
+    command = table.concat({ vim.fn.stdpath "data", "mason", "bin", "OpenDebugAD7" }, "/"),
+  }
+  dap.configurations.cpp = {
+    {
+      name = "Launch file",
+      type = "cppdbg",
+      request = "launch",
+      program = function()
+        return vim.fn.input('Path to executable: ', vim.fn.getcwd() .. '/', 'file')
+      end,
+      cwd = '${workspaceFolder}',
+      stopAtEntry = true,
+    }
+  }
+  dap.configurations.c = dap.configurations.cpp
+  dap.configurations.rust = dap.configurations.cpp
 end
 
 vim.g.mapleader = " "
@@ -322,6 +365,11 @@ prequire('mason-lspconfig', function(m)
   }
 end)
 
+prequire('dapui', function(m)
+  m.setup()
+end)
+
 setup_lsps()
 setup_editor()
 setup_shortcuts()
+setup_dap()
