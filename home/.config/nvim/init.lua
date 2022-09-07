@@ -237,9 +237,10 @@ function setup_shortcuts()
   -- Debug
   map('n', '<leader>db', "<cmd>lua require'dap'.toggle_breakpoint()<CR>", options)
   map('n', '<leader>dc', "<cmd>lua require'dap'.continue()<CR>", options)
-  map('n', '<leader>dss', "<cmd>lua require'dap'.step_over()<CR>", options)
-  map('n', '<leader>dsi', "<cmd>lua require'dap'.step_into()<CR>", options)
-  map('n', '<leader>dso', "<cmd>lua require'dap'.step_out()<CR>", options)
+  map('n', '<F5>', "<cmd>lua require'dap'.continue()<CR>", options)
+  map('n', '<leader>ds', "<cmd>lua require'dap'.step_over()<CR>", options)
+  map('n', '<leader>di', "<cmd>lua require'dap'.step_into()<CR>", options)
+  map('n', '<leader>do', "<cmd>lua require'dap'.step_out()<CR>", options)
   map('n', '<leader>di', "<cmd>lua require'dap'.repl.open()<CR>", options)
   map('n', '<leader>du', "<cmd>lua require'dapui'.toggle()<CR>", options)
 end
