@@ -71,6 +71,7 @@ function setup_plugins(use)
   use 'tpope/vim-fugitive'
   use 'tpope/vim-sleuth'
   use { "rcarriga/nvim-dap-ui", requires = {"mfussenegger/nvim-dap"} }
+  use 'simrat39/rust-tools.nvim'
 end
 
 function setup_lsps()
@@ -257,15 +258,19 @@ function setup_dap()
     dapui.close()
   end
 
-  dap.adapters.cppdbg = {
-    id = 'cppdbg',
-    type = 'executable',
-    command = table.concat({ vim.fn.stdpath "data", "mason", "bin", "OpenDebugAD7" }, "/"),
+  dap.adapters.codelldb = {
+      type = 'server',
+      port = "${port}",
+      executable = {
+        -- CHANGE THIS to your path!
+        command = table.concat({ vim.fn.stdpath "data", "mason", "bin", "codelldb" }, "/"),
+        args = {"--port", "${port}"},
+      }
   }
   dap.configurations.cpp = {
     {
       name = "Launch file",
-      type = "cppdbg",
+      type = "codelldb",
       request = "launch",
       program = function()
         return vim.fn.input('Path to executable: ', vim.fn.getcwd() .. '/', 'file')
@@ -374,3 +379,19 @@ setup_lsps()
 setup_editor()
 setup_shortcuts()
 setup_dap()
+
+prequire('rust-tools', function(m)
+  m.setup({
+    server = {
+      on_attach = function(_, bufnr)
+        -- Hover actions
+        vim.keymap.set("n", "<C-space>", m.hover_actions.hover_actions, { buffer = bufnr })
+        -- Code action groups
+        vim.keymap.set("n", "<Leader>a", m.code_action_group.code_action_group, { buffer = bufnr })
+      end,
+    },
+    dap = {
+      adapter = require('dap').adapters.codelldb
+    }
+  })
+end)
