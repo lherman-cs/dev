@@ -33,7 +33,6 @@ cd "$(dirname "${BASH_SOURCE[0]}")"
 sudo apt install -y \
   gcc \
   g++ \
-  zsh \
   wl-clipboard \
   fd-find \
   python3-venv
@@ -54,9 +53,6 @@ done
 
 # Install rust
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-
-# Install zsh awesome
-sh -c "$(curl -fsSL https://raw.github.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"
 
 cargo install ripgrep
 
