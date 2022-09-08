@@ -133,6 +133,7 @@ alias port='cd $(cat ~/.sd)'
 alias vim='nvim'
 alias vi='vim'
 alias v='vim'
+alias tasks="vim $HOME/tasks.txt"
 
 export PATH="/snap/bin:$PATH"
 export PATH="$HOME/go/bin:$PATH"

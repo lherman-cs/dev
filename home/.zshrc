@@ -1,21 +1,3 @@
-command_not_found_handler () {
-    if [ -x /usr/lib/command-not-found ]
-    then
-        /usr/lib/command-not-found -- "$1"
-        return $?
-    else
-        if [ -x /usr/share/command-not-found/command-not-found ]
-        then
-            /usr/share/command-not-found/command-not-found -- "$1"
-            return $?
-        else
-            printf "%s: command not found\n" "$1" >&2
-            return 127
-        fi
-    fi
-}
-
-
 # If you come from bash you might have to change your $PATH.
 # export PATH=$HOME/bin:/usr/local/bin:$PATH
 
@@ -115,9 +97,64 @@ source $ZSH/oh-my-zsh.sh
 # Example aliases
 # alias zshconfig="mate ~/.zshrc"
 # alias ohmyzsh="mate ~/.oh-my-zsh"
+# If not running interactively, don't do anything
+
+# enable color support of ls and also add handy aliases
+if [ -x /usr/bin/dircolors ]; then
+    test -r ~/.dircolors && eval "$(dircolors -b ~/.dircolors)" || eval "$(dircolors -b)"
+    alias ls='ls --color=auto'
+    #alias dir='dir --color=auto'
+    #alias vdir='vdir --color=auto'
+
+    alias grep='grep --color=auto'
+    alias fgrep='fgrep --color=auto'
+    alias egrep='egrep --color=auto'
+fi
+
+# colored GCC warnings and errors
+#export GCC_COLORS='error=01;31:warning=01;35:note=01;36:caret=01;32:locus=01:quote=01'
+
+# some more ls aliases
+alias ll='ls -alF'
+alias la='ls -A'
+alias l='ls -CF'
+
+# Add an "alert" alias for long running commands.  Use like so:
+#   sleep 10; alert
+alias alert='notify-send --urgency=low -i "$([ $? = 0 ] && echo terminal || echo error)" "$(history|tail -n1|sed -e '\''s/^\s*[0-9]\+\s*//;s/[;&|]\s*alert$//'\'')"'
+
+# Alias definitions.
+# You may want to put all your additions into a separate file like
+# ~/.bash_aliases, instead of adding them here directly.
+# See /usr/share/doc/bash-doc/examples in the bash-doc package.
+
+ # if the command-not-found package is installed, use it
+if [ -x /usr/lib/command-not-found -o -x /usr/share/command-not-found/command-not-found ]; then
+    function command_not_found_handle {
+        # check because c-n-f could've been removed in the meantime
+        if [ -x /usr/lib/command-not-found ]; then
+	   /usr/lib/command-not-found -- "$1"
+           return $?
+        elif [ -x /usr/share/command-not-found/command-not-found ]; then
+	   /usr/share/command-not-found/command-not-found -- "$1"
+           return $?
+	else
+	   printf "%s: command not found\n" "$1" >&2
+	   return 127
+	fi
+    }
+fi
+
+alias ..="cd .."
+alias ...="cd ../.."
+alias ....="cd ../../.."
+alias .....="cd ../../../.."
+alias mark="pwd > ~/.sd"
+alias port='cd $(cat ~/.sd)'
 alias vim='nvim'
 alias vi='vim'
 alias v='vim'
+alias tasks="vim $HOME/tasks.txt"
 
 export PATH="/snap/bin:$PATH"
 export PATH="$HOME/go/bin:$PATH"
@@ -127,59 +164,21 @@ export PATH="$HOME/Applications:$PATH"
 export EDITOR="nvim"
 export GIT_EDITOR="nvim"
 
-[ -f "$HOME/.secret/aws" ] && source "$HOME/.secret/aws"
+# Ubuntu Specific
+export PATH="$PATH:$HOME/Android/Sdk/emulator"
+export PATH="$PATH:$HOME/Android/Sdk/platform-tools"
+export PATH=$PATH:/usr/local/go/bin
+export PATH=$PATH:$HOME/.local/bin
+export ANDROID_SDK_ROOT=$HOME/Android/Sdk
 
-# Mac Specific
-if [[ "$OSTYPE" == "darwin"* ]]; then
-  #export PATH="/usr/local/opt/llvm/bin/:$PATH"
-  #export PATH="/usr/local/sbin:$PATH"
-  alias lldb="/usr/bin/lldb"
-  export CPATH=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include
-  export PATH="$PATH:$HOME/Documents/flutter/flutter/bin"
-  export PATH="/usr/local/anaconda3/bin:$PATH"
-  export ANDROID_HOME=$HOME/Library/Android/sdk
-  export PATH=$PATH:$ANDROID_HOME/emulator
-  export PATH=$PATH:$ANDROID_HOME/tools
-  export PATH=$PATH:$ANDROID_HOME/tools/bin
-  export PATH=$PATH:$ANDROID_HOME/platform-tools
-
-  export NVM_DIR="$HOME/.nvm"
-    [ -s "$(brew --prefix)/opt/nvm/nvm.sh" ] && . "$(brew --prefix)/opt/nvm/nvm.sh" # This loads nvm
-    [ -s "$(brew --prefix)/opt/nvm/etc/bash_completion.d/nvm" ] && . "$(brew --prefix)/opt/nvm/etc/bash_completion.d/nvm" # This loads nvm bash_completion
-elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
-  # Ubuntu Specific
-  export SHARED_DRIVE_PATH=/mnt/shared
-  export PATH="$PATH:$HOME/Android/Sdk/emulator"
-  export PATH="$PATH:$HOME/Android/Sdk/platform-tools"
-  export PATH=$PATH:/usr/local/go/bin
-  export PATH=$PATH:$HOME/.local/bin
-  export ANDROID_SDK_ROOT=$HOME/Android/Sdk
-  # Export ROS envs
-  [ -f "/opt/ros/noetic/setup.zsh" ] && source /opt/ros/noetic/setup.zsh
-
-  export NVM_DIR="$([ -z "${XDG_CONFIG_HOME-}" ] && printf %s "${HOME}/.nvm" || printf %s "${XDG_CONFIG_HOME}/nvm")"
-  [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh" # This loads nvm
-fi
-
-# >>> conda initialize >>>
-# !! Contents within this block are managed by 'conda init' !!
-__conda_setup="$('/home/lukas/anaconda3/bin/conda' 'shell.zsh' 'hook' 2> /dev/null)"
-if [ $? -eq 0 ]; then
-    eval "$__conda_setup"
-else
-    if [ -f "/home/lukas/anaconda3/etc/profile.d/conda.sh" ]; then
-        . "/home/lukas/anaconda3/etc/profile.d/conda.sh"
-    else
-        export PATH="/home/lukas/anaconda3/bin:$PATH"
-    fi
-fi
-unset __conda_setup
-# <<< conda initialize <<<
+export NVM_DIR="$([ -z "${XDG_CONFIG_HOME-}" ] && printf %s "${HOME}/.nvm" || printf %s "${XDG_CONFIG_HOME}/nvm")"
+[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh" # This loads nvm
 
 # 10ms for key sequences
 export KEYTIMEOUT=1
 [ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"  # This loads nvm bash_completion
 export TERM=xterm
 
-export TIMER_FORMAT='[%d]'
-export TIMER_PRECISION=3
+[ -s "$HOME/.work.rc" ] && source $HOME/.work.rc
+. "$HOME/.cargo/env"
+
