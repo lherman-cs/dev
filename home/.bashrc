@@ -161,3 +161,5 @@ export TERM=xterm
 [ -s "$HOME/.work.bashrc" ] && source $HOME/.work.bashrc
 . "$HOME/.cargo/env"
 
+
+export PATH=$PATH:$HOME/.toolbox/bin

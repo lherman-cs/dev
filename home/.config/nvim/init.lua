@@ -193,6 +193,7 @@ function setup_shortcuts()
   map('n', '<leader><leader>', ':Telescope find_files<cr>', options)
   map('n', '<leader>fg', ':Telescope live_grep<cr>', options)
   map('n', '<leader>fb', ':Telescope buffers<cr>', options)
+  map('n', '<leader>fm', ':Telescope marks<cr>', options)
   map('n', '<leader>fh', ':Telescope help_tags<cr>', options)
   map('n', '<leader>ee', ':NvimTreeToggle<cr>', options)
   map('n', '<leader>ef', ':NvimTreeFindFile<cr>', options)
@@ -357,7 +358,9 @@ prequire('nvim-tree', function(m)
 end)
 
 prequire('mason', function(m)
-  m.setup()
+  m.setup({
+    log_level = vim.log.levels.DEBUG
+  })
 end)
 
 prequire('mason-lspconfig', function(m)

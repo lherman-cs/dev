@@ -182,3 +182,5 @@ export TERM=xterm
 [ -s "$HOME/.work.rc" ] && source $HOME/.work.rc
 . "$HOME/.cargo/env"
 
+
+export PATH=$PATH:$HOME/.toolbox/bin
