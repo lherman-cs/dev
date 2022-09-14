@@ -200,9 +200,9 @@ function setup_shortcuts()
   map('n', '<leader>ef', ':NvimTreeFindFile<cr>', options)
 
   -- lsp shortcuts
-  map('n', 'gd', ':Telescope lsp_definitions', options)
+  map('n', 'gd', ':Telescope lsp_definitions<cr>', options)
   map('n', 'K', '<Cmd>lua vim.lsp.buf.hover()<CR>', options)
-  map('n', 'gi', ':Telescope lsp_implementations', options)
+  map('n', 'gi', ':Telescope lsp_implementations<cr>', options)
   map('n', '<leader>rn', '<cmd>lua vim.lsp.buf.rename()<CR>', options)
   map('n', 'gr', ':Telescope lsp_references<CR>', options)
   map("n", "<leader>ff", "<cmd>lua vim.lsp.buf.formatting()<CR>", options)
