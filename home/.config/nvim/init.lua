@@ -54,14 +54,7 @@ function setup_plugins(use)
     requires = {'kyazdani42/nvim-web-devicons'}
   }
 
-
-  use {
-    'lewis6991/gitsigns.nvim',
-    requires = {
-      'nvim-lua/plenary.nvim'
-    },
-    -- tag = 'release' -- To use the latest release
-  }
+  use 'lewis6991/gitsigns.nvim'
 
   use {
     'hoob3rt/lualine.nvim',
@@ -211,13 +204,12 @@ function setup_shortcuts()
   map("n", "g.", "<C-i>", options)
 
   -- window management
-  map('n', 'st', '<cmd>split<CR><C-w>w<cmd>term<CR>', options)
-  map('n', 'ss', '<cmd>split<CR><C-w>w<CR>', options)
-  map('n', 'sv', '<cmd>vsplit<CR><C-w>w<CR>', options)
-  map('', 'sh', '<C-w>h', options)
-  map('', 'sk', '<C-w>k', options)
-  map('', 'sj', '<C-w>j', options)
-  map('', 'sl', '<C-w>l', options)
+  -- map('n', 'ss', '<cmd>split<CR><C-w>w<CR>', options)
+  -- map('n', 'sv', '<cmd>vsplit<CR><C-w>w<CR>', options)
+  -- map('', 'sh', '<C-w>h', options)
+  -- map('', 'sk', '<C-w>k', options)
+  -- map('', 'sj', '<C-w>j', options)
+  -- map('', 'sl', '<C-w>l', options)
 
   map('n', '<C-left>', '<cmd>vertical resize -3<CR>', options)
   map('n', '<C-right>', '<cmd>vertical resize +3<CR>', options)
@@ -229,9 +221,33 @@ function setup_shortcuts()
   map('n', '<Tab>', '<cmd>tabnext<CR>', options)
 
   -- Git management
-  map('n', '<leader>gs', '<cmd>Git<CR>', options)
-  map('n', '<leader>gc', '<cmd>Git commit<CR>', options)
-  map('n', '<leader>gp', '<cmd>Git push<CR>', options)
+  map('n', '<leader>vc', ':Telescope git_commits<cr>', options)
+  map('n', '<leader>vC', ':Telescope git_bcommits<cr>', options)
+  map('n', '<leader>vs', ':Telescope git_status<cr>', options)
+  map('n', '<leader>vS', ':Telescope git_stash<cr>', options)
+  -- map('n', '<leader>gs', '<cmd>Git<CR>', options)
+  -- map('n', '<leader>gc', '<cmd>Git commit<CR>', options)
+  -- map('n', '<leader>gp', '<cmd>Git push<CR>', options)
+  prequire('gitsigns', function(m)
+    m.setup {
+      on_attach = function(bufnr)
+        local gs = package.loaded.gitsigns
+
+        local function map(mode, l, r, opts)
+          opts = opts or {}
+          opts.buffer = bufnr
+          vim.keymap.set(mode, l, r, opts)
+        end
+
+        -- Actions
+        map({'n', 'v'}, '<leader>vh', gs.stage_hunk)
+        map({'n', 'v'}, '<leader>vr', gs.reset_hunk)
+        map({'n', 'v'}, '<leader>vH', gs.undo_stage_hunk)
+        map('n', '<leader>vb', function() gs.blame_line{full=true} end)
+      end
+    }
+  end)
+
 
   -- Debug
   map('n', '<leader>db', "<cmd>lua require'dap'.toggle_breakpoint()<CR>", options)
@@ -242,6 +258,7 @@ function setup_shortcuts()
   map('n', '<leader>do', "<cmd>lua require'dap'.step_out()<CR>", options)
   map('n', '<leader>di', "<cmd>lua require'dap'.repl.open()<CR>", options)
   map('n', '<leader>du', "<cmd>lua require'dapui'.toggle()<CR>", options)
+
 end
 
 function setup_dap()
@@ -287,7 +304,6 @@ prequire('lualine', function(m) m.setup{
   options = {theme = 'tokyonight'}
 }
 end)
-prequire('gitsigns', function(m) m.setup() end)
 prequire('telescope', function(m) m.setup{
   defaults = {
     vimgrep_arguments = {
@@ -307,40 +323,6 @@ prequire('telescope', function(m) m.setup{
     }
   }
 }
-end)
-
-prequire('gitsigns', function(m)
-  m.setup {
-    on_attach = function(bufnr)
-      local gs = package.loaded.gitsigns
-
-      local function map(mode, l, r, opts)
-        opts = opts or {}
-        opts.buffer = bufnr
-        vim.keymap.set(mode, l, r, opts)
-      end
-
-      -- Navigation
-      map('n', ']c', "&diff ? ']c' : '<cmd>Gitsigns next_hunk<CR>'", {expr=true})
-      map('n', '[c', "&diff ? '[c' : '<cmd>Gitsigns prev_hunk<CR>'", {expr=true})
-
-      -- Actions
-      map({'n', 'v'}, '<leader>hs', gs.stage_hunk)
-      map({'n', 'v'}, '<leader>hr', gs.reset_hunk)
-      map('n', '<leader>hS', gs.stage_buffer)
-      map('n', '<leader>hu', gs.undo_stage_hunk)
-      map('n', '<leader>hR', gs.reset_buffer)
-      map('n', '<leader>hp', gs.preview_hunk)
-      map('n', '<leader>hb', function() gs.blame_line{full=true} end)
-      map('n', '<leader>tb', gs.toggle_current_line_blame)
-      map('n', '<leader>hd', gs.diffthis)
-      map('n', '<leader>hD', function() gs.diffthis('~') end)
-      map('n', '<leader>td', gs.toggle_deleted)
-
-      -- Text object
-      map({'o', 'x'}, 'ih', ':<C-U>Gitsigns select_hunk<CR>')
-    end
-  }
 end)
 
 -- empty setup using defaults: add your own options
