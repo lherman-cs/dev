@@ -177,6 +177,9 @@ function setup_editor()
 
   -- IDE related
   vim.opt.completeopt = "menu,menuone,noselect"
+
+  vim.opt.cursorcolumn = true
+  vim.opt.cursorline = true
 end
 
 function setup_shortcuts()
