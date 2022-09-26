@@ -226,6 +226,7 @@ function setup_shortcuts()
   -- Git management
   map('n', '<leader>vc', ':Telescope git_commits<cr>', options)
   map('n', '<leader>vC', ':Telescope git_bcommits<cr>', options)
+  -- map('n', '<leader>vC', ':Telescope git_bcommits({git_command: {"git", "log", "--abbrev_commit", "--follow"}})<cr>', options)
   map('n', '<leader>vs', ':Telescope git_status<cr>', options)
   map('n', '<leader>vS', ':Telescope git_stash<cr>', options)
   -- map('n', '<leader>gs', '<cmd>Git<CR>', options)
