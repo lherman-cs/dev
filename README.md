@@ -15,3 +15,8 @@ https://github.com/neovim/nvim-lspconfig/blob/master/CONFIG.md
 2.) Unzip and copy to ~/.fonts
 
 3.) Run the command fc-cache -fv to manually rebuild the font cache
+
+
+## Turn on DND on Gnome
+
+` gsettings set org.gnome.desktop.notifications show-banners false`
