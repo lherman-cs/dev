@@ -220,8 +220,8 @@ function setup_shortcuts()
   map('n', '<C-down>', '<cmd>resize -3<CR>', options)
 
   -- tab management
-  map('n', '<S-Tab>', '<cmd>tabprev<CR>', options)
-  map('n', '<Tab>', '<cmd>tabnext<CR>', options)
+  -- map('n', '<S-Tab>', '<cmd>tabprev<CR>', options)
+  -- map('n', '<Tab>', '<cmd>tabnext<CR>', options)
 
   -- Git management
   map('n', '<leader>vc', ':Telescope git_commits<cr>', options)
