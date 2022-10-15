@@ -1,9 +1,10 @@
 local home_dir = os.getenv("HOME")
 
 local fn = vim.fn
-local install_path = fn.stdpath('data')..'/site/pack/packer/start/packer.nvim'
+local install_path = fn.stdpath('data') .. '/site/pack/packer/start/packer.nvim'
 if fn.empty(fn.glob(install_path)) > 0 then
-  packer_bootstrap = fn.system({'git', 'clone', '--depth', '1', 'https://github.com/wbthomason/packer.nvim', install_path})
+  packer_bootstrap = fn.system({ 'git', 'clone', '--depth', '1', 'https://github.com/wbthomason/packer.nvim',
+    install_path })
 end
 
 function prequire(module, fn)
@@ -11,7 +12,7 @@ function prequire(module, fn)
   if ok then
     fn(res)
   else
-    print(module .. " doesn't exist") 
+    print(module .. " doesn't exist")
   end
 end
 
@@ -30,8 +31,8 @@ function setup_plugins(use)
   require "impatient"
 
   use {
-      'nvim-telescope/telescope.nvim',
-      requires = { {'nvim-lua/plenary.nvim'} }
+    'nvim-telescope/telescope.nvim',
+    requires = { { 'nvim-lua/plenary.nvim' } }
   }
 
   use 'tpope/vim-surround'
@@ -46,30 +47,31 @@ function setup_plugins(use)
   use 'hrsh7th/cmp-cmdline'
   use 'hrsh7th/nvim-cmp'
   use 'hrsh7th/cmp-vsnip'
+  use 'hrsh7th/vim-vsnip'
 
   use 'folke/tokyonight.nvim'
 
   use {
     'kyazdani42/nvim-tree.lua',
-    requires = {'kyazdani42/nvim-web-devicons'}
+    requires = { 'kyazdani42/nvim-web-devicons' }
   }
 
   use 'lewis6991/gitsigns.nvim'
 
   use {
     'hoob3rt/lualine.nvim',
-    requires = {'kyazdani42/nvim-web-devicons'}
+    requires = { 'kyazdani42/nvim-web-devicons' }
   }
 
   use 'tpope/vim-fugitive'
   use 'tpope/vim-sleuth'
-  use { "rcarriga/nvim-dap-ui", requires = {"mfussenegger/nvim-dap"} }
+  use { "rcarriga/nvim-dap-ui", requires = { "mfussenegger/nvim-dap" } }
   use 'simrat39/rust-tools.nvim'
 end
 
 function setup_lsps()
   -- Setup nvim-cmp.
-  local cmp = require'cmp'
+  local cmp = require 'cmp'
 
   cmp.setup({
     snippet = {
@@ -130,11 +132,11 @@ function setup_lsps()
   })
 
   -- Setup lspconfig.
-  local capabilities = require('cmp_nvim_lsp').update_capabilities(vim.lsp.protocol.make_client_capabilities())
+  local capabilities = require('cmp_nvim_lsp').default_capabilities()
 end
 
-function setup_editor() 
-  vim.cmd[[colorscheme tokyonight]]
+function setup_editor()
+  vim.cmd [[colorscheme tokyonight]]
 
   -- Hide files in the background instead of closing them.
   vim.opt.hidden = true
@@ -167,12 +169,12 @@ function setup_editor()
   -- vim.opt.softtabstop = 2   -- Indent by 2 spaces when pressing <TAB>
   -- vim.opt.expandtab = true  -- Use softtabstop spaces instead of tab characters for indentation
   -- vim.opt.smarttab = true
-  
+
   -- vim.opt.autoindent = true      -- Keep indentation from previous line
   -- vim.opt.smartindent = true     -- Automatically inserts indentation in some cases
   -- vim.opt.cindent = true         -- Like smartindent, but stricter and more customisable
 
-  vim.opt.timeoutlen = 1000 
+  vim.opt.timeoutlen = 1000
   vim.opt.ttimeoutlen = 0
 
   -- IDE related
@@ -244,10 +246,10 @@ function setup_shortcuts()
         end
 
         -- Actions
-        map({'n', 'v'}, '<leader>vh', gs.stage_hunk)
-        map({'n', 'v'}, '<leader>vr', gs.reset_hunk)
-        map({'n', 'v'}, '<leader>vH', gs.undo_stage_hunk)
-        map('n', '<leader>vb', function() gs.blame_line{full=true} end)
+        map({ 'n', 'v' }, '<leader>vh', gs.stage_hunk)
+        map({ 'n', 'v' }, '<leader>vr', gs.reset_hunk)
+        map({ 'n', 'v' }, '<leader>vH', gs.undo_stage_hunk)
+        map('n', '<leader>vb', function() gs.blame_line { full = true } end)
       end
     }
   end)
@@ -278,13 +280,13 @@ function setup_dap()
   end
 
   dap.adapters.codelldb = {
-      type = 'server',
-      port = "${port}",
-      executable = {
-        -- CHANGE THIS to your path!
-        command = table.concat({ vim.fn.stdpath "data", "mason", "bin", "codelldb" }, "/"),
-        args = {"--port", "${port}"},
-      }
+    type = 'server',
+    port = "${port}",
+    executable = {
+      -- CHANGE THIS to your path!
+      command = table.concat({ vim.fn.stdpath "data", "mason", "bin", "codelldb" }, "/"),
+      args = { "--port", "${port}" },
+    }
   }
   dap.configurations.cpp = {
     {
@@ -304,29 +306,29 @@ end
 
 vim.g.mapleader = " "
 prequire('packer', function(m) m.startup(setup_plugins) end)
-prequire('lualine', function(m) m.setup{
-  options = {theme = 'tokyonight'}
-}
+prequire('lualine', function(m) m.setup {
+    options = { theme = 'tokyonight' }
+  }
 end)
-prequire('telescope', function(m) m.setup{
-  defaults = {
-    vimgrep_arguments = {
-      'rg',
-      '--hidden',
-      '--color=never', 
-      '--no-heading',
-      '--with-filename',
-      '--line-number',
-      '--column', 
-      '--smart-case'
-    }
-  },
-  pickers = {
-    find_files = {
-      hidden = true
+prequire('telescope', function(m) m.setup {
+    defaults = {
+      vimgrep_arguments = {
+        'rg',
+        '--hidden',
+        '--color=never',
+        '--no-heading',
+        '--with-filename',
+        '--line-number',
+        '--column',
+        '--smart-case'
+      }
+    },
+    pickers = {
+      find_files = {
+        hidden = true
+      }
     }
   }
-}
 end)
 
 -- empty setup using defaults: add your own options
@@ -334,7 +336,7 @@ prequire('nvim-tree', function(m)
   m.setup {
     actions = {
       open_file = {
-          resize_window = false
+        resize_window = false
       }
     }
   }
@@ -351,8 +353,8 @@ prequire('mason-lspconfig', function(m)
   local lspconfig = require('lspconfig')
   m.setup_handlers {
     -- default handler - setup with default settings
-    function (server_name)
-        lspconfig[server_name].setup {}
+    function(server_name)
+      lspconfig[server_name].setup {}
     end
   }
 end)
