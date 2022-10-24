@@ -308,7 +308,13 @@ end
 vim.g.mapleader = " "
 prequire('packer', function(m) m.startup(setup_plugins) end)
 prequire('lualine', function(m) m.setup {
-    options = { theme = 'tokyonight' }
+    options = { theme = 'tokyonight' },
+    extensions = {
+      'fugitive',
+      'nvim-dap-ui',
+      'nvim-tree',
+      'toggleterm'
+    }
   }
 end)
 prequire('telescope', function(m) m.setup {
