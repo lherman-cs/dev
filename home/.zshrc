@@ -186,9 +186,9 @@ export PATH=$PATH:$HOME/.toolbox/bin
 alias icat="kitty +kitten icat"
 
 
-# if type "mosh" > /dev/null; then
-#    alias ssh="mosh"
-# fi
+if type "mosh" > /dev/null; then
+   alias ssh="mosh"
+fi
 
 if type "zellij" > /dev/null; then
    alias tmux="zellij --layout $HOME/.config/zellij/layout.kdl"
