@@ -41,7 +41,6 @@ function install_deps() {
   snaps=(
     go
     node
-    tmux
     nvim
     htop
     curl
@@ -58,7 +57,7 @@ function install_deps() {
   # Install zsh awesome
   sh -c "$(curl -fsSL https://raw.github.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"
 
-  cargo install ripgrep
+  cargo install ripgrep zellij
 }
 
 # install_deps
