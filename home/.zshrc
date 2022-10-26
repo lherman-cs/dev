@@ -152,6 +152,7 @@ alias port='cd $(cat ~/.sd)'
 alias vim='nvim'
 alias vi='vim'
 alias v='vim'
+alias p='python3'
 alias tasks="vim $HOME/tasks.txt"
 
 export PATH="/snap/bin:$PATH"
@@ -182,3 +183,4 @@ export TERM=xterm
 
 
 export PATH=$PATH:$HOME/.toolbox/bin
+alias icat="kitty +kitten icat"

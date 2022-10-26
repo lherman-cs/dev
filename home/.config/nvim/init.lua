@@ -183,6 +183,7 @@ function setup_editor()
 
   vim.opt.cursorcolumn = true
   vim.opt.cursorline = true
+  vim.opt.diffopt = vim.opt.diffopt + "vertical"
 end
 
 function setup_shortcuts()
