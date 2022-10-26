@@ -176,7 +176,7 @@ export NVM_DIR="$([ -z "${XDG_CONFIG_HOME-}" ] && printf %s "${HOME}/.nvm" || pr
 # 10ms for key sequences
 export KEYTIMEOUT=1
 [ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"  # This loads nvm bash_completion
-export TERM=xterm
+# export TERM=xterm
 
 [ -s "$HOME/.work.rc" ] && source $HOME/.work.rc
 . "$HOME/.cargo/env"
@@ -191,6 +191,6 @@ alias icat="kitty +kitten icat"
 # fi
 
 if type "zellij" > /dev/null; then
-   alias tmux="zellij"
+   alias tmux="zellij --layout $HOME/.config/zellij/layout.kdl"
 fi
 

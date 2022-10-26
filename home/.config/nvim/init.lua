@@ -68,6 +68,7 @@ function setup_plugins(use)
   use { "rcarriga/nvim-dap-ui", requires = { "mfussenegger/nvim-dap" } }
   use 'simrat39/rust-tools.nvim'
   use "akinsho/toggleterm.nvim"
+  use 'ray-x/aurora'
 end
 
 function setup_lsps()
@@ -137,7 +138,7 @@ function setup_lsps()
 end
 
 function setup_editor()
-  vim.cmd [[colorscheme tokyonight]]
+  vim.cmd [[colorscheme aurora]]
 
   -- Hide files in the background instead of closing them.
   vim.opt.hidden = true
