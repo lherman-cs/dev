@@ -61,5 +61,5 @@ function install_deps() {
   cargo install ripgrep
 }
 
-install_deps
+# install_deps
 link

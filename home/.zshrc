@@ -184,3 +184,9 @@ export TERM=xterm
 
 export PATH=$PATH:$HOME/.toolbox/bin
 alias icat="kitty +kitten icat"
+
+
+if type "mosh" > /dev/null; then
+   alias ssh="mosh"
+fi
+
