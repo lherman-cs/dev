@@ -18,6 +18,7 @@ function confirm() {
 }
 
 function link() {
+  cd "$(dirname "${BASH_SOURCE[0]}")"
   files=$(find ${HOME_DIR} -type f)
   for file in ${files[@]}; do
     src="${PWD}/${file}"
@@ -28,36 +29,37 @@ function link() {
   done
 }
 
-cd "$(dirname "${BASH_SOURCE[0]}")"
+function install_deps() {
+  sudo apt install -y \
+    gcc \
+    g++ \
+    zsh \
+    wl-clipboard \
+    fd-find \
+    python3-venv
 
-sudo apt install -y \
-  gcc \
-  g++ \
-  zsh \
-  wl-clipboard \
-  fd-find \
-  python3-venv
+  snaps=(
+    go
+    node
+    tmux
+    nvim
+    htop
+    curl
+  )
 
-snaps=(
-  go
-  node
-  tmux
-  nvim
-  htop
-  curl
-)
+  for snap in ${snaps[@]}
+  do
+    sudo snap install --classic ${snap}
+  done
 
-for snap in ${snaps[@]}
-do
-  sudo snap install --classic ${snap}
-done
+  # Install rust
+  curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 
-# Install rust
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+  # Install zsh awesome
+  sh -c "$(curl -fsSL https://raw.github.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"
 
-# Install zsh awesome
-sh -c "$(curl -fsSL https://raw.github.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"
+  cargo install ripgrep
+}
 
-cargo install ripgrep
-
+install_deps
 link
