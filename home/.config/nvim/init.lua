@@ -69,6 +69,7 @@ function setup_plugins(use)
   use 'simrat39/rust-tools.nvim'
   use "akinsho/toggleterm.nvim"
   use 'ray-x/aurora'
+  use 'navarasu/onedark.nvim'
 end
 
 function setup_lsps()
@@ -138,7 +139,7 @@ function setup_lsps()
 end
 
 function setup_editor()
-  vim.cmd [[colorscheme aurora]]
+  -- vim.cmd [[colorscheme onedark]]
 
   -- Hide files in the background instead of closing them.
   vim.opt.hidden = true
@@ -185,6 +186,7 @@ function setup_editor()
   vim.opt.cursorcolumn = true
   vim.opt.cursorline = true
   vim.opt.diffopt = vim.opt.diffopt + "vertical"
+  -- vim.opt.termguicolors = false
 end
 
 function setup_shortcuts()
@@ -391,6 +393,14 @@ prequire('rust-tools', function(m)
       adapter = require('dap').adapters.codelldb
     }
   })
+end)
+
+prequire('onedark', function(m)
+  m.setup {
+    style = 'dark'
+  }
+
+  m.load()
 end)
 
 
