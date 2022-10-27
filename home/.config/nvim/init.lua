@@ -49,8 +49,6 @@ function setup_plugins(use)
   use 'hrsh7th/cmp-vsnip'
   use 'hrsh7th/vim-vsnip'
 
-  use 'folke/tokyonight.nvim'
-
   use {
     'kyazdani42/nvim-tree.lua',
     requires = { 'kyazdani42/nvim-web-devicons' }
@@ -68,8 +66,7 @@ function setup_plugins(use)
   use { "rcarriga/nvim-dap-ui", requires = { "mfussenegger/nvim-dap" } }
   use 'simrat39/rust-tools.nvim'
   use "akinsho/toggleterm.nvim"
-  use 'ray-x/aurora'
-  use 'navarasu/onedark.nvim'
+  use 'shaunsingh/nord.nvim'
 end
 
 function setup_lsps()
@@ -312,7 +309,7 @@ end
 vim.g.mapleader = " "
 prequire('packer', function(m) m.startup(setup_plugins) end)
 prequire('lualine', function(m) m.setup {
-    options = { theme = 'tokyonight' },
+    options = { theme = 'nord' },
     extensions = {
       'fugitive',
       'nvim-dap-ui',
@@ -395,14 +392,9 @@ prequire('rust-tools', function(m)
   })
 end)
 
-prequire('onedark', function(m)
-  m.setup {
-    style = 'dark'
-  }
-
-  m.load()
+prequire('nord', function(m)
+  m.set()
 end)
-
 
 prequire("toggleterm", function(m)
   m.setup {
