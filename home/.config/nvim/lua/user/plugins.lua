@@ -16,15 +16,8 @@ function setup_plugins(use)
   -- Packer can manage itself
   use 'wbthomason/packer.nvim'
 
-  -- Automatically set up your configuration after cloning packer.nvim
-  -- Put this at the end after all plugins
-  if packer_bootstrap then
-    require('packer').sync()
-  end
-
   -- Cache modules to speed up startup time
   use 'lewis6991/impatient.nvim'
-  require "impatient"
 
   use {
     'nvim-telescope/telescope.nvim',
@@ -63,7 +56,15 @@ function setup_plugins(use)
   use 'simrat39/rust-tools.nvim'
   use "akinsho/toggleterm.nvim"
   use 'shaunsingh/nord.nvim'
+
+  -- Automatically set up your configuration after cloning packer.nvim
+  -- Put this at the end after all plugins
+  if packer_bootstrap then
+    require('packer').sync()
+  end
 end
+
+require "impatient"
 
 require('packer').startup(setup_plugins)
 
