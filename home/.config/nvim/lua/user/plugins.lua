@@ -109,7 +109,14 @@ require('nvim-tree').setup {
 
 require('nord').set()
 require('mason').setup()
-require('mason-lspconfig').setup()
+local mason_lsp = require('mason-lspconfig')
+local lspconfig = require('lspconfig')
+mason_lsp.setup()
+mason_lsp.setup_handlers {
+  function(server_name)
+      lspconfig[server_name].setup {}
+  end
+}
 require('dapui').setup()
 
 local rt = require('rust-tools')
