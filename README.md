@@ -30,3 +30,8 @@ gsettings set org.gnome.desktop.default-applications.terminal exec /usr/bin/alac
 gsettings set org.gnome.desktop.default-applications.terminal exec-arg "--working-directory"
 ```
 
+## Toggle text mode
+
+Text mode: `sudo systemctl isolate multi-user.target`
+Graphical mode: `sudo systemctl isolate graphical.target`
+
