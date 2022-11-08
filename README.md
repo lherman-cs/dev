@@ -33,5 +33,12 @@ gsettings set org.gnome.desktop.default-applications.terminal exec-arg "--workin
 ## Toggle text mode
 
 Text mode: `sudo systemctl isolate multi-user.target`
+
 Graphical mode: `sudo systemctl isolate graphical.target`
 
+
+## Prevent sleep on close lid
+
+Disable sleep: `systemctl mask sleep.target suspend.target`
+
+Enable sleep: `systemctl unmask sleep.target suspend.target`
