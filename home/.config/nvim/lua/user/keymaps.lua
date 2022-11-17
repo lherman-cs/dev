@@ -3,6 +3,7 @@ options = { noremap = true }
 
 vim.g.mapleader = " "
 map('n', '<leader><leader>', ':Telescope find_files<cr>', options)
+map('n', '<leader>fs', ':Telescope current_buffer_fuzzy_find case_mode=ignore_case<cr>', options)
 map('n', '<leader>fg', ':Telescope live_grep<cr>', options)
 map('n', '<leader>fb', ':Telescope buffers<cr>', options)
 map('n', '<leader>fd', ':Telescope diagnostics<cr>', options)
@@ -42,3 +43,6 @@ map('n', '<leader>di', "<cmd>lua require'dap'.step_into()<CR>", options)
 map('n', '<leader>do', "<cmd>lua require'dap'.step_out()<CR>", options)
 map('n', '<leader>di', "<cmd>lua require'dap'.repl.open()<CR>", options)
 map('n', '<leader>du', "<cmd>lua require'dapui'.toggle()<CR>", options)
+
+-- Config reload
+map('n', '<leader>sv', ":source $MYVIMRC<cr>", options)

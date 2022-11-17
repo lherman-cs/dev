@@ -185,12 +185,12 @@ export KEYTIMEOUT=1
 export PATH=$PATH:$HOME/.toolbox/bin
 alias icat="kitty +kitten icat"
 
-
-if type "mosh" > /dev/null; then
-   alias ssh="mosh"
-fi
-
 if type "zellij" > /dev/null; then
    alias tmux="zellij --layout $HOME/.config/zellij/layout.kdl"
 fi
+
+export PYENV_ROOT="$HOME/.pyenv"
+export PATH="$PYENV_ROOT/bin:$PATH"
+command -v pyenv >/dev/null || export PATH="$PYENV_ROOT/bin:$PATH"
+eval "$(pyenv init -)"
 
