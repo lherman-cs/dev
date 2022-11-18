@@ -7,6 +7,7 @@
 4. ws rm <alias>: remove workspace mapping from .workspace.toml
 3. ws status: run version control's status set on .workspace.toml on every workspace. Default to "git status"
 4. ws path <workspace name>: get absolute path of workspace name
+5. ws tidy: clean up invalid paths
 
 ## Out of Scope
 

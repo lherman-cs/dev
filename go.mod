@@ -2,7 +2,10 @@ module github.com/lherman-cs/dev
 
 go 1.18
 
-require github.com/urfave/cli/v2 v2.23.5
+require (
+	github.com/BurntSushi/toml v1.2.1
+	github.com/urfave/cli/v2 v2.23.5
+)
 
 require (
 	github.com/cpuguy83/go-md2man/v2 v2.0.2 // indirect
