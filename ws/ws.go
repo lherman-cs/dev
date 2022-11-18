@@ -34,16 +34,19 @@ func Commands() []*cli.Command {
 		},
 		{
 			Name:   "exec",
+			Aliases: []string{"e"},
 			Usage:  "execute shell command on each workspace member",
 			Action: cmdExec,
 		},
 		{
 			Name:   "path",
+			Aliases: []string{"p"},
 			Usage:  "get the workspace member's absolute path",
 			Action: cmdPath,
 		},
 		{
 			Name:   "show",
+			Aliases: []string{"sh"},
 			Usage:  "get a list of registered workspace membrs",
 			Action: cmdShow,
 		},
