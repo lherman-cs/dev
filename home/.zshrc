@@ -143,11 +143,11 @@ function command_not_found_handler {
   fi
 }
 
-function _wscd {
+function _wcd {
    compadd $(dev ws ls " ")
 }
 
-function wscd {
+function wcd {
    # if [[ $1 == "${uri_prefix_workspace}*" ]]; then
    #    builtin cd $(dev ws path $1)
    # else
@@ -156,7 +156,7 @@ function wscd {
    cd $(dev ws path $1)
 }
 
-compdef _wscd wscd
+compdef _wcd wcd
 
 alias ..="cd .."
 alias ...="cd ../.."
