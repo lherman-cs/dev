@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 
 	"github.com/BurntSushi/toml"
 	"github.com/urfave/cli/v2"
@@ -33,22 +34,27 @@ func Commands() []*cli.Command {
 			Action: cmdRemove,
 		},
 		{
-			Name:   "exec",
+			Name:    "exec",
 			Aliases: []string{"e"},
-			Usage:  "execute shell command on each workspace member",
-			Action: cmdExec,
+			Usage:   "execute shell command on each workspace member",
+			Action:  cmdExec,
 		},
 		{
-			Name:   "path",
+			Name:    "path",
 			Aliases: []string{"p"},
-			Usage:  "get the workspace member's absolute path",
-			Action: cmdPath,
+			Usage:   "get the workspace member's absolute path",
+			Action:  cmdPath,
 		},
 		{
-			Name:   "show",
+			Name:    "show",
 			Aliases: []string{"sh"},
-			Usage:  "get a list of registered workspace membrs",
-			Action: cmdShow,
+			Usage:   "get a list of registered workspace members",
+			Action:  cmdShow,
+		},
+		{
+			Name:   "ls",
+			Usage:  "get a list of registered workspace members separated by a character",
+			Action: cmdList,
 		},
 	}
 }
@@ -59,14 +65,17 @@ type Config struct {
 }
 
 func (cfg *Config) commit() error {
-	f, err := os.OpenFile(configName, os.O_RDWR|os.O_CREATE, 0755)
+	f, err := os.OpenFile(cfg.path, os.O_RDWR|os.O_TRUNC, 0755)
 	if err != nil {
 		return fmt.Errorf("failed to commit %s config: %v", cfg.path, err)
 	}
 	defer f.Close()
 
 	err = toml.NewEncoder(f).Encode(cfg)
-	return err
+	if err != nil {
+		return fmt.Errorf("failed to commit updated config at %s: %v", cfg.path, err)
+	}
+	return nil
 }
 
 func openConfig(path string) (*Config, error) {
@@ -75,10 +84,11 @@ func openConfig(path string) (*Config, error) {
 		return nil, err
 	}
 
-	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0755)
+	f, err := os.Open(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open %s config: %v", path, err)
 	}
+	defer f.Close()
 
 	var config Config
 	_, err = toml.NewDecoder(f).Decode(&config)
@@ -143,12 +153,13 @@ func cmdInit(cliCtx *cli.Context) error {
 		return err
 	}
 
-	cfg, err := openConfig(filepath.Join(wd, configName))
+	f, err := os.Create(filepath.Join(wd, configName))
 	if err != nil {
 		return err
 	}
+	defer f.Close()
 
-	return cfg.commit()
+	return nil
 }
 
 func cmdSet(cliCtx *cli.Context) error {
@@ -240,6 +251,18 @@ func cmdShow(cliCtx *cli.Context) error {
 		for member, path := range cfg.Members {
 			fmt.Printf("  * %s: %s\n", member, path)
 		}
+		return nil
+	})
+}
+
+func cmdList(cliCtx *cli.Context) error {
+	return openAndCommitConfig(func(cfg *Config) error {
+		var members []string
+		for member := range cfg.Members {
+			members = append(members, member)
+		}
+
+		fmt.Println(strings.Join(members, cliCtx.Args().First()))
 		return nil
 	})
 }

@@ -128,20 +128,35 @@ alias alert='notify-send --urgency=low -i "$([ $? = 0 ] && echo terminal || echo
 # ~/.bash_aliases, instead of adding them here directly.
 # See /usr/share/doc/bash-doc/examples in the bash-doc package.
 
- # if the command-not-found package is installed, use it
- function command_not_found_handler {
-     # check because c-n-f could've been removed in the meantime
-     if [ -x /usr/lib/command-not-found ]; then
-	/usr/lib/command-not-found -- "$1"
-	return $?
-     elif [ -x /usr/share/command-not-found/command-not-found ]; then
-	/usr/share/command-not-found/command-not-found -- "$1"
-	return $?
-     else
-	printf "%s: command not found\n" "$1" >&2
-	return 127
-     fi
- }
+# if the command-not-found package is installed, use it
+function command_not_found_handler {
+  # check because c-n-f could've been removed in the meantime
+  if [ -x /usr/lib/command-not-found ]; then
+     /usr/lib/command-not-found -- "$1"
+     return $?
+  elif [ -x /usr/share/command-not-found/command-not-found ]; then
+     /usr/share/command-not-found/command-not-found -- "$1"
+     return $?
+  else
+     printf "%s: command not found\n" "$1" >&2
+     return 127
+  fi
+}
+
+function _wscd {
+   compadd $(dev ws ls " ")
+}
+
+function wscd {
+   # if [[ $1 == "${uri_prefix_workspace}*" ]]; then
+   #    builtin cd $(dev ws path $1)
+   # else
+   #    builtin cd $1
+   # fi
+   cd $(dev ws path $1)
+}
+
+compdef _wscd wscd
 
 alias ..="cd .."
 alias ...="cd ../.."
