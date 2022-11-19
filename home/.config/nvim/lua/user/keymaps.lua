@@ -2,8 +2,10 @@ local map = vim.api.nvim_set_keymap
 options = { noremap = true }
 
 vim.g.mapleader = " "
+map('n', '<leader>w<leader>', ':Telescope workspace find_files<cr>', options)
 map('n', '<leader><leader>', ':Telescope find_files<cr>', options)
 map('n', '<leader>fs', ':Telescope current_buffer_fuzzy_find case_mode=ignore_case<cr>', options)
+map('n', '<leader>wg', ':Telescope workspace live_grep<cr>', options)
 map('n', '<leader>fg', ':Telescope live_grep<cr>', options)
 map('n', '<leader>fb', ':Telescope buffers<cr>', options)
 map('n', '<leader>fd', ':Telescope diagnostics<cr>', options)

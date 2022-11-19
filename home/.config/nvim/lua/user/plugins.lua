@@ -78,6 +78,7 @@ require('lualine').setup {
   }
 }
 
+require('telescope').load_extension('workspace')
 require('telescope').setup {
   defaults = {
     vimgrep_arguments = {
