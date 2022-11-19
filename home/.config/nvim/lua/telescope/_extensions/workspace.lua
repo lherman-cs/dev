@@ -19,9 +19,10 @@ local find_workspace_members = function()
 		return members
 	end
 
-	for member in string.gmatch(output, "(%w+)") do
+	for member in string.gmatch(output, "(%S+)") do
 		table.insert(members, member)
 	end
+	table.sort(members)
 	return members
 end
 
@@ -40,7 +41,6 @@ local find_workspace_path = function(member)
 		return ""
 	end
 
-	print(output)
 	return output
 end
 
