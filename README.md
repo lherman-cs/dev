@@ -42,3 +42,7 @@ Graphical mode: `sudo systemctl isolate graphical.target`
 Disable sleep: `systemctl mask sleep.target suspend.target`
 
 Enable sleep: `systemctl unmask sleep.target suspend.target`
+
+## Better system media pipeline handling
+
+https://pipewire-debian.github.io/pipewire-debian/
