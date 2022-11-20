@@ -16,45 +16,49 @@ const (
 	configName = ".workspace.toml"
 )
 
-func Commands() []*cli.Command {
-	return []*cli.Command{
-		{
-			Name:   "init",
-			Usage:  "init workspace",
-			Action: cmdInit,
-		},
-		{
-			Name:   "set",
-			Usage:  "set a workspace member",
-			Action: cmdSet,
-		},
-		{
-			Name:   "rm",
-			Usage:  "remove a workspace member",
-			Action: cmdRemove,
-		},
-		{
-			Name:    "exec",
-			Aliases: []string{"e"},
-			Usage:   "execute shell command on each workspace member",
-			Action:  cmdExec,
-		},
-		{
-			Name:    "path",
-			Aliases: []string{"p"},
-			Usage:   "get the workspace member's absolute path",
-			Action:  cmdPath,
-		},
-		{
-			Name:    "show",
-			Aliases: []string{"sh"},
-			Usage:   "get a list of registered workspace members",
-			Action:  cmdShow,
-		},
-		{
-			Name:   "ls",
-			Usage:  "get a list of registered workspace members separated by a character",
-			Action: cmdList,
+func Command() *cli.Command {
+	return &cli.Command{
+		Name:  "ws",
+		Usage: "workspace actions",
+		Subcommands: []*cli.Command{
+			{
+				Name:   "init",
+				Usage:  "init workspace",
+				Action: cmdInit,
+			},
+			{
+				Name:   "set",
+				Usage:  "set a workspace member",
+				Action: cmdSet,
+			},
+			{
+				Name:   "rm",
+				Usage:  "remove a workspace member",
+				Action: cmdRemove,
+			},
+			{
+				Name:    "exec",
+				Aliases: []string{"e"},
+				Usage:   "execute shell command on each workspace member",
+				Action:  cmdExec,
+			},
+			{
+				Name:    "path",
+				Aliases: []string{"p"},
+				Usage:   "get the workspace member's absolute path",
+				Action:  cmdPath,
+			},
+			{
+				Name:    "show",
+				Aliases: []string{"sh"},
+				Usage:   "get a list of registered workspace members",
+				Action:  cmdShow,
+			},
+			{
+				Name:   "ls",
+				Usage:  "get a list of registered workspace members separated by a character",
+				Action: cmdList,
+			},
 		},
 	}
 }

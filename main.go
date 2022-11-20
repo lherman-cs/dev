@@ -4,6 +4,7 @@ import (
 	"log"
 	"os"
 
+	"github.com/lherman-cs/dev/setup"
 	"github.com/lherman-cs/dev/ws"
 	"github.com/urfave/cli/v2"
 )
@@ -11,11 +12,8 @@ import (
 func main() {
 	app := &cli.App{
 		Commands: []*cli.Command{
-			{
-				Name:        "ws",
-				Usage:       "workspace actions",
-				Subcommands: ws.Commands(),
-			},
+			setup.Command(),
+			ws.Command(),
 		},
 	}
 
