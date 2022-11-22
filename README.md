@@ -46,3 +46,7 @@ Enable sleep: `systemctl unmask sleep.target suspend.target`
 ## Better system media pipeline handling
 
 https://pipewire-debian.github.io/pipewire-debian/
+
+## Network usage monitor
+
+https://linuxhint.com/monitor-network-traffic-with-vnstat-on-ubuntu-20-04/
