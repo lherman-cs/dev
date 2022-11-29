@@ -20,7 +20,7 @@ map('n', 'K', '<Cmd>lua vim.lsp.buf.hover()<CR>', options)
 map('n', 'gi', ':Telescope lsp_implementations<cr>', options)
 map('n', '<leader>rn', '<cmd>lua vim.lsp.buf.rename()<CR>', options)
 map('n', 'gr', ':Telescope lsp_references<CR>', options)
-map("n", "<leader>ff", "<cmd>lua vim.lsp.buf.formatting()<CR>", options)
+map("n", "<leader>ff", "<cmd>lua vim.lsp.buf.format()<CR>", options)
 
 map("n", "g,", "<C-o>", options)
 map("n", "g.", "<C-i>", options)
