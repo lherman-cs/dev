@@ -1,6 +1,7 @@
 package ws
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"os"
@@ -9,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/BurntSushi/toml"
+	"github.com/nanmu42/limitio"
 	"github.com/urfave/cli/v2"
 )
 
@@ -211,25 +213,38 @@ func handleRemove(cfg *Config, member string) error {
 
 func cmdExec(cliCtx *cli.Context) error {
 	return openAndCommitConfig(func(cfg *Config) error {
+		members := make([]string, len(cfg.Members))
+		stdouts := make([]bytes.Buffer, len(cfg.Members))
+		queue := make(chan int)
+		var i int
+
 		execCmd := cliCtx.Args().Get(0)
-
 		for member, path := range cfg.Members {
+			childId := i
+			members[childId] = member
+			path := path
+			i++
+
+			go func() {
+				// FIXME: Parameterize buffer sizes
+				wrappedStdout := limitio.NewWriter(&stdouts[childId], 8192, true)
+
+				cmd := exec.Command("zsh", "-c", execCmd)
+				cmd.Dir = path
+				// FIXME: Separate stdout and stderr. Needs to synchronize the outputs though.
+				cmd.Stdout = wrappedStdout
+				cmd.Stderr = wrappedStdout
+				cmd.Run()
+				queue <- childId
+			}()
+		}
+
+		for range cfg.Members {
+			childId := <-queue
+			member := members[childId]
+			path := cfg.Members[member]
 			fmt.Printf("===> %s: %s\n", member, path)
-
-			err := os.Chdir(path)
-			if err != nil {
-				fmt.Printf("failed to run exec command: %v\n", err)
-				continue
-			}
-
-			cmd := exec.Command("zsh", "-c", execCmd)
-			cmd.Stdout = os.Stdout
-			cmd.Stderr = os.Stderr
-			err = cmd.Run()
-			if err != nil {
-				fmt.Printf("failed to run exec command: %v\n", err)
-			}
-
+			fmt.Println(stdouts[childId].String())
 			fmt.Println()
 		}
 		return nil
