@@ -169,6 +169,7 @@ alias vi='vim'
 alias v='vim'
 alias p='python3'
 alias tasks="vim $HOME/tasks.txt"
+alias open='xdg-open `fzf`'
 
 export PATH="/snap/bin:$PATH"
 export PATH="$HOME/go/bin:$PATH"
