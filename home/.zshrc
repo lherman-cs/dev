@@ -144,7 +144,7 @@ function command_not_found_handler {
 }
 
 function _wcd {
-   compadd $(dev ws ls " ")
+   compadd $(dev ws ls " " || "")
 }
 
 function wcd {
