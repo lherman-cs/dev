@@ -19,8 +19,8 @@ function setup_plugins(use)
   -- Cache modules to speed up startup time
   use 'lewis6991/impatient.nvim'
 
-  -- Faster file type detection
-  use "nathom/filetype.nvim"
+  -- Faster file type detection. 
+  -- use "nathom/filetype.nvim"
 
   use {
     'nvim-telescope/telescope.nvim',
