@@ -47,3 +47,6 @@ vim.opt.cursorcolumn = true
 vim.opt.cursorline = true
 vim.opt.diffopt = vim.opt.diffopt + "vertical"
 -- vim.opt.termguicolors = false
+
+-- Refresh buffer automatically
+vim.opt.autoread = true
