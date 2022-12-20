@@ -6,6 +6,13 @@ WORKSPACE_DIR=$HOME/workspace
 # Install nix package manager
 sh <(curl -L https://nixos.org/nix/install) --yes
 
+# Load nix environment right away
+if ! command -v nix-env &> /dev/null
+then
+	. $HOME/.nix-profile/etc/profile.d/nix.sh
+fi
+
+
 # Install deps to nix
 nix-env -iA \
 	nixpkgs.git \

@@ -1,7 +1,7 @@
 ## Bootstrap
 
 ```sh
-./install.sh bootstrap
+bash <(curl -L https://raw.githubusercontent.com/lherman-cs/dev/master/install.sh)
 ```
 
 ## LSP Configs
