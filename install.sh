@@ -32,5 +32,5 @@ nix-env -iA \
 mkdir -p $WORKSPACE_DIR
 cd $WORKSPACE_DIR
 git clone https://github.com/lherman-cs/dev.git
-cd dev
-stow --target=$HOME ./dotfiles/*
+cd dev/dotfiles
+stow --target=$HOME --verbose --restow */
