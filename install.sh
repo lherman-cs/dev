@@ -1,64 +1,29 @@
 #!/bin/bash
 
-HOME_DIR=home
+WORKSPACE_DIR=$HOME/workspace
 
-function confirm() {
-  if ! [ -f "$1" ]; then
-    return 0
-  fi
 
-  read -p "Are you sure to overwrite $1? " -r
-  echo    # (optional) move to a new line
-  if [[ ! $REPLY =~ ^[Yy]$ ]]
-  then
-    return 1
-  fi
+# Install nix package manager
+sh <(curl -L https://nixos.org/nix/install) --yes
 
-  return 0
-}
+# Install deps to nix
+nix-env -iA \
+	nixpkgs.git \
+	nixpkgs.gcc \
+	nixpkgs.fish \
+	nixpkgs.xclip \
+	nixpkgs.go \
+	nixpkgs.rustup \
+	nixpkgs.nodejs \
+	nixpkgs.htop \
+	nixpkgs.neovim \
+	nixpkgs.tmux \
+	nixpkgs.stow \
+	nixpkgs.curl \
+	nixpkgs.ripgrep
 
-function link() {
-  cd "$(dirname "${BASH_SOURCE[0]}")"
-  files=$(find ${HOME_DIR} -type f)
-  for file in ${files[@]}; do
-    src="${PWD}/${file}"
-    target="${HOME}/${file#$HOME_DIR/}"
-
-    mkdir -p $(dirname "$target")
-    confirm "$target" && rm -rf "$target" && ln -s "$src" "$target"
-  done
-}
-
-function install_deps() {
-  sudo apt install -y \
-    gcc \
-    g++ \
-    zsh \
-    wl-clipboard \
-    fd-find \
-    python3-venv
-
-  snaps=(
-    go
-    node
-    nvim
-    htop
-    curl
-  )
-
-  for snap in ${snaps[@]}
-  do
-    sudo snap install --classic ${snap}
-  done
-
-  # Install rust
-  curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-
-  # Install zsh awesome
-  sh -c "$(curl -fsSL https://raw.github.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"
-
-  cargo install ripgrep zellij
-}
-
-# install_deps
-link
+mkdir -p $WORKSPACE_DIR
+cd $WORKSPACE_DIR
+git clone https://github.com/lherman-cs/dev.git
+cd dev
+stow --target=$HOME ./dotfiles/*
