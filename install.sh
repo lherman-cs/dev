@@ -16,7 +16,8 @@ fi
 nix-env -iA \
 	nixpkgs.git \
 	nixpkgs.gcc \
-	nixpkgs.fish \
+	nixpkgs.zsh \
+	nixpkgs.oh-my-zsh \
 	nixpkgs.xclip \
 	nixpkgs.go \
 	nixpkgs.rustup \
