@@ -17,7 +17,7 @@ nix-env -iA \
 	nixpkgs.git \
 	nixpkgs.gcc \
 	nixpkgs.zsh \
-	nixpkgs.oh-my-zsh \
+	nixpkgs.antibody \
 	nixpkgs.xclip \
 	nixpkgs.go \
 	nixpkgs.rustup \
@@ -36,3 +36,9 @@ cd dev/dotfiles
 stow --target=$HOME --verbose --restow */
 
 curl -sf https://gobinaries.com/lherman-cs/dev | sh
+
+# Install zsh
+command -v zsh | sudo tee -a /etc/shells
+sudo chsh -s $(which zsh) $USER
+
+antibody bundle < ~/.zsh_plugins.txt > ~/.zsh_plugins.sh

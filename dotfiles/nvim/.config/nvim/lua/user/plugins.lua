@@ -67,9 +67,8 @@ function setup_plugins(use)
   end
 end
 
-require "impatient"
-
 require('packer').startup(setup_plugins)
+require('impatient')
 
 require('lualine').setup {
   options = { theme = 'nord' },
