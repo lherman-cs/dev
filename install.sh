@@ -2,7 +2,6 @@
 
 WORKSPACE_DIR=$HOME/workspace
 
-
 # Install nix package manager
 sh <(curl -L https://nixos.org/nix/install) --yes
 
@@ -34,3 +33,5 @@ cd $WORKSPACE_DIR
 git clone https://github.com/lherman-cs/dev.git
 cd dev/dotfiles
 stow --target=$HOME --verbose --restow */
+
+curl -sf https://gobinaries.com/lherman-cs/dev | sh
