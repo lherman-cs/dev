@@ -35,7 +35,7 @@ git clone https://github.com/lherman-cs/dev.git
 cd dev/dotfiles
 stow --target=$HOME --verbose --restow */
 
-curl -sf https://gobinaries.com/lherman-cs/dev | sh
+go install github.com/lherman-cs/dev
 
 # Install zsh
 command -v zsh | sudo tee -a /etc/shells

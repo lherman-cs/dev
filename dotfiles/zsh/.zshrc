@@ -5,21 +5,6 @@ if [[ -r "${XDG_CACHE_HOME:-$HOME/.cache}/p10k-instant-prompt-${(%):-%n}.zsh" ]]
   source "${XDG_CACHE_HOME:-$HOME/.cache}/p10k-instant-prompt-${(%):-%n}.zsh"
 fi
 
-function _wcd {
-   compadd $(dev ws ls " " || "")
-}
-
-function wcd {
-   # if [[ $1 == "${uri_prefix_workspace}*" ]]; then
-   #    builtin cd $(dev ws path $1)
-   # else
-   #    builtin cd $1
-   # fi
-   cd $(dev ws path $1)
-}
-
-compdef _wcd wcd
-
 alias ..="cd .."
 alias ...="cd ../.."
 alias ....="cd ../../.."
@@ -59,7 +44,6 @@ export KEYTIMEOUT=1
 # export TERM=xterm
 
 [ -s "$HOME/.work.rc" ] && source $HOME/.work.rc
-. "$HOME/.cargo/env"
 
 
 export PATH=$PATH:$HOME/.toolbox/bin
@@ -89,3 +73,18 @@ if [ -e /home/pi/.nix-profile/etc/profile.d/nix.sh ]; then . /home/pi/.nix-profi
 
 # To customize prompt, run `p10k configure` or edit ~/.p10k.zsh.
 [[ ! -f ~/.p10k.zsh ]] || source ~/.p10k.zsh
+
+function _wcd {
+   compadd $(dev ws ls " " || "")
+}
+
+function wcd {
+   # if [[ $1 == "${uri_prefix_workspace}*" ]]; then
+   #    builtin cd $(dev ws path $1)
+   # else
+   #    builtin cd $1
+   # fi
+   cd $(dev ws path $1)
+}
+
+compdef _wcd wcd
