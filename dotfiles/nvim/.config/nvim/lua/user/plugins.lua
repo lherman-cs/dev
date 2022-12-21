@@ -60,6 +60,9 @@ function setup_plugins(use)
   use "akinsho/toggleterm.nvim"
   use 'shaunsingh/nord.nvim'
 
+  -- use osc52 for clipboard than relying on X11
+  use 'ojroques/nvim-osc52'
+
   -- Automatically set up your configuration after cloning packer.nvim
   -- Put this at the end after all plugins
   if packer_bootstrap then
