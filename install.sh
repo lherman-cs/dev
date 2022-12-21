@@ -1,6 +1,7 @@
 #!/bin/bash
 
 WORKSPACE_DIR=$HOME/workspace
+DEV_REPO_DIR=$WORKSPACE_DIR/dev
 
 # Install nix package manager
 sh <(curl -L https://nixos.org/nix/install) --yes
@@ -27,15 +28,25 @@ nix-env -iA \
 	nixpkgs.tmux \
 	nixpkgs.stow \
 	nixpkgs.curl \
+	nixpkgs.fzf \
 	nixpkgs.ripgrep
 
 mkdir -p $WORKSPACE_DIR
-cd $WORKSPACE_DIR
-git clone https://github.com/lherman-cs/dev.git
-cd dev/dotfiles
-stow --target=$HOME --verbose --restow */
 
-go install github.com/lherman-cs/dev
+if [ -d "$DEV_REPO_DIR" ]; then
+	echo "Detected existing $DEV_REPO_DIR. Update the repo instead."
+	cd $DEV_REPO_DIR
+	git pull origin master
+else
+	cd $WORKSPACE_DIR
+	git clone https://github.com/lherman-cs/dev.git
+fi
+
+cd $DEV_REPO_DIR
+go install
+
+cd $DEV_REPO_DIR/dotfiles
+stow --target=$HOME --verbose --restow */
 
 # Install zsh
 command -v zsh | sudo tee -a /etc/shells
