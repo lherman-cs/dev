@@ -153,4 +153,6 @@ function wcd {
 compdef _wcd wcd
 
 # Nix no user uid: https://github.com/NixOS/nixpkgs/issues/64665
-export LD_PRELOAD=/lib/x86_64-linux-gnu/libnss_sss.so.2
+# export LD_PRELOAD=/lib/x86_64-linux-gnu/libnss_sss.so.2
+
+if [ -e /home/lukasman/.nix-profile/etc/profile.d/nix.sh ]; then . /home/lukasman/.nix-profile/etc/profile.d/nix.sh; fi # added by Nix installer
