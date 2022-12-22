@@ -14,6 +14,7 @@ fi
 
 
 # Install deps to nix
+nix-channel --update
 nix-env -iA \
 	nixpkgs.git \
 	nixpkgs.gcc \
