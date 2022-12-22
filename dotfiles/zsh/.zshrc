@@ -16,7 +16,9 @@ bindkey '^R' history-incremental-search-backward
 bindkey -e # Enable ctrl-a and ctrl-e
 bindkey "^[[1;5C" forward-word # Enable ctrl-right
 bindkey "^[[1;5D" backward-word # Enable ctrl-left
-
+bindkey  "^[[H"   beginning-of-line
+bindkey  "^[[F"   end-of-line
+bindkey  "^[[3~"  delete-char
 
 # enable color support of ls and also add handy aliases
 if [ -x /usr/bin/dircolors ]; then
@@ -149,3 +151,5 @@ function wcd {
 }
 
 compdef _wcd wcd
+
+if [ -e /home/ANT.AMAZON.COM/lukasman/.nix-profile/etc/profile.d/nix.sh ]; then . /home/ANT.AMAZON.COM/lukasman/.nix-profile/etc/profile.d/nix.sh; fi # added by Nix installer
