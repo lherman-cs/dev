@@ -152,4 +152,5 @@ function wcd {
 
 compdef _wcd wcd
 
-if [ -e /home/ANT.AMAZON.COM/lukasman/.nix-profile/etc/profile.d/nix.sh ]; then . /home/ANT.AMAZON.COM/lukasman/.nix-profile/etc/profile.d/nix.sh; fi # added by Nix installer
+# Nix no user uid: https://github.com/NixOS/nixpkgs/issues/64665
+export LD_PRELOAD=/lib/x86_64-linux-gnu/libnss_sss.so.2
