@@ -155,4 +155,9 @@ compdef _wcd wcd
 # Nix no user uid: https://github.com/NixOS/nixpkgs/issues/64665
 # export LD_PRELOAD=/lib/x86_64-linux-gnu/libnss_sss.so.2
 
-if [ -e /home/lukasman/.nix-profile/etc/profile.d/nix.sh ]; then . /home/lukasman/.nix-profile/etc/profile.d/nix.sh; fi # added by Nix installer
+if [ -e $HOME/.nix-profile/etc/profile.d/nix.sh ]; then . $HOME/.nix-profile/etc/profile.d/nix.sh; fi # added by Nix installer
+
+# Use less viewer with a pre-processor to display improved previews for 
+# a wide range of files (requires you to install at least exa, bat, chafa, exiftool
+export FZF_PREVIEW_ADVANCED=true
+export LESSOPEN='| lessfilter-fzf %s'

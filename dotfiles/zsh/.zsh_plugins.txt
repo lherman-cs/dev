@@ -14,3 +14,4 @@ zsh-users/zsh-autosuggestions
 zsh-users/zsh-completions
 zsh-users/zsh-syntax-highlighting
 
+unixorn/fzf-zsh-plugin
