@@ -50,3 +50,7 @@ https://pipewire-debian.github.io/pipewire-debian/
 ## Network usage monitor
 
 https://linuxhint.com/monitor-network-traffic-with-vnstat-on-ubuntu-20-04/
+
+## How to configure logitech devices on Ubuntu
+
+https://launchpad.net/~solaar-unifying/+archive/ubuntu/stable
