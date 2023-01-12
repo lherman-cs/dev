@@ -3,10 +3,10 @@ dap.listeners.after.event_initialized["dapui_config"] = function()
   dapui.open()
 end
 dap.listeners.before.event_terminated["dapui_config"] = function()
-  dapui.close()
+  -- dapui.close()
 end
 dap.listeners.before.event_exited["dapui_config"] = function()
-  dapui.close()
+  -- dapui.close()
 end
 
 dap.adapters.codelldb = {
@@ -32,3 +32,24 @@ dap.configurations.cpp = {
 }
 dap.configurations.c = dap.configurations.cpp
 dap.configurations.rust = dap.configurations.cpp
+
+
+dap.adapters.python = {
+  type = "executable",
+    command = table.concat({ vim.fn.stdpath "data", "mason", "bin", "debugpy-adapter" }, "/"),
+  -- args = {
+  --   "-m",
+  --   "debugpy.adapter",
+  -- },
+}
+dap.configurations.python = {
+  {
+    type = 'python';
+    request = 'launch';
+    name = "Launch file";
+    program = "${file}";
+    pythonPath = function()
+      return '/local/home/lukasman/.cache/pypoetry/virtualenvs/health-BpV6n-Vb-py3.8/bin/python'
+    end;
+  },
+}

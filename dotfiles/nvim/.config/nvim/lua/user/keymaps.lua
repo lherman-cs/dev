@@ -48,3 +48,17 @@ map('n', '<leader>du', "<cmd>lua require'dapui'.toggle()<CR>", options)
 
 -- Config reload
 map('n', '<leader>sv', ":source $MYVIMRC<cr>", options)
+
+-- Tab management
+-- Go to tab by number
+map('n', '<leader>1', '1gt', options)
+map('n', '<leader>2', '2gt', options)
+map('n', '<leader>3', '3gt', options)
+map('n', '<leader>4', '4gt', options)
+map('n', '<leader>5', '5gt', options)
+map('n', '<leader>6', '6gt', options)
+map('n', '<leader>7', '7gt', options)
+map('n', '<leader>8', '8gt', options)
+map('n', '<leader>9', '9gt', options)
+map('n', '<leader>0', ':tablast<cr>', options)
+
