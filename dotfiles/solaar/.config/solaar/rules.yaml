@@ -1,0 +1,11 @@
+%YAML 1.3
+---
+- Key: [Snipping Tool, pressed]
+- Execute: [gnome-screenshot, -i]
+...
+---
+- Key: [Mute Microphone, pressed]
+- KeyPress:
+  - [Control_L, y]
+  - click
+...
