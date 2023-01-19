@@ -64,5 +64,4 @@ map('n', '<leader>6', '6gt', options)
 map('n', '<leader>7', '7gt', options)
 map('n', '<leader>8', '8gt', options)
 map('n', '<leader>9', '9gt', options)
-map('n', '<leader>0', ':tablast<cr>', options)
 
