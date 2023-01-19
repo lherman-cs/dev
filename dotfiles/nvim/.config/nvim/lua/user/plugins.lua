@@ -63,6 +63,8 @@ function setup_plugins(use)
   -- use osc52 for clipboard than relying on X11
   use 'ojroques/nvim-osc52'
 
+  use {'romgrk/barbar.nvim', wants = 'nvim-web-devicons'}
+
   -- Automatically set up your configuration after cloning packer.nvim
   -- Put this at the end after all plugins
   if packer_bootstrap then
