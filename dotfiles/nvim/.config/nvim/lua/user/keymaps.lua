@@ -50,6 +50,10 @@ map('n', '<leader>du', "<cmd>lua require'dapui'.toggle()<CR>", options)
 map('n', '<leader>sv', ":source $MYVIMRC<cr>", options)
 
 -- Tab management
+map('n', '<leader>tc', ':tabclose<CR>', options)
+map('n', '<leader>tn', ':tabnew<CR>', options)
+map('n', '<leader>to', ':tabonly<cr>', options)
+map('n', '<leader>tm', ':tabmove<Space>', options)
 -- Go to tab by number
 map('n', '<leader>1', '1gt', options)
 map('n', '<leader>2', '2gt', options)

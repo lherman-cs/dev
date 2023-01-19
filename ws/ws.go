@@ -266,9 +266,8 @@ func cmdPath(cliCtx *cli.Context) error {
 
 func cmdShow(cliCtx *cli.Context) error {
 	return openAndCommitConfig(func(cfg *Config) error {
-		fmt.Println("Workspace members:")
 		for member, path := range cfg.Members {
-			fmt.Printf("  * %s: %s\n", member, path)
+			fmt.Printf("%s=%s\n", member, path)
 		}
 		return nil
 	})
