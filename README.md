@@ -54,3 +54,7 @@ https://linuxhint.com/monitor-network-traffic-with-vnstat-on-ubuntu-20-04/
 ## How to configure logitech devices on Ubuntu
 
 https://launchpad.net/~solaar-unifying/+archive/ubuntu/stable
+
+## USB-C Display Not Working
+
+https://askubuntu.com/questions/1105332/external-monitor-not-working-ubuntu-nvidia/1134579#1134579
