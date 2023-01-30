@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io/ioutil"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -60,6 +61,11 @@ func Command() *cli.Command {
 				Name:   "ls",
 				Usage:  "get a list of registered workspace members separated by a character",
 				Action: cmdList,
+			},
+			{
+				Name:   "sync",
+				Usage:  "automatically synchronize current workspace by looking git projects recursively",
+				Action: cmdSync,
 			},
 		},
 	}
@@ -281,6 +287,66 @@ func cmdList(cliCtx *cli.Context) error {
 		}
 
 		fmt.Println(strings.Join(members, cliCtx.Args().First()))
+		return nil
+	})
+}
+
+// findGitProjects recursively finds paths to git projects from root
+func findGitProjects(root string) ([]string, error) {
+	stack := []string{root}
+	var gitProjects []string
+
+	for len(stack) > 0 {
+		currentDir := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+
+		children, err := ioutil.ReadDir(currentDir)
+		if err != nil {
+			return nil, err
+		}
+
+		for _, child := range children {
+			if !child.IsDir() {
+				continue
+			}
+
+			// don't follow links
+			if child.Mode() & os.ModeSymlink == 1 {
+				continue
+			}
+
+			if child.Name() == ".git" {
+				gitProjects = append(gitProjects, currentDir)
+				continue
+			}
+
+			childPath := filepath.Join(currentDir, child.Name())
+			stack = append(stack, childPath)
+		}
+	}
+
+	return gitProjects, nil
+}
+
+func cmdSync(cliCtx *cli.Context) error {
+	return openAndCommitConfig(func(cfg *Config) error {
+		workspaceDir := filepath.Dir(cfg.path)
+
+		// Look for all git projects and automatically add them to workspace, and prune
+		// missing links
+		gitProjects, err := findGitProjects(workspaceDir)
+		if err != nil {
+			return fmt.Errorf("failed to find git projects: %v", err)
+		}
+
+		// Always override existing workspace setting
+		cfg.Members = make(map[string]string)
+		for _, gitProject := range gitProjects {
+			key := filepath.Base(gitProject)
+			cfg.Members[key] = gitProject
+			fmt.Printf("%s=%s\n", key, gitProject)
+		}
+
 		return nil
 	})
 }
