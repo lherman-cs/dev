@@ -163,3 +163,6 @@ if [ -e $HOME/.nix-profile/etc/profile.d/nix.sh ]; then . $HOME/.nix-profile/etc
 # a wide range of files (requires you to install at least exa, bat, chafa, exiftool
 export FZF_PREVIEW_ADVANCED=true
 export LESSOPEN='| lessfilter-fzf %s'
+
+export AWS_EC2_METADATA_DISABLED=true
+
