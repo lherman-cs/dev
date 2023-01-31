@@ -305,6 +305,7 @@ func findGitProjects(root string) ([]string, error) {
 			return nil, err
 		}
 
+		var toSearch []string
 		for _, child := range children {
 			if !child.IsDir() {
 				continue
@@ -317,12 +318,16 @@ func findGitProjects(root string) ([]string, error) {
 
 			if child.Name() == ".git" {
 				gitProjects = append(gitProjects, currentDir)
-				continue
+				// End search early when we find a git module. No support for git submodules.
+				toSearch = nil
+				break
 			}
 
 			childPath := filepath.Join(currentDir, child.Name())
-			stack = append(stack, childPath)
+			toSearch = append(toSearch, childPath)
 		}
+
+		stack = append(stack, toSearch...)
 	}
 
 	return gitProjects, nil
