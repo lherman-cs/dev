@@ -1,21 +1,13 @@
 %YAML 1.3
 ---
 - MouseGesture: Mouse Up
-- KeyPress:
-  - Super_L
-  - click
+- KeyPress: [Super_L, click]
 ...
 ---
 - MouseGesture: Mouse Down
 - Execute: [gnome-screenshot, -a, -c]
 ...
 ---
-- Key: [Snipping Tool, pressed]
+- Key: ['0', pressed]
 - Execute: [gnome-screenshot, -i]
-...
----
-- Key: [Mute Microphone, pressed]
-- KeyPress:
-  - [Control_L, y]
-  - click
 ...
