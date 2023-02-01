@@ -68,7 +68,7 @@ local workspace_picker = function(hook_fn)
 end
 
 local current_workspace_picker = function(hook_fn)
-	local file = io.popen("dev ws find " .. vim.fn.expand('%:p'))
+	local file = io.popen("dev ws find " .. vim.fn.expand('%:p') .. " 2> /dev/null")
 
 	if file == nil then
 		return
@@ -81,8 +81,9 @@ local current_workspace_picker = function(hook_fn)
 		return
 	end
 
+	local tokens = vim.fn.split(output, '=')
 	local opts = {}
-	opts.cwd = output
+	opts.cwd = tokens[2]
 	hook_fn(opts)
 end
 

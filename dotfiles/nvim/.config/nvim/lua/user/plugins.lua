@@ -19,7 +19,7 @@ function setup_plugins(use)
   -- Cache modules to speed up startup time
   use 'lewis6991/impatient.nvim'
 
-  -- Faster file type detection. 
+  -- Faster file type detection.
   -- use "nathom/filetype.nvim"
 
   use {
@@ -73,6 +73,26 @@ end
 require('packer').startup(setup_plugins)
 require('impatient')
 
+
+local find_current_workspace = function(hook_fn)
+  -- TODO: This gets polled every second. Maybe optimize this in the future?
+  local file = io.popen("dev ws find " .. vim.fn.expand('%:p') .. " 2> /dev/null")
+
+  if file == nil then
+    return ""
+  end
+
+  local output = file:read('*all')
+  local rc = { file:close() }
+
+  if not rc[1] then
+    return ""
+  end
+
+  local tokens = vim.fn.split(output, "=")
+  return '[' .. tokens[1] .. ']'
+end
+
 require('lualine').setup {
   options = { theme = 'nord' },
   extensions = {
@@ -80,6 +100,12 @@ require('lualine').setup {
     'nvim-dap-ui',
     'nvim-tree',
     'toggleterm'
+  },
+  sections = {
+    lualine_c = {
+      find_current_workspace,
+      'filename'
+    }
   }
 }
 
@@ -120,7 +146,7 @@ local lspconfig = require('lspconfig')
 mason_lsp.setup()
 mason_lsp.setup_handlers {
   function(server_name)
-      lspconfig[server_name].setup {}
+    lspconfig[server_name].setup {}
   end
 }
 require('dapui').setup()

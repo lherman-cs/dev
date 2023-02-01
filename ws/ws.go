@@ -372,12 +372,14 @@ func cmdFind(cliCtx *cli.Context) error {
 		}
 
 		longestPath := ""
+		longestMember := ""
 		for _, member := range matches {
 			path := cfg.Members[member]
 
 			// No need to split the path as they all share the same prefix
 			if len(path) > len(longestPath) {
 				longestPath = path
+				longestMember = member
 			}
 		}
 
@@ -385,7 +387,7 @@ func cmdFind(cliCtx *cli.Context) error {
 			return fmt.Errorf("failed to find a related workspace member")
 		}
 
-		fmt.Print(longestPath)
+		fmt.Printf("%s=%s", longestMember, longestPath)
 		return nil
 	})
 }
