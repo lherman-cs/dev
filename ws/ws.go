@@ -67,6 +67,11 @@ func Command() *cli.Command {
 				Usage:  "automatically synchronize current workspace by looking git projects recursively",
 				Action: cmdSync,
 			},
+			{
+				Name:   "find",
+				Usage:  "find current workspace key",
+				Action: cmdFind,
+			},
 		},
 	}
 }
@@ -352,6 +357,35 @@ func cmdSync(cliCtx *cli.Context) error {
 			fmt.Printf("%s=%s\n", key, gitProject)
 		}
 
+		return nil
+	})
+}
+
+func cmdFind(cliCtx *cli.Context) error {
+	return openAndCommitConfig(func(cfg *Config) error {
+		toFind := cliCtx.Args().Get(0)
+		var matches []string
+		for member, memberPath := range cfg.Members {
+			if strings.HasPrefix(toFind, memberPath) {
+				matches = append(matches, member)
+			}
+		}
+
+		longestPath := ""
+		for _, member := range matches {
+			path := cfg.Members[member]
+
+			// No need to split the path as they all share the same prefix
+			if len(path) > len(longestPath) {
+				longestPath = path
+			}
+		}
+
+		if longestPath == "" {
+			return fmt.Errorf("failed to find a related workspace member")
+		}
+
+		fmt.Print(longestPath)
 		return nil
 	})
 }

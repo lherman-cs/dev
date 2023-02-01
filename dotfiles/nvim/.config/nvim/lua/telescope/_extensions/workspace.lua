@@ -3,6 +3,7 @@ local finders = require "telescope.finders"
 local conf = require("telescope.config").values
 local actions = require "telescope.actions"
 local action_state = require "telescope.actions.state"
+-- local lfs = require "lfs"
 
 local find_workspace_members = function()
 	local members = {}
@@ -66,6 +67,35 @@ local workspace_picker = function(hook_fn)
 	}):find()
 end
 
+local current_workspace_picker = function(hook_fn)
+	local file = io.popen("dev ws find " .. vim.fn.expand('%:p'))
+
+	if file == nil then
+		return
+	end
+
+	local output = file:read('*all')
+	local rc = { file:close() }
+
+	if not rc[1] then
+		return
+	end
+
+	local opts = {}
+	opts.cwd = output
+	hook_fn(opts)
+end
+
+local find_project_doc = function(project_dir)
+	-- TODO: Fancify the search
+	local paths = vim.split(vim.fn.glob(project_dir .. '/*.md'), '\n')
+	if table.getn(paths) == 0 then
+		return ""
+	end
+
+	return paths[1]
+end
+
 
 local workspace_live_grep_picker = function()
 	workspace_picker(require('telescope.builtin').live_grep)
@@ -75,6 +105,26 @@ local workspace_find_files_picker = function()
 	workspace_picker(require('telescope.builtin').find_files)
 end
 
+local live_grep_in_workspace = function()
+	current_workspace_picker(require('telescope.builtin').live_grep)
+end
+
+local find_files_in_workspace = function()
+	current_workspace_picker(require('telescope.builtin').find_files)
+end
+
+local find_workspaces = function()
+	local handler = function(opts)
+		local project_doc_path = find_project_doc(opts.cwd)
+		if project_doc_path == "" then
+			require('telescope.builtin').find_files(opts)
+		else
+			vim.cmd("e " .. project_doc_path)
+		end
+	end
+	workspace_picker(handler)
+end
+
 return require("telescope").register_extension {
 	-- setup = function(ext_config, config)
 	--   -- access extension config and user config
@@ -82,5 +132,8 @@ return require("telescope").register_extension {
 	exports = {
 		find_files = workspace_find_files_picker,
 		live_grep = workspace_live_grep_picker,
+		find_workspaces = find_workspaces,
+		live_grep_in_workspace = live_grep_in_workspace,
+		find_files_in_workspace = find_files_in_workspace,
 	},
 }
