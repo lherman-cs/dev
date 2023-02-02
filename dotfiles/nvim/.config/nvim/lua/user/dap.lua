@@ -18,6 +18,23 @@ dap.adapters.codelldb = {
     args = { "--port", "${port}" },
   }
 }
+
+dap.adapters.delve = {
+  type = "server",
+  host = "127.0.0.1",
+  port = 10001,
+}
+
+-- https://github.com/go-delve/delve/blob/master/Documentation/usage/dlv_dap.md
+dap.configurations.go = {
+  {
+    type = "delve",
+    name = "Attach",
+    request = "attach",
+    mode = "remote",
+  } 
+}
+
 dap.configurations.cpp = {
   {
     name = "Launch file",

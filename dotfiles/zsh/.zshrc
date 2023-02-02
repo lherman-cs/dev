@@ -166,3 +166,6 @@ export LESSOPEN='| lessfilter-fzf %s'
 
 export AWS_EC2_METADATA_DISABLED=true
 
+# Debug env setup
+alias dap-go="dlv --headless=true --listen=:10001 --api-version=2 --log --log-output=dap exec"
+export GOFLAGS="-gcflags=all=-N -gcflags=-l" # always include debug information
