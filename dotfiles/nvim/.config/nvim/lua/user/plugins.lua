@@ -1,3 +1,5 @@
+local workspace = require('api.ws')
+
 local ensure_packer = function()
   local fn = vim.fn
   local install_path = fn.stdpath('data') .. '/site/pack/packer/start/packer.nvim'
@@ -74,23 +76,10 @@ require('packer').startup(setup_plugins)
 require('impatient')
 
 
-local find_current_workspace = function(hook_fn)
+local find_current_workspace = function()
   -- TODO: This gets polled every second. Maybe optimize this in the future?
-  local file = io.popen("dev ws find " .. vim.fn.expand('%:p') .. " 2> /dev/null")
-
-  if file == nil then
-    return ""
-  end
-
-  local output = file:read('*all')
-  local rc = { file:close() }
-
-  if not rc[1] then
-    return ""
-  end
-
-  local tokens = vim.fn.split(output, "=")
-  return '[' .. tokens[1] .. ']'
+  local current = workspace.current_workspace_label()
+  return '[' .. current .. ']'
 end
 
 require('lualine').setup {

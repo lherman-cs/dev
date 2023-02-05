@@ -3,47 +3,7 @@ local finders = require "telescope.finders"
 local conf = require("telescope.config").values
 local actions = require "telescope.actions"
 local action_state = require "telescope.actions.state"
--- local lfs = require "lfs"
-
-local find_workspace_members = function()
-	local members = {}
-	local file = io.popen("dev ws ls ' '")
-
-	if file == nil then
-		return members
-	end
-
-	local output = file:read('*all')
-	local rc = { file:close() }
-
-	if not rc[1] then
-		return members
-	end
-
-	for member in string.gmatch(output, "(%S+)") do
-		table.insert(members, member)
-	end
-	table.sort(members)
-	return members
-end
-
-local find_workspace_path = function(member)
-	local cmd = string.gsub("dev ws path {member}", "{member}", member)
-	local file = io.popen(cmd)
-
-	if file == nil then
-		return ""
-	end
-
-	local output = file:read('*all')
-	local rc = { file:close() }
-
-	if not rc[1] then
-		return ""
-	end
-
-	return output
-end
+local workspace = require("api.ws")
 
 -- our picker function: colors
 local workspace_picker = function(hook_fn)
@@ -51,14 +11,14 @@ local workspace_picker = function(hook_fn)
 	pickers.new(opts, {
 		prompt_title = "Workspace",
 		finder = finders.new_table {
-			results = find_workspace_members()
+			results = workspace.find_workspace_members()
 		},
 		sorter = conf.generic_sorter(opts),
 		attach_mappings = function(prompt_bufnr)
 			actions.select_default:replace(function()
 				actions.close(prompt_bufnr)
 				local selection = action_state.get_selected_entry()
-				local workspace_path = find_workspace_path(selection[1])
+				local workspace_path = workspace.find_workspace_path(selection[1])
 				opts.cwd = workspace_path
 				hook_fn(opts)
 			end)
@@ -68,22 +28,8 @@ local workspace_picker = function(hook_fn)
 end
 
 local current_workspace_picker = function(hook_fn)
-	local file = io.popen("dev ws find " .. vim.fn.expand('%:p') .. " 2> /dev/null")
-
-	if file == nil then
-		return
-	end
-
-	local output = file:read('*all')
-	local rc = { file:close() }
-
-	if not rc[1] then
-		return
-	end
-
-	local tokens = vim.fn.split(output, '=')
 	local opts = {}
-	opts.cwd = tokens[2]
+	opts.cwd = workspace.current_workspace_path()
 	hook_fn(opts)
 end
 

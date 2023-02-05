@@ -8,6 +8,6 @@
 - Execute: [gnome-screenshot, -a, -c]
 ...
 ---
-- Key: ['0', pressed]
-- Execute: [gnome-screenshot, -i]
+- Key: [Screenshot, pressed]
+- KeyPress: Print
 ...

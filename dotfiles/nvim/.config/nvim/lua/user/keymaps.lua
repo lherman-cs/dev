@@ -1,5 +1,29 @@
+local workspace = require('api.ws')
 local map = vim.api.nvim_set_keymap
-options = { noremap = true }
+local options = { noremap = true }
+
+function YANK_CODE_URL()
+  local start_line = vim.fn.line('v')
+  local end_line = vim.fn.line('.')
+
+  if start_line > end_line then
+    local tmp = end_line
+    end_line = start_line
+    start_line = tmp
+  end
+
+  local workspace_info = workspace.current_workspace_info()
+  local workspace_label = workspace_info[1]
+  local workspace_path = workspace_info[2]
+  local commit_hash = vim.fn.trim(vim.fn.system("cd " .. workspace_path .. " && git rev-parse HEAD"))
+  local file_path = vim.fn.expand('%:p')
+  local file_path = vim.fn.substitute(file_path, workspace_path, '', '')
+
+  local cmd = {"dev_code_uri", workspace_label, commit_hash, file_path, start_line, end_line}
+  local cmd = vim.fn.join(cmd, " ")
+  local uri = vim.fn.system(cmd)
+  print(uri)
+end
 
 vim.g.mapleader = " "
 map('n', '<leader>w<leader>', ':Telescope workspace find_files_in_workspace<cr>', options)
@@ -14,6 +38,7 @@ map('n', '<leader>fm', ':Telescope marks<cr>', options)
 map('n', '<leader>fh', ':Telescope help_tags<cr>', options)
 map('n', '<leader>ee', ':NvimTreeToggle<cr>', options)
 map('n', '<leader>ef', ':NvimTreeFindFile<cr>', options)
+map('v', '<leader>y', '<cmd>lua YANK_CODE_URL()<cr>', options)
 
 -- lsp shortcuts
 map('n', 'gd', ':Telescope lsp_definitions<cr>', options)
