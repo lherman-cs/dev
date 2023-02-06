@@ -135,7 +135,11 @@ local lspconfig = require('lspconfig')
 mason_lsp.setup()
 mason_lsp.setup_handlers {
   function(server_name)
-    lspconfig[server_name].setup {}
+    lspconfig[server_name].setup {
+      on_attach = function(client, bufnr)
+        require('api.event').onLspAttach(server_name, client, bufnr)
+      end
+    }
   end
 }
 require('dapui').setup()
