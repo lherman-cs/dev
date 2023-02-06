@@ -32,7 +32,8 @@ nix-env -iA \
 	nixpkgs.fzf \
 	nixpkgs.fd \
 	nixpkgs.ripgrep \
-	nixpkgs.delve
+	nixpkgs.delve \
+	nixpkgs.python311
 
 mkdir -p $WORKSPACE_DIR
 
