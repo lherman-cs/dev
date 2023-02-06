@@ -51,7 +51,7 @@ cd $DEV_REPO_DIR
 go install
 
 cd $DEV_REPO_DIR/dotfiles
-stow --target=$HOME --verbose --restow */
+stow --target=$HOME --verbose --restow --no-folding */
 
 # Install zsh
 command -v zsh | sudo tee -a /etc/shells
