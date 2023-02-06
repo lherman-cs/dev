@@ -30,12 +30,9 @@ nix-env -iA \
 	nixpkgs.stow \
 	nixpkgs.curl \
 	nixpkgs.fzf \
+	nixpkgs.fd \
 	nixpkgs.ripgrep \
-	nixpkgs.exa \
-	nixpkgs.bat \
-	nixpkgs.chafa \
-	nixpkgs.exiftool \
-	nixpkgs.lesspipe
+	nixpkgs.delve
 
 mkdir -p $WORKSPACE_DIR
 
