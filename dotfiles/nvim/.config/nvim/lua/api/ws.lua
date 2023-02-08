@@ -25,7 +25,7 @@ function Workspace.find_workspace_path(member)
 end
 
 function Workspace.current_workspace_info()
-	local output = vim.fn.system("dev ws find " .. vim.fn.expand('%:p') .. " 2> /dev/null")
+	local output = vim.fn.system("dev ws find " .. vim.api.nvim_buf_get_name(0) .. " 2> /dev/null")
 	if vim.v.shell_error ~= 0 then
 		return ""
 	end
@@ -34,7 +34,7 @@ function Workspace.current_workspace_info()
 end
 
 function Workspace.current_workspace_path()
-	local output = vim.fn.system("dev ws find " .. vim.fn.expand('%:p') .. " 2> /dev/null")
+	local output = vim.fn.system("dev ws find " .. vim.api.nvim_buf_get_name(0) .. " 2> /dev/null")
 	if vim.v.shell_error ~= 0 then
 		return ""
 	end
@@ -44,7 +44,7 @@ function Workspace.current_workspace_path()
 end
 
 function Workspace.current_workspace_label()
-	local output = vim.fn.system("dev ws find " .. vim.fn.expand('%:p') .. " 2> /dev/null")
+	local output = vim.fn.system("dev ws find " .. vim.api.nvim_buf_get_name(0) .. " 2> /dev/null")
 	if vim.v.shell_error ~= 0 then
 		return ""
 	end

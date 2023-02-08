@@ -366,7 +366,9 @@ func cmdFind(cliCtx *cli.Context) error {
 		toFind := cliCtx.Args().Get(0)
 		var matches []string
 		for member, memberPath := range cfg.Members {
-			if strings.HasPrefix(toFind, memberPath) {
+			// FIXME: in nix neovim, pwd is aliases to /local/home instead of /home
+			// So, prefix matching won't work.
+			if strings.Contains(toFind, memberPath) {
 				matches = append(matches, member)
 			}
 		}
