@@ -68,6 +68,16 @@ function setup_plugins(use)
   -- use osc52 for clipboard than relying on X11
   use 'ojroques/nvim-osc52'
 
+  use {
+    'rmagatti/auto-session',
+    config = function()
+      require("auto-session").setup {
+        log_level = "error",
+        auto_session_suppress_dirs = { "~/", "~/Projects", "~/Downloads", "/" },
+      }
+    end
+  }
+
   -- Automatically set up your configuration after cloning packer.nvim
   -- Put this at the end after all plugins
   if packer_bootstrap then
