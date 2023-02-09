@@ -1,5 +1,4 @@
 local home_dir = os.getenv("HOME")
--- vim.cmd [[colorscheme onedark]]
 
 -- Hide files in the background instead of closing them.
 vim.opt.hidden = true

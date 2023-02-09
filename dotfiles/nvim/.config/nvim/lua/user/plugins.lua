@@ -60,7 +60,10 @@ function setup_plugins(use)
   use { "rcarriga/nvim-dap-ui", requires = { "mfussenegger/nvim-dap" } }
   use 'simrat39/rust-tools.nvim'
   use "akinsho/toggleterm.nvim"
-  use 'shaunsingh/nord.nvim'
+
+  -- theme
+  use "EdenEast/nightfox.nvim"
+  use "ellisonleao/gruvbox.nvim"
 
   -- use osc52 for clipboard than relying on X11
   use 'ojroques/nvim-osc52'
@@ -128,7 +131,6 @@ require('nvim-tree').setup {
   }
 }
 
-require('nord').set()
 require('mason').setup()
 local mason_lsp = require('mason-lspconfig')
 local lspconfig = require('lspconfig')
@@ -186,3 +188,8 @@ end
 
 -- if you only want these mappings for toggle term use term://*toggleterm#* instead
 vim.cmd('autocmd! TermOpen term://* lua set_terminal_keymaps()')
+
+-- Themes
+-- vim.o.background = "dark" -- or "light" for light mode
+-- vim.cmd("colorscheme gruvbox")
+vim.cmd("colorscheme nordfox")
