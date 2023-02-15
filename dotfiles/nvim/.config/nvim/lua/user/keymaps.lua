@@ -17,8 +17,8 @@ function YANK_CODE_URL()
   local workspace_path = workspace_info[2]
   local commit_hash = vim.fn.trim(vim.fn.system("cd " .. workspace_path .. " && git rev-parse HEAD"))
   local file_path = vim.fn.expand('%:p')
-  local file_path = vim.fn.substitute(file_path, workspace_path, '', '')
-
+  local start = vim.fn.stridx(file_path, workspace_path) + string.len(workspace_path) + 1
+  file_path = string.sub(file_path, start)
   local cmd = {"dev_code_uri", workspace_label, commit_hash, file_path, start_line, end_line}
   local cmd = vim.fn.join(cmd, " ")
   local uri = vim.fn.system(cmd)
