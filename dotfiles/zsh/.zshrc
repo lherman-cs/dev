@@ -139,20 +139,22 @@ source ~/.zsh_plugins.sh
 # To customize prompt, run `p10k configure` or edit ~/.p10k.zsh.
 [[ ! -f ~/.p10k.zsh ]] || source ~/.p10k.zsh
 
-function _wcd {
-   compadd $(dev ws ls " " || "")
-}
+# function _wcd {
+#    compadd $(dev ws ls " " || "")
+# }
+# 
+# function wcd {
+#    # if [[ $1 == "${uri_prefix_workspace}*" ]]; then
+#    #    builtin cd $(dev ws path $1)
+#    # else
+#    #    builtin cd $1
+#    # fi
+#    cd $(dev ws path $1)
+# }
+# 
+# compdef _wcd wcd
 
-function wcd {
-   # if [[ $1 == "${uri_prefix_workspace}*" ]]; then
-   #    builtin cd $(dev ws path $1)
-   # else
-   #    builtin cd $1
-   # fi
-   cd $(dev ws path $1)
-}
-
-compdef _wcd wcd
+alias wcd="cd \$(dev ws path \$(dev ws ls ',' | sed 's/,/\n/g' | fzf))"
 
 # Nix no user uid: https://github.com/NixOS/nixpkgs/issues/64665
 # export LD_PRELOAD=/lib/x86_64-linux-gnu/libnss_sss.so.2
