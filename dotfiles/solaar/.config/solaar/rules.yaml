@@ -1,5 +1,9 @@
 %YAML 1.3
 ---
+- Key: [Mute Fn, pressed]
+- KeyPress: [Control_L, y]
+...
+---
 - MouseGesture: Mouse Up
 - KeyPress: [Super_L, click]
 ...
