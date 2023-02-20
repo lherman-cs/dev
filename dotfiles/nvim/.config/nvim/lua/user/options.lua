@@ -64,7 +64,3 @@ vim.g.clipboard = {
   copy = {['+'] = copy, ['*'] = copy},
   paste = {['+'] = paste, ['*'] = paste},
 }
-
--- Markdown previewer configs
-vim.g.mkdp_port = 8000
-vim.g.mkdp_open_to_the_world = 1
