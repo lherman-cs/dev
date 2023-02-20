@@ -34,8 +34,7 @@ nix-env -iA \
 	nixpkgs.ripgrep \
 	nixpkgs.delve \
 	nixpkgs.python311 \
-	nixpkgs.jdk19 \
-	nixpkgs.deno
+	nixpkgs.jdk19
 
 mkdir -p $WORKSPACE_DIR
 

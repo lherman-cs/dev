@@ -78,7 +78,10 @@ function setup_plugins(use)
     end
   }
 
-  use({ 'toppair/peek.nvim', run = 'deno task --quiet build:fast' })
+  use({
+    "iamcco/markdown-preview.nvim",
+    run = function() vim.fn["mkdp#util#install"]() end,
+  })
 
   -- Automatically set up your configuration after cloning packer.nvim
   -- Put this at the end after all plugins
@@ -205,6 +208,3 @@ vim.cmd('autocmd! TermOpen term://* lua set_terminal_keymaps()')
 -- vim.o.background = "dark" -- or "light" for light mode
 -- vim.cmd("colorscheme gruvbox")
 vim.cmd("colorscheme nordfox")
-
-vim.api.nvim_create_user_command('PeekOpen', require('peek').open, {})
-vim.api.nvim_create_user_command('PeekClose', require('peek').close, {})
