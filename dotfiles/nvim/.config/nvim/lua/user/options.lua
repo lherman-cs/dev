@@ -66,5 +66,14 @@ vim.g.clipboard = {
 }
 
 -- Markdown previewer configs
+vim.cmd([[
+function! g:EchoUrl(url)
+    :echo a:url
+endfunction
+]])
+function _G.mkdp_browserfunc(url)
+  print('hello ' .. url)
+end
 vim.g.mkdp_port = 8000
 vim.g.mkdp_open_to_the_world = 1
+vim.g.mkdp_browserfunc = 'g:EchoUrl'
