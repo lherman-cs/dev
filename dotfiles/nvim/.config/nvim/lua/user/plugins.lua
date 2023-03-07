@@ -18,12 +18,6 @@ function setup_plugins(use)
   -- Packer can manage itself
   use 'wbthomason/packer.nvim'
 
-  -- Cache modules to speed up startup time
-  use 'lewis6991/impatient.nvim'
-
-  -- Faster file type detection.
-  -- use "nathom/filetype.nvim"
-
   use {
     'nvim-telescope/telescope.nvim',
     requires = { { 'nvim-lua/plenary.nvim' } }
@@ -68,16 +62,6 @@ function setup_plugins(use)
   -- use osc52 for clipboard than relying on X11
   use 'ojroques/nvim-osc52'
 
-  use {
-    'rmagatti/auto-session',
-    config = function()
-      require("auto-session").setup {
-        log_level = "error",
-        auto_session_suppress_dirs = { "~/", "~/Projects", "~/Downloads", "/" },
-      }
-    end
-  }
-
   use({
     "iamcco/markdown-preview.nvim",
     run = function() vim.fn["mkdp#util#install"]() end,
@@ -91,8 +75,6 @@ function setup_plugins(use)
 end
 
 require('packer').startup(setup_plugins)
-require('impatient')
-
 
 local find_current_workspace = function()
   -- TODO: This gets polled every second. Maybe optimize this in the future?
