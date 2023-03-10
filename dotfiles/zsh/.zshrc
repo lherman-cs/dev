@@ -155,6 +155,7 @@ source ~/.zsh_plugins.sh
 # compdef _wcd wcd
 
 alias wcd="cd \$(dev ws path \$(dev ws ls ',' | sed 's/,/\n/g' | fzf))"
+alias wf="echo \$(dev ws path \$(dev ws ls ',' | sed 's/,/\n/g' | fzf))"
 
 # Nix no user uid: https://github.com/NixOS/nixpkgs/issues/64665
 # export LD_PRELOAD=/lib/x86_64-linux-gnu/libnss_sss.so.2
