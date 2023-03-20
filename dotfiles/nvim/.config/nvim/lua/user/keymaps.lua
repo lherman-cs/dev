@@ -37,7 +37,7 @@ map('n', '<leader>fd', ':Telescope diagnostics<cr>', options)
 map('n', '<leader>fm', ':Telescope marks<cr>', options)
 map('n', '<leader>fh', ':Telescope help_tags<cr>', options)
 map('n', '<leader>ee', ':NvimTreeToggle<cr>', options)
-map('n', '<leader>ef', ':NvimTreeFindFile<cr>', options)
+map('n', '<leader>ef', ':NvimTreeFindFile<cr>:NvimTreeFocus<cr>', options)
 map('v', '<leader>y', '<cmd>lua YANK_CODE_URL()<cr>', options)
 
 -- lsp shortcuts
