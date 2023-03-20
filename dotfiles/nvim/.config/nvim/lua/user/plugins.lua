@@ -120,13 +120,22 @@ require('telescope').setup {
 }
 
 -- empty setup using defaults: add your own options
-require('nvim-tree').setup {
-  actions = {
-    open_file = {
-      resize_window = false
-    }
-  }
-}
+-- require('nvim-tree').setup {
+--   actions = {
+--     open_file = {
+--       resize_window = false
+--     }
+--   }
+-- }
+-- disable netrw at the very start of your init.lua (strongly advised)
+vim.g.loaded_netrw = 1
+vim.g.loaded_netrwPlugin = 1
+
+-- set termguicolors to enable highlight groups
+vim.opt.termguicolors = true
+
+-- empty setup using defaults
+require("nvim-tree").setup()
 
 require('mason').setup()
 local mason_lsp = require('mason-lspconfig')
