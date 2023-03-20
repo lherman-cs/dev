@@ -20,6 +20,7 @@ nix-env -iA \
 	nixpkgs.gcc \
 	nixpkgs.xclip \
 	nixpkgs.go \
+	nixpkgs.rustup \
 	nixpkgs.nodejs \
 	nixpkgs.htop \
 	nixpkgs.neovim \
