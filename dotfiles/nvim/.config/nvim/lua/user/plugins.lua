@@ -39,14 +39,12 @@ function setup_plugins(use)
 
   use {
     'kyazdani42/nvim-tree.lua',
-    requires = { 'kyazdani42/nvim-web-devicons' }
   }
 
   use 'lewis6991/gitsigns.nvim'
 
   use {
     'hoob3rt/lualine.nvim',
-    requires = { 'kyazdani42/nvim-web-devicons' }
   }
 
   use 'tpope/vim-fugitive'
