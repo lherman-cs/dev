@@ -38,3 +38,6 @@ alias fless='cat `fzf`'
 # Debug env setup
 alias dap-go="dlv --headless=true --listen=:10001 --api-version=2 --log --log-output=dap exec"
 export GOFLAGS="-gcflags=all=-N -gcflags=-l" # always include debug information
+
+export LOCALE_ARCHIVE=/usr/lib/locale/locale-archive
+
