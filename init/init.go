@@ -9,6 +9,10 @@ import (
 	"github.com/urfave/cli/v2"
 )
 
+//go:embed .envrc
+var envrcTemplate []byte
+const envrcFilename = ".envrc"
+
 //go:embed devshell.toml
 var devshellTemplate []byte
 const devshellFilename = "devshell.toml"
@@ -27,8 +31,9 @@ func Command() *cli.Command {
 
 func cmdInit(cliCtx *cli.Context) error {
 	err := errors.Join(
-		ioutil.WriteFile(flakeFilename, flakeTemplate, 0644),
-		ioutil.WriteFile(devshellFilename, devshellTemplate, 0644),
+		ioutil.WriteFile(flakeFilename, flakeTemplate, 0664),
+		ioutil.WriteFile(devshellFilename, devshellTemplate, 0664),
+		ioutil.WriteFile(envrcFilename, envrcTemplate, 0664),
 	)
 	if err != nil {
 		return err
