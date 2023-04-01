@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/lherman-cs/dev/ws"
+	pkginit "github.com/lherman-cs/dev/init"
 	"github.com/urfave/cli/v2"
 )
 
@@ -12,6 +13,7 @@ func main() {
 	app := &cli.App{
 		Commands: []*cli.Command{
 			ws.Command(),
+			pkginit.Command(),
 		},
 	}
 
