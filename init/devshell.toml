@@ -1,3 +1,15 @@
+imports = [
+	"language.c"
+]
+
+language.c.includes = [
+	# "libusb1"
+]
+
 [devshell]
 packages = [
+	# "pkg-config",
+	# "libusb1.dev",
+	# "libusb1"
 ]
+
