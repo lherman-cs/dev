@@ -22,6 +22,13 @@ Goals:
 ### Why @@?
 Simple and reduce search space by avoiding a single @ usage.
 
+### Expected Speed
+
+Let's assume that the tag search in a single file cost 1ms on CPU.
+Let's assume that IO read is 200MBps, 1 byte per character, and 100 characters per line.
+
+Within 50ms latency, 200*1e6/100*50/1000=100k lines
+
 ### How to search for available tags?
 
 1. ripgrep @@\w+#\w+
