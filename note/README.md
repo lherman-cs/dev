@@ -31,11 +31,16 @@ Within 50ms latency, 200*1e6/100*50/1000=100k lines
 
 ### How to search for available tags?
 
-1. ripgrep @@\w+#\w+
+1. rg @@\w+#\w+
 2. Remove values
 3. Sort and uniq the results
 
 ### How to search for available values for a tag?
 
-1. ripgrep @@<tag>#\w+
+1. rg @@<tag>#\w+
 2. Sort results
+
+
+@@user#lukasman
+@@user#stewaga
+@@due_date#2023-12-04
