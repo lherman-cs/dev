@@ -11,7 +11,7 @@ The LSP will heavily utilize ripgrep to fulfil the symbol autocompletion, and wi
 Goals:
 1. Simple and flexible
 2. Grepable, allows easy post-processing
-3. Extremely fast
+3. Extremely fast, under 50ms to process
 4. Stateless
 
 ### Filter process
