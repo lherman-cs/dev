@@ -4,8 +4,9 @@ import (
 	"log"
 	"os"
 
-	"github.com/lherman-cs/dev/ws"
 	pkginit "github.com/lherman-cs/dev/init"
+	"github.com/lherman-cs/dev/note"
+	"github.com/lherman-cs/dev/ws"
 	"github.com/urfave/cli/v2"
 )
 
@@ -14,6 +15,7 @@ func main() {
 		Commands: []*cli.Command{
 			ws.Command(),
 			pkginit.Command(),
+			note.Command(),
 		},
 	}
 

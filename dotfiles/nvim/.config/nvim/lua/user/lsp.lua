@@ -58,6 +58,7 @@ cmp.setup.cmdline(':', {
     { name = 'cmdline' }
   })
 })
+-- vim:et ts=2 sw=2
 
 -- Setup lspconfig.
 local capabilities = require('cmp_nvim_lsp').default_capabilities()

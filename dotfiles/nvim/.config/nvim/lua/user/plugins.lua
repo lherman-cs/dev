@@ -138,6 +138,30 @@ vim.opt.termguicolors = true
 require("nvim-tree").setup()
 
 require('mason').setup()
+
+local configs = require "lspconfig.configs"
+local util = require "lspconfig.util"
+
+configs.note = {
+    default_config = {
+        cmd = { "dev", "note", "start" },
+        filetypes = { "markdown" },
+        root_dir = util.find_git_ancestor,
+    },
+    -- on_new_config = function(new_config) end;
+    -- on_attach = function(client, bufnr) end;
+    docs = {
+        description = [[
+        Simple note taking lsp
+]],
+        default_config = {
+            root_dir = [[root_pattern(".git")]],
+        },
+    },
+}
+print(configs)
+require'lspconfig'.note.setup {}
+
 local mason_lsp = require('mason-lspconfig')
 local lspconfig = require('lspconfig')
 mason_lsp.setup()

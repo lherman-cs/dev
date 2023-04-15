@@ -41,6 +41,6 @@ Within 50ms latency, 200*1e6/100*50/1000=100k lines
 2. Sort results
 
 
-@@user#lukasman
-@@user#stewaga
-@@due_date#2023-12-04
+@user=lukasman
+@user=stewaga
+@due_date=2023-12-04
