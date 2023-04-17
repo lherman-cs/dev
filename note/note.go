@@ -8,7 +8,6 @@ import (
 	"io"
 	"io/fs"
 	"io/ioutil"
-	"log"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -65,10 +64,8 @@ func cmdStart(cliCtx *cli.Context) error {
 	if err != nil {
 		panic(err)
 	}
-	handleConn(cliCtx.Context)
-	c := make(chan os.Signal, 1)
-	signal.Notify(c, os.Interrupt)
-	<-c
+	s := newServer()
+	s.start(cliCtx.Context)
 	// socket, err := net.Listen("unix", "TODO")
 	// if err != nil {
 	// 	return fmt.Errorf("failed to create unix socket: %w", err)
@@ -85,7 +82,20 @@ func cmdStart(cliCtx *cli.Context) error {
 	return nil
 }
 
-func handleConn(ctx context.Context) {
+type server struct {
+	signalCh chan os.Signal
+}
+
+func newServer() *server {
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, os.Interrupt)
+
+	return &server{
+		signalCh: c,
+	}
+}
+
+func (s *server) start(ctx context.Context) {
 	ioStream := stdio{
 		ReadCloser: ioutil.NopCloser(os.Stdin),
 		Writer:     os.Stdout,
@@ -98,9 +108,7 @@ func handleConn(ctx context.Context) {
 	ctx, conn, _ := protocol.NewServer(ctx, &server{}, stream, zap.L())
 	// FIXME: close conn somehwere
 	_ = conn
-}
-
-type server struct {
+	<-s.signalCh
 }
 
 func (s *server) Initialize(ctx context.Context, params *protocol.InitializeParams) (*protocol.InitializeResult, error) {
@@ -119,10 +127,12 @@ func (s *server) Initialized(ctx context.Context, params *protocol.InitializedPa
 }
 
 func (s *server) Shutdown(ctx context.Context) (err error) {
+	close(s.signalCh)
 	return nil
 }
 
 func (s *server) Exit(ctx context.Context) (err error) {
+	close(s.signalCh)
 	return nil
 }
 
@@ -154,8 +164,8 @@ func (s *server) Completion(ctx context.Context, params *protocol.CompletionPara
 		word := string(tag.Word)
 		results = append(results, protocol.CompletionItem{
 			InsertText: word,
-			Label: word,
-			Kind: protocol.CompletionItemKindText,
+			Label:      word,
+			Kind:       protocol.CompletionItemKindText,
 		})
 	}
 
@@ -321,7 +331,7 @@ func findTags(filesystem fs.FS) []Tag {
 
 	fs.WalkDir(filesystem, ".", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
-			log.Fatal(err)
+			return nil
 		}
 
 		if filepath.Ext(path) != ".md" {
@@ -330,7 +340,7 @@ func findTags(filesystem fs.FS) []Tag {
 
 		parsedTags, err := parseTags(filesystem, path)
 		if err != nil {
-			log.Fatal(err)
+			return nil
 		}
 		tags = append(tags, parsedTags...)
 		return nil
@@ -345,6 +355,15 @@ func parseTags(filesystem fs.FS, path string) ([]Tag, error) {
 		return nil, fmt.Errorf("failed to open file: %w", err)
 	}
 	defer file.Close()
+
+	stat, err := file.Stat()
+	if err != nil {
+		return nil, fmt.Errorf("failed to stat: %w", err)
+	}
+
+	if stat.Mode()&os.ModeSymlink != 0 {
+		return nil, nil
+	}
 
 	scanner := bufio.NewScanner(file)
 	scanner.Split(bufio.ScanWords)

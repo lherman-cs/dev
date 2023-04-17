@@ -146,7 +146,7 @@ configs.note = {
     default_config = {
         cmd = { "dev", "note", "start" },
         filetypes = { "markdown" },
-        root_dir = util.find_git_ancestor,
+        root_dir = util.path.dirname,
     },
     -- on_new_config = function(new_config) end;
     -- on_attach = function(client, bufnr) end;
