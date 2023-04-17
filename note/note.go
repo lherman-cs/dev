@@ -11,6 +11,8 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime"
+	"sync"
 
 	"github.com/urfave/cli/v2"
 	"go.lsp.dev/jsonrpc2"
@@ -41,12 +43,25 @@ func Command() *cli.Command {
 				Usage:  "run completion in cli",
 				Action: cmdExec,
 			},
+			{
+				Name:   "execp",
+				Usage:  "run completion in cli",
+				Action: cmdExecp,
+			},
 		},
 	}
 }
 
 func cmdExec(cliCtx *cli.Context) error {
 	tags := findTags(os.DirFS("."))
+	for _, tag := range tags {
+		fmt.Println(string(tag.Word))
+	}
+	return nil
+}
+
+func cmdExecp(cliCtx *cli.Context) error {
+	tags := findTagsParallel(os.DirFS("."))
 	for _, tag := range tags {
 		fmt.Println(string(tag.Word))
 	}
@@ -346,6 +361,54 @@ func findTags(filesystem fs.FS) []Tag {
 		return nil
 	})
 
+	return tags
+}
+
+func findTagsParallel(filesystem fs.FS) []Tag {
+	var tags []Tag
+
+	cores := runtime.NumCPU()
+	pathCh := make(chan string, cores)
+	resultCh := make(chan []Tag, cores)
+	var wg sync.WaitGroup
+	wg.Add(cores)
+
+	for i := 0; i < cores; i++ {
+		go func(worker int) {
+			for path := range pathCh {
+				parsedTags, err := parseTags(filesystem, path)
+				if err != nil {
+					return
+				}
+
+				resultCh <- parsedTags
+			}
+			wg.Done()
+		}(i)
+	}
+
+	go func() {
+		for result := range resultCh{
+			tags = append(tags, result...)
+		}
+	}()
+
+	fs.WalkDir(filesystem, ".", func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+
+		if filepath.Ext(path) != ".md" {
+			return nil
+		}
+
+		pathCh <- path
+		return nil
+	})
+
+	close(pathCh)
+	wg.Wait()
+	close(resultCh)
 	return tags
 }
 
