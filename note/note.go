@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"sync"
+	"time"
 
 	"github.com/urfave/cli/v2"
 	"go.lsp.dev/jsonrpc2"
@@ -21,7 +22,7 @@ import (
 )
 
 var (
-	triggerCharacter = []byte("@")
+	triggerCharacter = []byte("%")
 	equalCharacter   = []byte("=")
 )
 
@@ -175,12 +176,17 @@ func (s *server) ColorPresentation(ctx context.Context, params *protocol.ColorPr
 func (s *server) Completion(ctx context.Context, params *protocol.CompletionParams) (result *protocol.CompletionList, err error) {
 	tags := findTags(os.DirFS("."))
 	results := make([]protocol.CompletionItem, 0, len(tags))
+	results = append(results, protocol.CompletionItem{
+		InsertText: fmt.Sprintf("%sdue_by%s%s", triggerCharacter, equalCharacter, time.Now().Format("2006-01-02")),
+		Label:      fmt.Sprintf("%sdue_by%stoday", triggerCharacter, equalCharacter),
+		Kind:       protocol.CompletionItemKindValue,
+	})
 	for _, tag := range tags {
 		word := string(tag.Word)
 		results = append(results, protocol.CompletionItem{
 			InsertText: word,
 			Label:      word,
-			Kind:       protocol.CompletionItemKindText,
+			Kind:       protocol.CompletionItemKindValue,
 		})
 	}
 
