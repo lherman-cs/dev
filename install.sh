@@ -17,11 +17,7 @@ fi
 nix-channel --update
 nix-env -iA \
 	nixpkgs.git \
-	nixpkgs.gcc \
 	nixpkgs.xclip \
-	nixpkgs.go \
-	nixpkgs.rustup \
-	nixpkgs.nodejs \
 	nixpkgs.htop \
 	nixpkgs.neovim \
 	nixpkgs.tmux \
@@ -30,9 +26,7 @@ nix-env -iA \
 	nixpkgs.fzf \
 	nixpkgs.fd \
 	nixpkgs.ripgrep \
-	nixpkgs.delve \
-	nixpkgs.python311 \
-	nixpkgs.jdk19
+	nixpkgs.delve
 
 mkdir -p $WORKSPACE_DIR
 
