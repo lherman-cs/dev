@@ -70,3 +70,4 @@ MOZ_DISABLE_RDD_SANDBOX=1 firefox-esr
 The environment variable is needed to tell firefox to bypass the security check, so it can use the system's ffmpeg.
 https://forum.radxa.com/t/archlinux-on-rock5b/13851
 
+Updating firefox to the latest version without snap on Ubuntu 22.04 improves webgl, https://www.omgubuntu.co.uk/2022/04/how-to-install-firefox-deb-apt-ubuntu-22-04
