@@ -58,3 +58,15 @@ https://launchpad.net/~solaar-unifying/+archive/ubuntu/stable
 ## USB-C Display Not Working
 
 https://askubuntu.com/questions/1105332/external-monitor-not-working-ubuntu-nvidia/1134579#1134579
+
+## Orange pi 5
+
+### Firefox is not using hardware acceleration
+
+```
+MOZ_DISABLE_RDD_SANDBOX=1 firefox-esr
+```
+
+The environment variable is needed to tell firefox to bypass the security check, so it can use the system's ffmpeg.
+https://forum.radxa.com/t/archlinux-on-rock5b/13851
+
