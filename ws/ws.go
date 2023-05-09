@@ -19,6 +19,11 @@ const (
 	configName = ".workspace.toml"
 )
 
+var skipList = []string{
+	"build",
+	"tmp",
+}
+
 func Command() *cli.Command {
 	return &cli.Command{
 		Name:  "ws",
@@ -317,7 +322,7 @@ func findGitProjects(root string) ([]string, error) {
 			}
 
 			// don't follow links
-			if child.Mode() & os.ModeSymlink == 1 {
+			if child.Mode()&os.ModeSymlink == 1 {
 				continue
 			}
 
@@ -328,8 +333,19 @@ func findGitProjects(root string) ([]string, error) {
 				break
 			}
 
-			childPath := filepath.Join(currentDir, child.Name())
-			toSearch = append(toSearch, childPath)
+			shouldSkip := false
+			lower := strings.ToLower(child.Name())
+			for _, skipName := range skipList {
+				if skipName == lower {
+					shouldSkip = true
+					break
+				}
+			}
+
+			if !shouldSkip {
+				childPath := filepath.Join(currentDir, child.Name())
+				toSearch = append(toSearch, childPath)
+			}
 		}
 
 		stack = append(stack, toSearch...)
