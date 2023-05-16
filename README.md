@@ -67,6 +67,13 @@ https://askubuntu.com/questions/1105332/external-monitor-not-working-ubuntu-nvid
 MOZ_DISABLE_RDD_SANDBOX=1 firefox-esr
 ```
 
+### Chromium is not using hardware acceleration
+
+https://forum.armbian.com/topic/25957-guide-kodi-on-orange-pi-5-with-gpu-hardware-acceleration-and-hdmi-audio/page/2/
+```
+CHROMIUM_FLAGS="--use-gl=egl" chromium-browser
+```
+
 The environment variable is needed to tell firefox to bypass the security check, so it can use the system's ffmpeg.
 https://forum.radxa.com/t/archlinux-on-rock5b/13851
 
