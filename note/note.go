@@ -75,11 +75,6 @@ type stdio struct {
 }
 
 func cmdStart(cliCtx *cli.Context) error {
-	var err error
-	logFile, err = os.Create("log.txt")
-	if err != nil {
-		panic(err)
-	}
 	s := newServer()
 	s.start(cliCtx.Context)
 	// socket, err := net.Listen("unix", "TODO")
@@ -394,7 +389,7 @@ func findTagsParallel(filesystem fs.FS) []Tag {
 	}
 
 	go func() {
-		for result := range resultCh{
+		for result := range resultCh {
 			tags = append(tags, result...)
 		}
 	}()
