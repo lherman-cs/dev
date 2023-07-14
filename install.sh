@@ -44,4 +44,9 @@ go install
 
 cd $DEV_REPO_DIR/dotfiles
 stow --target=$HOME --verbose --restow --no-folding */
-echo "source '$HOME/.extend.bashrc'" >> ~/.bashrc
+
+if [ "$SHELL" = "bash" ]; then
+	echo "source '$HOME/.extend.rc'" >> ~/.bashrc
+else
+	echo "source '$HOME/.extend.rc'" >> ~/.zshrc
+fi
