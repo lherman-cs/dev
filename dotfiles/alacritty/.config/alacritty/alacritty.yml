@@ -3,3 +3,8 @@ key_bindings:
 
 env:
   TERM: xterm-256color
+
+# Font configuration
+font:
+  # Point size
+  size: 16.0
