@@ -39,7 +39,7 @@ else
 fi
 
 cd $DEV_REPO_DIR
-go install
+git remote set-url origin git@github.com:lherman-cs/dev.git
 
 cd $DEV_REPO_DIR/dotfiles
 stow --target=$HOME --verbose --restow --no-folding */
@@ -49,3 +49,5 @@ if [ "$SHELL" = "bash" ]; then
 else
 	echo "source '$HOME/.extend.rc'" >> ~/.zshrc
 fi
+
+curl -sf https://gobinaries.com/lherman-cs/dev | sh
