@@ -25,8 +25,7 @@ nix-env -iA \
 	nixpkgs.curl \
 	nixpkgs.fzf \
 	nixpkgs.fd \
-	nixpkgs.ripgrep \
-	nixpkgs.delve
+	nixpkgs.ripgrep
 
 mkdir -p $WORKSPACE_DIR
 
