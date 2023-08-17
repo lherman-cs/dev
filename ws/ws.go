@@ -16,7 +16,8 @@ import (
 )
 
 const (
-	configName = ".workspace.toml"
+	configName      = ".workspace.toml"
+	defaultResolver = "find */ -type d -name '.git' | xargs dirname"
 )
 
 var skipList = []string{
@@ -82,8 +83,9 @@ func Command() *cli.Command {
 }
 
 type Config struct {
-	path    string
-	Members map[string]string `toml:"members"`
+	path     string
+	Resolver string            `toml:"resolver"`
+	Members  map[string]string `toml:"members"`
 }
 
 func (cfg *Config) commit() error {
@@ -181,7 +183,12 @@ func cmdInit(cliCtx *cli.Context) error {
 	}
 	defer f.Close()
 
-	return nil
+	var cfg Config
+	cfg.Resolver = defaultResolver
+	cfg.Members = make(map[string]string)
+	err = toml.NewEncoder(f).Encode(&cfg)
+
+	return err
 }
 
 func cmdSet(cliCtx *cli.Context) error {
@@ -354,7 +361,7 @@ func findGitProjects(root string) ([]string, error) {
 	return gitProjects, nil
 }
 
-func cmdSync(cliCtx *cli.Context) error {
+func cmdSyncDeprecated(cliCtx *cli.Context) error {
 	return openAndCommitConfig(func(cfg *Config) error {
 		workspaceDir := filepath.Dir(cfg.path)
 
@@ -371,6 +378,43 @@ func cmdSync(cliCtx *cli.Context) error {
 			key := filepath.Base(gitProject)
 			cfg.Members[key] = gitProject
 			fmt.Printf("%s=%s\n", key, gitProject)
+		}
+
+		return nil
+	})
+}
+
+func cmdSync(cliCtx *cli.Context) error {
+	return openAndCommitConfig(func(cfg *Config) error {
+		workspaceDir := filepath.Dir(cfg.path)
+		resolver := cfg.Resolver
+		if resolver == "" {
+			resolver = defaultResolver
+		}
+
+		fmt.Println("used resolved:", resolver)
+		cmd := exec.Command("sh", "-c", resolver)
+		cmd.Dir = workspaceDir
+		out, err := cmd.Output()
+		if err != nil {
+			return err
+		}
+		dirs := bytes.Split(out, []byte("\n"))
+
+		// Always override existing workspace setting
+		cfg.Members = make(map[string]string)
+		for _, dir := range dirs {
+			if len(dir) == 0 {
+				continue
+			}
+			dir := string(dir)
+			key := filepath.Base(dir)
+			path, err := filepath.Abs(dir)
+			if err != nil {
+				return err
+			}
+			cfg.Members[key] = path
+			fmt.Printf("%s=%s\n", key, path)
 		}
 
 		return nil
