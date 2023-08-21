@@ -3,31 +3,9 @@
 WORKSPACE_DIR=$HOME/workspace
 DEV_REPO_DIR=$WORKSPACE_DIR/dev
 
-## Install nix package manager
-#sh <(curl -L https://nixos.org/nix/install) --yes
-#
-## Load nix environment right away
-#if ! command -v nix-env &> /dev/null
-#then
-#	. $HOME/.nix-profile/etc/profile.d/nix.sh
-#fi
-#
-#
-## Install deps to nix
-#nix-channel --update
-#nix-env -iA \
-#	nixpkgs.git \
-#	nixpkgs.xclip \
-#	nixpkgs.htop \
-#	nixpkgs.neovim \
-#	nixpkgs.tmux \
-#	nixpkgs.stow \
-#	nixpkgs.curl \
-#	nixpkgs.fzf \
-#	nixpkgs.fd \
-#	nixpkgs.ripgrep \
-#	nixpkgs.go
-#
+# Install nix package manager
+sh <(curl -L https://nixos.org/nix/install) --yes
+
 function append_shell() {
 	if [ "$SHELL" = "bash" ]; then
 		echo "$1" >> ~/.bashrc
@@ -81,4 +59,4 @@ stow --target=$HOME --verbose --restow --no-folding */
 append_shell "source '$HOME/.extend.rc'"
 
 # curl -sf https://gobinaries.com/lherman-cs/dev | sh
-go install .
+go install
