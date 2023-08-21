@@ -54,7 +54,8 @@ if [[ "$OSTYPE" == "linux-gnu"* ]]; then
 elif [[ "$OSTYPE" == "darwin"* ]]; then
 	/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 	append_shell 'export PATH=$PATH:/opt/homebrew/bin'
-	/opt/homebrew/bin/brew install ${PACKAGES[*]}
+	export PATH=$PATH:/opt/homebrew/bin
+	brew install ${PACKAGES[*]}
 else
         # Unknown.
 	echo "Unknown OSTYPE: $OSTYPE"
