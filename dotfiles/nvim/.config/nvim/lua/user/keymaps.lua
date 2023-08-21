@@ -22,7 +22,6 @@ function YANK_CODE_URL()
   local cmd = {"dev_code_uri", workspace_label, commit_hash, file_path, start_line, end_line}
   local cmd = vim.fn.join(cmd, " ")
   local uri = vim.fn.system(cmd)
-  print(uri)
 end
 
 vim.g.mapleader = " "

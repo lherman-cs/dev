@@ -159,7 +159,6 @@ configs.note = {
         },
     },
 }
-print(configs)
 require'lspconfig'.note.setup {}
 
 local mason_lsp = require('mason-lspconfig')
