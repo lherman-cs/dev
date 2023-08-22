@@ -163,6 +163,7 @@ require'lspconfig'.note.setup {}
 
 local mason_lsp = require('mason-lspconfig')
 local lspconfig = require('lspconfig')
+-- vim.lsp.set_log_level("trace")
 mason_lsp.setup()
 mason_lsp.setup_handlers {
   function(server_name)
