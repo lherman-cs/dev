@@ -22,6 +22,26 @@ function YANK_CODE_URL()
   local cmd = {"dev_code_uri", workspace_label, commit_hash, file_path, start_line, end_line}
   local cmd = vim.fn.join(cmd, " ")
   local uri = vim.fn.system(cmd)
+  if vim.v.shell_error ~= 0 then
+    -- parse from git remote
+    local remote = vim.fn.system("cd " .. workspace_path .. " && git remote show | head -n1 | xargs git remote get-url")
+    local website = ""
+    local owner = ""
+    local repo = ""
+
+    if remote:find("^https://") ~= nil then
+      -- e.g. https://github.com/lherman-cs/dev.git
+      _, _, website, owner, repo = remote:find("https://(.+)/(.+)/(.+).git")
+    else
+      -- e.g. git@github.com:lherman-cs/dev.git
+      _, _, website, owner, repo = remote:find("git@(.+):(.+)/(.+).git")
+    end
+
+    uri = string.format("https://%s/%s/%s/blob/%s/%s#L%d-L%d", 
+      website, owner, repo,
+      commit_hash, file_path, start_line, end_line)
+  end
+  print(uri)
 end
 
 vim.g.mapleader = " "
