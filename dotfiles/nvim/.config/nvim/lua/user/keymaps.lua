@@ -2,6 +2,12 @@ local workspace = require('api.ws')
 local map = vim.api.nvim_set_keymap
 local options = { noremap = true }
 
+function find_git_root(path)
+  local dot_git_path = vim.fn.finddir(".git", path .. ";")
+  print(path)
+  return vim.fn.fnamemodify(dot_git_path, ":h")
+end
+
 function YANK_CODE_URL()
   local start_line = vim.fn.line('v')
   local end_line = vim.fn.line('.')
@@ -12,35 +18,33 @@ function YANK_CODE_URL()
     start_line = tmp
   end
 
-  local workspace_info = workspace.current_workspace_info()
-  local workspace_label = workspace_info[1]
-  local workspace_path = workspace_info[2]
-  local commit_hash = vim.fn.trim(vim.fn.system("cd " .. workspace_path .. " && git rev-parse HEAD"))
   local file_path = vim.fn.expand('%:p')
-  local start = vim.fn.stridx(file_path, workspace_path) + string.len(workspace_path) + 1
-  file_path = string.sub(file_path, start)
-  local cmd = {"dev_code_uri", workspace_label, commit_hash, file_path, start_line, end_line}
-  local cmd = vim.fn.join(cmd, " ")
-  local uri = vim.fn.system(cmd)
-  if vim.v.shell_error ~= 0 then
-    -- parse from git remote
-    local remote = vim.fn.system("cd " .. workspace_path .. " && git remote show | head -n1 | xargs git remote get-url")
-    local website = ""
-    local owner = ""
-    local repo = ""
+  local commit_hash_cmd = string.format("cd $(dirname %s) && git rev-parse HEAD", file_path)
+  local commit_hash = vim.fn.trim(vim.fn.system(commit_hash_cmd))
 
-    if remote:find("^https://") ~= nil then
-      -- e.g. https://github.com/lherman-cs/dev.git
-      _, _, website, owner, repo = remote:find("https://(.+)/(.+)/(.+).git")
-    else
-      -- e.g. git@github.com:lherman-cs/dev.git
-      _, _, website, owner, repo = remote:find("git@(.+):(.+)/(.+).git")
-    end
+  -- parse from git remote
+  local remote_cmd = string.format("cd $(dirname %s) && git remote show | head -n1 | xargs git remote get-url", file_path)
+  local remote = vim.fn.system(remote_cmd)
+  local website = ""
+  local owner = ""
+  local repo = ""
 
-    uri = string.format("https://%s/%s/%s/blob/%s/%s#L%d-L%d", 
-      website, owner, repo,
-      commit_hash, file_path, start_line, end_line)
+  if remote:find("^https://") ~= nil then
+    -- e.g. https://github.com/lherman-cs/dev.git
+    _, _, website, owner, repo = remote:find("https://(.+)/(.+)/(.+).git")
+  else
+    -- e.g. git@github.com:lherman-cs/dev.git
+    _, _, website, owner, repo = remote:find("git@(.+):(.+)/(.+).git")
   end
+
+  local rel_path_cmd = string.format("cd $(dirname %s) && git rev-parse --show-toplevel", file_path)
+  local rel_path = vim.fn.trim(vim.fn.system(rel_path_cmd))
+  local rel_path_start = vim.fn.stridx(file_path, rel_path) + string.len(rel_path) + 1
+  rel_path = string.sub(file_path, rel_path_start)
+
+  uri = string.format("https://%s/%s/%s/blob/%s/%s#L%d-L%d", 
+    website, owner, repo,
+    commit_hash, rel_path, start_line, end_line)
   print(uri)
 end
 
