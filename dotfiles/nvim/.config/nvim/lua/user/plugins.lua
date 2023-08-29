@@ -22,6 +22,9 @@ function setup_plugins(use)
     'nvim-telescope/telescope.nvim',
     requires = { { 'nvim-lua/plenary.nvim' } }
   }
+  use {
+    'rmagatti/auto-session',
+  }
 
   use 'tpope/vim-surround'
   use {
@@ -217,6 +220,11 @@ require("toggleterm").setup {
   end,
   open_mapping = [[<C-\>]],
   direction = "float",
+}
+
+require("auto-session").setup {
+  log_level = "error",
+  auto_session_suppress_dirs = { "~/", "~/Projects", "~/Downloads", "/"},
 }
 
 function _G.set_terminal_keymaps()
