@@ -78,8 +78,21 @@ require('packer').startup(setup_plugins)
 
 local find_current_workspace = function()
   -- TODO: This gets polled every second. Maybe optimize this in the future?
-  local current = workspace.current_workspace_label()
-  return '[' .. current .. ']'
+  local tabs = vim.api.nvim_list_tabpages()
+  local tabline = {}
+
+  for i, tab in ipairs(tabs) do
+      local window = vim.api.nvim_tabpage_get_win(tab)
+      local buffer = vim.api.nvim_win_get_buf(window)
+      local filename = vim.api.nvim_buf_get_name(buffer)
+      local current_workspace = workspace.current_workspace_label(filename)
+      
+      local workspace_formatted = string.format("%d=%s", i, current_workspace)
+      table.insert(tabline, workspace_formatted)
+  end
+
+  local tabs = table.concat(tabline, " ")
+  return "[" .. tabs .. "]"
 end
 
 require('lualine').setup {
