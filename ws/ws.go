@@ -2,11 +2,13 @@ package ws
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io/ioutil"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"strings"
 
@@ -52,6 +54,12 @@ func Command() *cli.Command {
 				Action:  cmdExec,
 			},
 			{
+				Name:    "run",
+				Aliases: []string{"r"},
+				Usage:   "run a given task group in a tmux",
+				Action:  cmdRun,
+			},
+			{
 				Name:    "path",
 				Aliases: []string{"p"},
 				Usage:   "get the workspace member's absolute path",
@@ -82,10 +90,17 @@ func Command() *cli.Command {
 	}
 }
 
+type Task struct {
+	Workspace    string `toml:"workspace"`
+	Command      string `toml:"command"`
+	Dependencies []string
+}
+
 type Config struct {
 	path     string
 	Resolver string            `toml:"resolver"`
 	Members  map[string]string `toml:"members"`
+	Tasks    map[string]Task   `toml:"tasks"`
 }
 
 func (cfg *Config) commit() error {
@@ -269,6 +284,77 @@ func cmdExec(cliCtx *cli.Context) error {
 			fmt.Printf("===> %s: %s\n", member, path)
 			fmt.Println(stdouts[childId].String())
 			fmt.Println()
+		}
+		return nil
+	})
+}
+
+func easyExec(ctx context.Context, cmd string) (*exec.Cmd, error) {
+	process := exec.CommandContext(ctx, "sh", "-c", cmd)
+	process.Stdout = os.Stdout
+	process.Stderr = os.Stderr
+	fmt.Println("Running:", cmd)
+	return process, process.Start()
+}
+
+func cmdRun(cliCtx *cli.Context) error {
+	return openAndCommitConfig(func(cfg *Config) error {
+		taskName := cliCtx.Args().Get(0)
+		task, ok := cfg.Tasks[taskName]
+		if !ok {
+			return fmt.Errorf("%s is not a valid task", taskName)
+		}
+
+		// trap Ctrl+C and call cancel on the context
+		ctx := context.Background()
+		ctx, cancel := context.WithCancel(ctx)
+		c := make(chan os.Signal, 1)
+		signal.Notify(c, os.Interrupt)
+		defer func() {
+			signal.Stop(c)
+			cancel()
+		}()
+
+		dependencies := task.Dependencies
+		if task.Command != "" {
+			dependencies = []string{taskName}
+		}
+
+		var processes []*exec.Cmd
+		for _, depTaskName := range dependencies {
+			depTask, ok := cfg.Tasks[depTaskName]
+			if !ok {
+				return fmt.Errorf("%s is not a valid task dependency", depTaskName)
+			}
+
+			var commands []string
+			if depTask.Workspace != "" {
+				workspacePath, ok := cfg.Members[depTask.Workspace]
+				if !ok {
+					return fmt.Errorf("%s is not a valid workspace member", depTask.Workspace)
+				}
+
+				commands = append(commands, fmt.Sprintf("cd %s", workspacePath))
+			}
+
+			commands = append(commands, depTask.Command)
+			command := strings.Join(commands, " && ")
+
+			// wrap in tmux command
+			command = fmt.Sprintf("tmux new-window -n %s \"%s\"", depTaskName, command)
+			proc, _ := easyExec(ctx, command)
+			processes = append(processes, proc)
+		}
+
+		select {
+		case <-c:
+			cancel()
+			for _, proc := range processes {
+				if proc.Process != nil {
+					proc.Process.Kill()
+				}
+			}
+		case <-ctx.Done():
 		}
 		return nil
 	})
