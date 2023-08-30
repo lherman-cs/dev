@@ -293,7 +293,7 @@ func cmdRun(cliCtx *cli.Context) error {
 			command := strings.Join(commands, " && ")
 
 			// wrap in tmux command
-			command = fmt.Sprintf("tmux new-window -n %s \"%s\"", depTaskName, command)
+			command = fmt.Sprintf("tmux new-window -n %s \"%s; read\"", depTaskName, command)
 			proc, _ := easyExec(ctx, command)
 			processes = append(processes, proc)
 		}
