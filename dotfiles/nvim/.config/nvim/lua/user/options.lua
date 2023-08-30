@@ -75,3 +75,12 @@ vim.g.mkdp_port = 8000
 vim.g.mkdp_open_to_the_world = 1
 -- vim.g.mkdp_browserfunc = 'g:EchoUrl'
 vim.g.mkdp_page_title = '${name}'
+
+
+-- Lua nvim tree recommendations
+-- disable netrw at the very start of your init.lua
+vim.g.loaded_netrw = 1
+vim.g.loaded_netrwPlugin = 1
+
+-- set termguicolors to enable highlight groups
+vim.opt.termguicolors = true
