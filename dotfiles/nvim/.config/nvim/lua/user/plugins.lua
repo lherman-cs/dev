@@ -109,7 +109,10 @@ require('lualine').setup {
   sections = {
     lualine_c = {
       find_current_workspace,
-      'filename'
+      {
+        'filename',
+        path = 1,
+      }
     }
   }
 }
