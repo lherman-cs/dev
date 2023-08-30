@@ -19,7 +19,7 @@ import (
 
 const (
 	configName      = ".workspace.toml"
-	defaultResolver = "find */ -type d -name '.git' | xargs dirname"
+	defaultResolver = "fd -t d '.git' --hidden | xargs dirname"
 )
 
 var skipList = []string{
