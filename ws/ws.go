@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -13,7 +12,6 @@ import (
 	"strings"
 
 	"github.com/BurntSushi/toml"
-	"github.com/nanmu42/limitio"
 	"github.com/urfave/cli/v2"
 )
 
@@ -46,12 +44,6 @@ func Command() *cli.Command {
 				Name:   "rm",
 				Usage:  "remove a workspace member",
 				Action: cmdRemove,
-			},
-			{
-				Name:    "exec",
-				Aliases: []string{"e"},
-				Usage:   "execute shell command on each workspace member",
-				Action:  cmdExec,
 			},
 			{
 				Name:    "run",
@@ -249,46 +241,6 @@ func handleRemove(cfg *Config, member string) error {
 	return nil
 }
 
-func cmdExec(cliCtx *cli.Context) error {
-	return openAndCommitConfig(func(cfg *Config) error {
-		members := make([]string, len(cfg.Members))
-		stdouts := make([]bytes.Buffer, len(cfg.Members))
-		queue := make(chan int)
-		var i int
-
-		execCmd := cliCtx.Args().Get(0)
-		for member, path := range cfg.Members {
-			childId := i
-			members[childId] = member
-			path := path
-			i++
-
-			go func() {
-				// FIXME: Parameterize buffer sizes
-				wrappedStdout := limitio.NewWriter(&stdouts[childId], 8192, true)
-
-				cmd := exec.Command("zsh", "-c", execCmd)
-				cmd.Dir = path
-				// FIXME: Separate stdout and stderr. Needs to synchronize the outputs though.
-				cmd.Stdout = wrappedStdout
-				cmd.Stderr = wrappedStdout
-				cmd.Run()
-				queue <- childId
-			}()
-		}
-
-		for range cfg.Members {
-			childId := <-queue
-			member := members[childId]
-			path := cfg.Members[member]
-			fmt.Printf("===> %s: %s\n", member, path)
-			fmt.Println(stdouts[childId].String())
-			fmt.Println()
-		}
-		return nil
-	})
-}
-
 func easyExec(ctx context.Context, cmd string) (*exec.Cmd, error) {
 	process := exec.CommandContext(ctx, "sh", "-c", cmd)
 	process.Stdout = os.Stdout
@@ -390,82 +342,6 @@ func cmdList(cliCtx *cli.Context) error {
 		}
 
 		fmt.Println(strings.Join(members, cliCtx.Args().First()))
-		return nil
-	})
-}
-
-// findGitProjects recursively finds paths to git projects from root
-func findGitProjects(root string) ([]string, error) {
-	stack := []string{root}
-	var gitProjects []string
-
-	for len(stack) > 0 {
-		currentDir := stack[len(stack)-1]
-		stack = stack[:len(stack)-1]
-
-		children, err := ioutil.ReadDir(currentDir)
-		if err != nil {
-			return nil, err
-		}
-
-		var toSearch []string
-		for _, child := range children {
-			if !child.IsDir() {
-				continue
-			}
-
-			// don't follow links
-			if child.Mode()&os.ModeSymlink == 1 {
-				continue
-			}
-
-			if child.Name() == ".git" {
-				gitProjects = append(gitProjects, currentDir)
-				// End search early when we find a git module. No support for git submodules.
-				toSearch = nil
-				break
-			}
-
-			shouldSkip := false
-			lower := strings.ToLower(child.Name())
-			for _, skipName := range skipList {
-				if skipName == lower {
-					shouldSkip = true
-					break
-				}
-			}
-
-			if !shouldSkip {
-				childPath := filepath.Join(currentDir, child.Name())
-				toSearch = append(toSearch, childPath)
-			}
-		}
-
-		stack = append(stack, toSearch...)
-	}
-
-	return gitProjects, nil
-}
-
-func cmdSyncDeprecated(cliCtx *cli.Context) error {
-	return openAndCommitConfig(func(cfg *Config) error {
-		workspaceDir := filepath.Dir(cfg.path)
-
-		// Look for all git projects and automatically add them to workspace, and prune
-		// missing links
-		gitProjects, err := findGitProjects(workspaceDir)
-		if err != nil {
-			return fmt.Errorf("failed to find git projects: %v", err)
-		}
-
-		// Always override existing workspace setting
-		cfg.Members = make(map[string]string)
-		for _, gitProject := range gitProjects {
-			key := filepath.Base(gitProject)
-			cfg.Members[key] = gitProject
-			fmt.Printf("%s=%s\n", key, gitProject)
-		}
-
 		return nil
 	})
 }
