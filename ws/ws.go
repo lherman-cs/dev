@@ -1,13 +1,14 @@
 package ws
 
 import (
-	_ "embed"
 	"bytes"
+	_ "embed"
 	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 
 	"github.com/BurntSushi/toml"
@@ -50,11 +51,6 @@ func Command() *cli.Command {
 				Action: cmdRemove,
 			},
 			{
-				Name:    "run",
-				Aliases: []string{"r"},
-				Usage:   "run a given task group in a tmux",
-			},
-			{
 				Name:    "path",
 				Aliases: []string{"p"},
 				Usage:   "get the workspace member's absolute path",
@@ -85,17 +81,20 @@ func Command() *cli.Command {
 	}
 }
 
-type Task struct {
-	Workspace    string `toml:"workspace"`
-	Command      string `toml:"command"`
-	Dependencies []string
-}
-
 type Config struct {
 	path     string
 	Resolver string            `toml:"resolver"`
 	Members  map[string]string `toml:"members"`
-	Tasks    map[string]Task   `toml:"tasks"`
+}
+
+func (cfg Config) clone() Config {
+	members := make(map[string]string, len(cfg.Members))
+	for k, v := range cfg.Members {
+		members[k] = v
+	}
+
+	cfg.Members = members
+	return cfg
 }
 
 func (cfg *Config) commit() error {
@@ -173,11 +172,16 @@ func openAndCommitConfig(f func(cfg *Config) error) error {
 		return err
 	}
 
+	cloned := cfg.clone()
 	err = f(cfg)
 	if err != nil {
 		return err
 	}
+	cfg.Members["root"] = filepath.Dir(configPath)
 
+	if reflect.DeepEqual(cfg, &cloned) {
+		return nil
+	}
 	return cfg.commit()
 }
 
