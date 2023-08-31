@@ -19,10 +19,10 @@ const (
 	defaultResolver = "fd -t d '.git' --hidden | xargs dirname"
 )
 
-//go:embed Makefile
+//go:embed justfile
 var makefileTemplate []byte
 
-const makefileFilename = "Makefile"
+const makefileFilename = "justfile"
 
 var skipList = []string{
 	"build",

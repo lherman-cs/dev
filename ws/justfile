@@ -1,0 +1,10 @@
+set shell := ["bash", "-uc"]
+
+tmux task:
+	tmux new-window -n {{task}} "just {{task}}; read"
+
+echo *args:
+	echo "hello"
+
+serve:
+	just tmux echo
