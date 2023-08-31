@@ -27,6 +27,7 @@ PACKAGES=(\
 	ripgrep \
 	go \
 	fd \
+	just \
 )
 if [[ "$OSTYPE" == "linux-gnu"* ]]; then
 	sudo apt update && sudo apt install -y ${PACKAGES[*]}
