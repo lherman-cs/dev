@@ -1,13 +1,12 @@
 package ws
 
 import (
+	_ "embed"
 	"bytes"
-	"context"
 	"errors"
 	"fmt"
 	"os"
 	"os/exec"
-	"os/signal"
 	"path/filepath"
 	"strings"
 
@@ -19,6 +18,11 @@ const (
 	configName      = ".workspace.toml"
 	defaultResolver = "fd -t d '.git' --hidden | xargs dirname"
 )
+
+//go:embed Makefile
+var makefileTemplate []byte
+
+const makefileFilename = "Makefile"
 
 var skipList = []string{
 	"build",
@@ -49,7 +53,6 @@ func Command() *cli.Command {
 				Name:    "run",
 				Aliases: []string{"r"},
 				Usage:   "run a given task group in a tmux",
-				Action:  cmdRun,
 			},
 			{
 				Name:    "path",
@@ -195,6 +198,15 @@ func cmdInit(cliCtx *cli.Context) error {
 	cfg.Members = make(map[string]string)
 	err = toml.NewEncoder(f).Encode(&cfg)
 
+	if _, err := os.Stat(makefileFilename); err == nil {
+		return fmt.Errorf("file already exists: %s", makefileFilename)
+	}
+
+	err = os.WriteFile(makefileFilename, makefileTemplate, 0664)
+	if err != nil {
+		return err
+	}
+
 	return err
 }
 
@@ -239,77 +251,6 @@ func cmdRemove(cliCtx *cli.Context) error {
 func handleRemove(cfg *Config, member string) error {
 	delete(cfg.Members, member)
 	return nil
-}
-
-func easyExec(ctx context.Context, cmd string) (*exec.Cmd, error) {
-	process := exec.CommandContext(ctx, "sh", "-c", cmd)
-	process.Stdout = os.Stdout
-	process.Stderr = os.Stderr
-	fmt.Println("Running:", cmd)
-	return process, process.Start()
-}
-
-func cmdRun(cliCtx *cli.Context) error {
-	return openAndCommitConfig(func(cfg *Config) error {
-		taskName := cliCtx.Args().Get(0)
-		task, ok := cfg.Tasks[taskName]
-		if !ok {
-			return fmt.Errorf("%s is not a valid task", taskName)
-		}
-
-		// trap Ctrl+C and call cancel on the context
-		ctx := context.Background()
-		ctx, cancel := context.WithCancel(ctx)
-		c := make(chan os.Signal, 1)
-		signal.Notify(c, os.Interrupt)
-		defer func() {
-			signal.Stop(c)
-			cancel()
-		}()
-
-		dependencies := task.Dependencies
-		if task.Command != "" {
-			dependencies = []string{taskName}
-		}
-
-		var processes []*exec.Cmd
-		for _, depTaskName := range dependencies {
-			depTask, ok := cfg.Tasks[depTaskName]
-			if !ok {
-				return fmt.Errorf("%s is not a valid task dependency", depTaskName)
-			}
-
-			var commands []string
-			if depTask.Workspace != "" {
-				workspacePath, ok := cfg.Members[depTask.Workspace]
-				if !ok {
-					return fmt.Errorf("%s is not a valid workspace member", depTask.Workspace)
-				}
-
-				commands = append(commands, fmt.Sprintf("cd %s", workspacePath))
-			}
-
-			commands = append(commands, depTask.Command)
-			command := strings.Join(commands, " && ")
-
-			// wrap in tmux command
-			command = fmt.Sprintf("tmux new-window -n %s \"%s; read\"", depTaskName, command)
-			proc, _ := easyExec(ctx, command)
-			processes = append(processes, proc)
-		}
-
-		select {
-		case <-c:
-			cancel()
-			for _, proc := range processes {
-				if proc.Process != nil {
-					proc.Process.Kill()
-				}
-			}
-		case <-ctx.Done():
-		}
-		return nil
-	})
 }
 
 func cmdPath(cliCtx *cli.Context) error {
