@@ -4,7 +4,6 @@ import (
 	_ "embed"
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"os"
 
 	"github.com/urfave/cli/v2"
@@ -45,9 +44,9 @@ func cmdInit(cliCtx *cli.Context) error {
 	}
 
 	err := errors.Join(
-		ioutil.WriteFile(flakeFilename, flakeTemplate, 0664),
-		ioutil.WriteFile(devshellFilename, devshellTemplate, 0664),
-		ioutil.WriteFile(envrcFilename, envrcTemplate, 0664),
+		os.WriteFile(flakeFilename, flakeTemplate, 0664),
+		os.WriteFile(devshellFilename, devshellTemplate, 0664),
+		os.WriteFile(envrcFilename, envrcTemplate, 0664),
 	)
 	if err != nil {
 		return err
