@@ -15,7 +15,14 @@ export PATH=$PATH:$HOME/.local/bin
 export ANDROID_SDK_ROOT=$HOME/Android/Sdk
 
 
-alias wcd="cd \$(dev ws path \$(dev ws ls ',' | sed 's/,/\n/g' | fzf))"
+function wcd() {
+	if [ $# -eq 0 ]; then
+		cd $(dev ws path $(dev ws ls ',' | sed 's/,/\n/g' | fzf))
+	else
+		cd $(dev ws path $1)
+	fi
+}
+
 alias wf="echo \$(dev ws path \$(dev ws ls ',' | sed 's/,/\n/g' | fzf))"
 alias v='nvim'
 alias p='python3'
