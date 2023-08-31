@@ -15,7 +15,7 @@ export PATH=$PATH:$HOME/.local/bin
 export ANDROID_SDK_ROOT=$HOME/Android/Sdk
 
 
-function wcd() {
+wcd() {
 	if [ $# -eq 0 ]; then
 		cd $(dev ws path $(dev ws ls ',' | sed 's/,/\n/g' | fzf))
 	else
@@ -23,7 +23,13 @@ function wcd() {
 	fi
 }
 
-alias wf="echo \$(dev ws path \$(dev ws ls ',' | sed 's/,/\n/g' | fzf))"
+wf() {
+	if [ $# -eq 0 ]; then
+		echo $(dev ws path $(dev ws ls ',' | sed 's/,/\n/g' | fzf))
+	else
+		echo $(dev ws path $1)
+	fi
+}
 alias v='nvim'
 alias p='python3'
 alias tasks="vim $HOME/tasks.txt"
