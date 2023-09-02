@@ -1,5 +1,5 @@
 use anyhow::{anyhow, Context, Result};
-use clap::Subcommand;
+use clap::{Args, Subcommand};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::env;
@@ -8,28 +8,87 @@ use std::fs;
 const CONFIG_FILENAME: &str = ".workspace.toml";
 const DEFAULT_RESOLVER: &str = "fd -t d '.git' --hidden | xargs dirname";
 
-#[derive(Subcommand, Debug)]
-pub enum Workspace {
-    Init {},
+#[derive(Args)]
+pub struct WorkspaceArgs {
+    #[clap(subcommand)]
+    commands: WorkspaceCommands,
+}
+
+#[derive(Subcommand)]
+enum WorkspaceCommands {
+    Init,
+    #[clap(alias = "ls")]
+    List {
+        sep: String,
+    },
+
+    #[clap(alias = "p")]
+    Path {
+        member: String,
+    },
+
+    #[clap(alias = "f")]
+    Find {
+        path: String,
+    },
+}
+
+impl WorkspaceArgs {
+    pub fn parse(&self) -> Result<()> {
+        match self.commands {
+            WorkspaceCommands::Init => {
+                let mut cwd = env::current_dir()?;
+                cwd.push(CONFIG_FILENAME);
+                if cwd.as_path().exists() {
+                    return Err(anyhow!("workspace is already initialized"));
+                }
+                let path_str = cwd.to_str().context("failed to encode path")?;
+                let cfg = Config::default(path_str);
+                cfg.commit()?;
+                log::info!("{path_str} has been created");
+            }
+            WorkspaceCommands::List { ref sep } => {
+                let cfg = Config::load()?;
+                let joined_str = cfg
+                    .members
+                    .keys()
+                    .map(|s| &**s)
+                    .collect::<Vec<_>>()
+                    .join(&sep);
+                print!("{joined_str}");
+            }
+            WorkspaceCommands::Path { ref member } => {
+                let cfg = Config::load()?;
+                let member_path = cfg
+                    .members
+                    .get(member)
+                    .context("{member} is not a workspace member")?;
+                print!("{member_path}");
+            }
+            WorkspaceCommands::Find { ref path } => {
+                let cfg = Config::load()?;
+                let longest_match = cfg
+                    .members
+                    .iter()
+                    .filter(|(_, ref v)| path.contains(*v))
+                    .max_by_key(|(_, ref v)| v.len())
+                    .context("failed to find a related workspace member")?;
+                let (k, v) = longest_match;
+                print!("{k}={v}");
+            }
+        };
+
+        Ok(())
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct Config {
+struct Config {
     resolver: String,
     members: HashMap<String, String>,
 
     #[serde(skip_serializing, skip_deserializing)]
-    updated: bool,
-
-    #[serde(skip_serializing, skip_deserializing)]
     path: String,
-}
-
-pub fn hello() -> Result<()> {
-    let cfg_path = Config::find_config()?;
-    let cfg = Config::load_from_file(cfg_path)?;
-    println!("{cfg:?}");
-    Ok(())
 }
 
 impl Config {
@@ -37,9 +96,13 @@ impl Config {
         Config {
             resolver: DEFAULT_RESOLVER.to_string(),
             members: HashMap::new(),
-            updated: false,
             path: path.to_string(),
         }
+    }
+
+    fn load() -> Result<Config> {
+        let cfg_path = Config::find_config()?;
+        Config::load_from_file(cfg_path)
     }
 
     fn load_from_file(path: String) -> Result<Config> {

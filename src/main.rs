@@ -1,8 +1,7 @@
 mod ws;
 
-use clap::{Args, Parser, Subcommand};
 use anyhow::Result;
-use ws::hello;
+use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -14,21 +13,23 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Adds files to myapp
-    Workspace {
-        #[command(subcommand)]
-        command: WorkspaceCommands,
-    },
+    #[clap(alias = "ws")]
+    Workspace(ws::WorkspaceArgs),
 }
 
+fn parse() -> Result<()> {
+    let cli = Cli::parse();
+    match &cli.command {
+        Commands::Workspace(args) => args.parse()?,
+    }
 
-#[derive(Subcommand)]
-enum WorkspaceCommands {
-    Init,
-}
-
-fn main() -> Result<()> {
-    // let cli = Cli::parse();
-    hello()?;
     Ok(())
+}
+
+fn main() {
+    env_logger::init();
+
+    if let Err(err) = parse() {
+        log::error!("{err}");
+    }
 }
