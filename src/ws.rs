@@ -4,6 +4,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::env;
 use std::fs;
+use std::path::Path;
+use std::process;
 
 const CONFIG_FILENAME: &str = ".workspace.toml";
 const DEFAULT_RESOLVER: &str = "fd -t d '.git' --hidden | xargs dirname";
@@ -31,6 +33,8 @@ enum WorkspaceCommands {
     Find {
         path: String,
     },
+
+    Sync,
 }
 
 impl WorkspaceArgs {
@@ -75,6 +79,35 @@ impl WorkspaceArgs {
                     .context("failed to find a related workspace member")?;
                 let (k, v) = longest_match;
                 print!("{k}={v}");
+            }
+            WorkspaceCommands::Sync => {
+                let mut cfg = Config::load()?;
+                let cfg_dir = Path::new(&cfg.path)
+                    .parent()
+                    .context("failed to get parent directory")?;
+                env::set_current_dir(cfg_dir)?;
+                let output = process::Command::new("sh")
+                    .arg("-c")
+                    .arg(&cfg.resolver)
+                    .current_dir(cfg_dir)
+                    .output()?;
+
+                let output_utf8 = std::str::from_utf8(&output.stdout)?;
+                let members = output_utf8
+                    .split("\n")
+                    .filter_map(|ref p| {
+                        let path = Path::new(*p);
+                        let key = path.file_name()?;
+                        let abs_path = path.canonicalize().ok();
+                        let key_str = key.to_str()?.to_string();
+                        let abs_path_str = abs_path?.to_str()?.to_string();
+                        Some((key_str, abs_path_str))
+                    })
+                    .collect::<HashMap<_, _>>();
+
+                log::info!("members found: {members:?}");
+                cfg.members = members;
+                cfg.commit()?;
             }
         };
 
