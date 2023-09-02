@@ -61,4 +61,6 @@ stow --target=$HOME --verbose --restow --no-folding */
 append_shell "source '$HOME/.extend.rc'"
 
 # curl -sf https://gobinaries.com/lherman-cs/dev | sh
-go install
+# go install
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+cargo install --path .
