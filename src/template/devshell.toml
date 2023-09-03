@@ -1,0 +1,32 @@
+imports = [
+	"language.c"
+]
+
+language.c.includes = [
+  	# "libbpf_1",
+]
+
+language.c.libraries = [
+  	# "libbpf_1",
+]
+
+[devshell]
+packages = [
+  	# "libbpf_1",
+]
+
+[[env]]
+name = "CPPFLAGS"
+eval = "-I${DEVSHELL_DIR}/include"
+
+[[env]]
+name = "CFLAGS"
+eval = "-I${DEVSHELL_DIR}/include"
+
+[[env]]
+name = "LDFLAGS"
+eval = "-L${DEVSHELL_DIR}/lib"
+
+[[env]]
+name = "LD_LIBRARY_PATH"
+eval = "${DEVSHELL_DIR}/lib:${LD_LIBRARY_PATH}"

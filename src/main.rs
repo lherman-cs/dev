@@ -1,4 +1,5 @@
 mod ws;
+mod gen;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
@@ -15,12 +16,15 @@ struct Cli {
 enum Commands {
     #[clap(alias = "ws")]
     Workspace(ws::WorkspaceArgs),
+
+    Gen(gen::GenArgs),
 }
 
 fn parse() -> Result<()> {
     let cli = Cli::parse();
     match &cli.command {
         Commands::Workspace(args) => args.parse()?,
+        Commands::Gen(args) => args.parse()?,
     }
 
     Ok(())
