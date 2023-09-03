@@ -88,7 +88,7 @@ local find_current_workspace = function()
       local window = vim.api.nvim_tabpage_get_win(tab)
       local buffer = vim.api.nvim_win_get_buf(window)
       local filename = vim.api.nvim_buf_get_name(buffer)
-      local current_workspace = workspace.current_workspace_label(filename)
+      local current_workspace = workspace.get_workspace_label(filename)
       
       local workspace_formatted = string.format("%d=%s", i, current_workspace)
       table.insert(tabline, workspace_formatted)

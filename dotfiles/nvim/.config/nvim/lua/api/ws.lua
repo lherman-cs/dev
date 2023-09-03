@@ -24,17 +24,8 @@ function Workspace.find_workspace_path(member)
 	return output
 end
 
-function Workspace.current_workspace_info()
-	local output = vim.fn.system("dev ws find " .. vim.api.nvim_buf_get_name(0) .. " 2> /dev/null")
-	if vim.v.shell_error ~= 0 then
-		return ""
-	end
-
-	return vim.fn.split(output, '=')
-end
-
-function Workspace.current_workspace_path()
-	local output = vim.fn.system("dev ws find " .. vim.api.nvim_buf_get_name(0) .. " 2> /dev/null")
+function Workspace.get_workspace_path(path)
+	local output = vim.fn.system("dev ws find " .. path .. " 2> /dev/null")
 	if vim.v.shell_error ~= 0 then
 		return ""
 	end
@@ -43,7 +34,7 @@ function Workspace.current_workspace_path()
 	return tokens[2]
 end
 
-function Workspace.current_workspace_label(path)
+function Workspace.get_workspace_label(path)
 	local output = vim.fn.system("dev ws find " .. path .. " 2> /dev/null")
 	if vim.v.shell_error ~= 0 then
 		return ""

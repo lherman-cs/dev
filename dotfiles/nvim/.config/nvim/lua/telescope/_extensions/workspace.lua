@@ -29,7 +29,8 @@ end
 
 local current_workspace_picker = function(hook_fn)
 	local opts = {}
-	opts.cwd = workspace.current_workspace_path()
+	local current_path = vim.api.nvim_buf_get_name(0)
+	opts.cwd = workspace.get_workspace_path(current_path)
 	hook_fn(opts)
 end
 
