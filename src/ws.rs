@@ -52,18 +52,15 @@ impl WorkspaceArgs {
                 log::info!("{path_str} has been created");
             }
             WorkspaceCommands::List { ref sep } => {
-                let cfg = Config::load()?;
-                let joined_str = cfg.member_keys().join(&sep);
+                let joined_str = ws_member_keys()?.join(&sep);
                 print!("{joined_str}");
             }
             WorkspaceCommands::Path { ref member } => {
-                let cfg = Config::load()?;
-                let member_path = cfg.member_path(member)?;
+                let member_path = ws_member_path(member)?;
                 print!("{member_path}");
             }
             WorkspaceCommands::Find { ref path } => {
-                let cfg = Config::load()?;
-                let longest_match = cfg.find_member(path)?;
+                let longest_match = ws_find_member(path)?;
                 let (k, v) = longest_match;
                 print!("{k}={v}");
             }
@@ -157,29 +154,34 @@ impl Config {
 
         Ok(())
     }
+}
 
-    fn member_keys(&self) -> Vec<String> {
-        self.members
-            .keys()
-            .map(|s| s.clone())
-            .collect::<Vec<String>>()
-    }
+pub fn ws_member_keys() -> Result<Vec<String>> {
+    let cfg = Config::load()?;
+    let keys = cfg
+        .members
+        .keys()
+        .map(|s| s.clone())
+        .collect::<Vec<String>>();
+    Ok(keys)
+}
 
-    fn member_path(&self, member: &String) -> Result<String> {
-        let result = self
-            .members
-            .get(member)
-            .context("{member} is not a workspace member")?;
-        Ok(result.clone())
-    }
+pub fn ws_member_path(member: &String) -> Result<String> {
+    let cfg = Config::load()?;
+    let result = cfg
+        .members
+        .get(member)
+        .context("{member} is not a workspace member")?;
+    Ok(result.clone())
+}
 
-    fn find_member(&self, path: &String) -> Result<(String, String)> {
-        let (k, v) = self
-            .members
-            .iter()
-            .filter(|(_, ref v)| path.contains(*v))
-            .max_by_key(|(_, ref v)| v.len())
-            .context("failed to find a related workspace member")?;
-        Ok((k.clone(), v.clone()))
-    }
+pub fn ws_find_member(path: &String) -> Result<(String, String)> {
+    let cfg = Config::load()?;
+    let (k, v) = cfg
+        .members
+        .iter()
+        .filter(|(_, ref v)| path.contains(*v))
+        .max_by_key(|(_, ref v)| v.len())
+        .context("failed to find a related workspace member")?;
+    Ok((k.clone(), v.clone()))
 }
