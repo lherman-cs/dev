@@ -62,3 +62,7 @@ cmp.setup.cmdline(':', {
 
 -- Setup lspconfig.
 local capabilities = require('cmp_nvim_lsp').default_capabilities()
+-- need this for css autocompletion
+require'lspconfig'.cssls.setup {
+  capabilities = capabilities,
+}
