@@ -10,11 +10,20 @@ https://github.com/neovim/nvim-lspconfig/blob/master/CONFIG.md
 
 ## Missing nerd symbols
 
+### Ubuntu
+
 1.) Download a Nerd Font, https://www.nerdfonts.com/font-downloads. Specifically "Ubuntu Nerd Font"
 
 2.) Unzip and copy to ~/.fonts
 
 3.) Run the command fc-cache -fv to manually rebuild the font cache
+
+### Mac
+
+```
+brew tap homebrew/cask-fonts
+brew install --cask font-jetbrains-mono-nerd-font
+```
 
 
 ## Turn on DND on Gnome
