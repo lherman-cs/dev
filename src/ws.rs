@@ -77,7 +77,7 @@ impl WorkspaceArgs {
                     .output()?;
 
                 let output_utf8 = std::str::from_utf8(&output.stdout)?;
-                let members = output_utf8
+                let mut members = output_utf8
                     .split("\n")
                     .filter_map(|ref p| {
                         let path = Path::new(*p);
@@ -90,6 +90,13 @@ impl WorkspaceArgs {
                     .collect::<HashMap<_, _>>();
 
                 log::info!("members found: {members:?}");
+                members.insert(
+                    "root".into(),
+                    cfg_dir
+                        .to_str()
+                        .context("failed to encode root path to string")?
+                        .to_string(),
+                );
                 cfg.members = members;
                 cfg.commit()?;
             }
