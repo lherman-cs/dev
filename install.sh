@@ -65,5 +65,5 @@ append_shell "source '$HOME/.extend.rc'"
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 cargo install --path .
 LUA_LINK=static cargo build --release --lib
-cp ./target/release/*.dylib ~/.config/nvim/lua/api/ws.so
-cp ./target/release/*.so ~/.config/nvim/lua/api/ws.so
+cp ../target/release/*.dylib ~/.config/nvim/lua/api/ws.so
+cp ../target/release/*.so ~/.config/nvim/lua/api/ws.so
