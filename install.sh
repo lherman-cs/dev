@@ -8,26 +8,26 @@ sh <(curl -L https://nixos.org/nix/install) --yes
 
 function append_shell() {
 	if [ "$SHELL" = "bash" ]; then
-		echo "$1" >> ~/.bashrc
+		echo "$1" >>~/.bashrc
 	else
-		echo "$1" >> ~/.zshrc
+		echo "$1" >>~/.zshrc
 	fi
 }
 
 append_shell 'export PATH=$PATH:/opt/homebrew/bin'
 
-PACKAGES=(\
-	git \
-	htop \
-	neovim \
-	tmux \
-	stow \
-	curl \
-	fzf \
-	ripgrep \
-	go \
-	fd \
-	just \
+PACKAGES=(
+	git
+	htop
+	neovim
+	tmux
+	stow
+	curl
+	fzf
+	ripgrep
+	go
+	fd
+	just
 )
 if [[ "$OSTYPE" == "linux-gnu"* ]]; then
 	sudo apt update && sudo apt install -y ${PACKAGES[*]}
@@ -37,7 +37,7 @@ elif [[ "$OSTYPE" == "darwin"* ]]; then
 	export PATH=$PATH:/opt/homebrew/bin
 	brew install ${PACKAGES[*]}
 else
-        # Unknown.
+	# Unknown.
 	echo "Unknown OSTYPE: $OSTYPE"
 	exit 1
 fi
