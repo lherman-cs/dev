@@ -1,5 +1,3 @@
-[ -s "$HOME/.work.rc" ] && source $HOME/.work.rc
-
 export PATH="/snap/bin:$PATH"
 export PATH="$HOME/go/bin:$PATH"
 export PATH="$HOME/bin:$PATH"
@@ -13,6 +11,9 @@ export PATH="$PATH:$HOME/Android/Sdk/platform-tools"
 export PATH=$PATH:/usr/local/go/bin
 export PATH=$PATH:$HOME/.local/bin
 export ANDROID_SDK_ROOT=$HOME/Android/Sdk
+
+# Mac Specific
+export PATH="$PATH:/opt/homebrew/bin"
 
 
 wcd() {
@@ -41,4 +42,6 @@ alias dap-go="dlv --headless=true --listen=:10001 --api-version=2 --log --log-ou
 export GOFLAGS="-gcflags=all=-N -gcflags=-l" # always include debug information
 
 export LOCALE_ARCHIVE=/usr/lib/locale/locale-archive
+
+[ -s "$HOME/.work.rc" ] && source $HOME/.work.rc
 
