@@ -35,6 +35,7 @@ enum WorkspaceCommands {
     },
 
     Sync,
+    Task,
 }
 
 impl WorkspaceArgs {
@@ -107,7 +108,7 @@ impl WorkspaceArgs {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-struct Config {
+pub struct Config {
     resolver: String,
     members: HashMap<String, String>,
 
@@ -161,6 +162,24 @@ impl Config {
 
         Ok(())
     }
+
+    fn resolve(&self, member: &str) -> Result<String> {
+        self.members
+            .get(member)
+            .context("{member} is not a workspace member")
+            .cloned()
+    }
+}
+
+pub trait WorkspaceResolver {
+    fn resolve(&self, member: &str) -> Result<String>;
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct Task {
+    deps: Vec<String>,
+    cmd: String,
+    tmux: bool,
 }
 
 pub fn ws_member_keys() -> Result<Vec<String>> {

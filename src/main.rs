@@ -1,5 +1,6 @@
 mod ws;
 mod gen;
+mod task;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
