@@ -7,8 +7,14 @@ use std::fs;
 use std::path::Path;
 use std::process;
 
-const CONFIG_FILENAME: &str = ".workspace.toml";
+const CONFIG_FILENAME: &str = "workspace.toml";
 const DEFAULT_RESOLVER: &str = "fd -t d '.git' --hidden | xargs dirname";
+const MK_TMUX_MACRO: &str = r#"
+define tmux
+	tmux new-window -n $@ "source ~/.extend.rc; $(subst $\",,$(1))"
+endef
+"#;
+const MAKEFILE_FILENAME: &str = "workspace.mk";
 
 #[derive(Args)]
 pub struct WorkspaceArgs {
@@ -99,6 +105,12 @@ impl WorkspaceArgs {
                 );
                 cfg.members = members;
                 cfg.commit()?;
+
+                let makefile_path = cfg_dir.canonicalize()?.join(MAKEFILE_FILENAME);
+                let makefile_path_str = makefile_path
+                    .to_str()
+                    .context("failed to get makefile absolute path")?;
+                cfg.generate_makefile(makefile_path_str)?;
             }
         };
 
@@ -159,6 +171,17 @@ impl Config {
         let encoded = toml::to_string(self)?;
         fs::write(&self.path, encoded)?;
 
+        Ok(())
+    }
+
+    fn generate_makefile(&self, path: &str) -> Result<()> {
+        let mut lines = Vec::new();
+        for (k, v) in self.members.iter() {
+            lines.push(format!("{k}:={v}"))
+        }
+
+        let makefile = lines.join("\n") + MK_TMUX_MACRO;
+        fs::write(path, makefile).context("failed to write makefile")?;
         Ok(())
     }
 }
