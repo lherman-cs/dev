@@ -11,7 +11,10 @@ const CONFIG_FILENAME: &str = "workspace.toml";
 const DEFAULT_RESOLVER: &str = "fd -t d '.git' --hidden | xargs dirname";
 const MK_TMUX_MACRO: &str = r#"
 define tmux
-	tmux new-window -n $@ "source ~/.extend.rc; $(subst $\",,$(1))"
+	tmux new-window -n $1 "source ~/.extend.rc; $(subst $\",,$(2))"
+endef
+define kill
+    tmux kill-window -t $(1)
 endef
 "#;
 const MAKEFILE_FILENAME: &str = "workspace.mk";
