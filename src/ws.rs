@@ -14,7 +14,7 @@ define tmux
 	tmux new-window -n $1 "source ~/.extend.rc; $(subst $\",,$(2))"
 endef
 define kill
-    tmux kill-window -t $(1)
+    tmux kill-window -t $(1) || true
 endef
 "#;
 const MAKEFILE_FILENAME: &str = "workspace.mk";
