@@ -9,6 +9,7 @@ https://github.com/neovim/nvim-lspconfig/blob/master/CONFIG.md
 
 Some issues with NVIM LSP:
 * Kotlin LSP ignores hardcoded patterns, https://github.com/fwcd/kotlin-language-server/issues/464
+  * workaround `ln -s build generated`
 
 
 ## Missing nerd symbols
