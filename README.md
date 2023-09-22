@@ -7,6 +7,9 @@ bash <(curl -L https://raw.githubusercontent.com/lherman-cs/dev/master/install.s
 ## LSP Configs
 https://github.com/neovim/nvim-lspconfig/blob/master/CONFIG.md
 
+Some issues with NVIM LSP:
+* Kotlin LSP ignores hardcoded patterns, https://github.com/fwcd/kotlin-language-server/issues/464
+
 
 ## Missing nerd symbols
 
