@@ -11,6 +11,17 @@ Some issues with NVIM LSP:
 * Kotlin LSP ignores hardcoded patterns, https://github.com/fwcd/kotlin-language-server/issues/464
   * workaround `ln -s build generated`
 
+## Use a different ssh key for different projects
+
+Edit ~/.ssh/config:
+
+```
+Host personal
+    HostName github.com
+    User git
+    IdentityFile ~/.ssh/personal
+    IdentitiesOnly yes
+```
 
 ## Missing nerd symbols
 
