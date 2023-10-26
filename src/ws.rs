@@ -8,7 +8,7 @@ use std::path::Path;
 use std::process;
 
 const CONFIG_FILENAME: &str = "workspace.toml";
-const DEFAULT_RESOLVER: &str = "fd -t d '.git' --hidden | xargs dirname";
+const DEFAULT_RESOLVER: &str = "fd -H '^.git$' | xargs dirname";
 const MK_TMUX_MACRO: &str = r#"
 define tmux
 	tmux new-window -n $1 "source ~/.extend.rc; $(subst $\",,$(2))"
