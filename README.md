@@ -40,6 +40,10 @@ brew tap homebrew/cask-fonts
 brew install --cask font-jetbrains-mono-nerd-font
 ```
 
+## Disable sleep on close lid (MAC)
+
+`sudo pmset -a disablesleep 1`
+
 
 ## Turn on DND on Gnome
 
