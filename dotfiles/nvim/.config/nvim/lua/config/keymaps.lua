@@ -13,6 +13,10 @@ vim.keymap.set("n", "<leader>4", "4gt", { desc = "Tab go to 4" })
 vim.keymap.set("n", "<leader>5", "5gt", { desc = "Tab go to 5" })
 vim.keymap.set("v", "<leader>y", "<cmd>lua YANK_CODE_URL()<cr>", { desc = "Yank code URL" })
 
+function string.insert(str1, str2, pos)
+    return str1:sub(1,pos)..str2..str1:sub(pos+1)
+end
+
 function YANK_CODE_URL()
   local start_line = vim.fn.line("v")
   local end_line = vim.fn.line(".")
@@ -58,5 +62,7 @@ function YANK_CODE_URL()
     start_line,
     end_line
   )
+
+  uri = string.insert(uri, "\n", math.floor(vim.o.columns * 0.75) - 1) -- -1 for \n char
   print(uri)
 end
