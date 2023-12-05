@@ -106,3 +106,17 @@ The environment variable is needed to tell firefox to bypass the security check,
 https://forum.radxa.com/t/archlinux-on-rock5b/13851
 
 Updating firefox to the latest version without snap on Ubuntu 22.04 improves webgl, https://www.omgubuntu.co.uk/2022/04/how-to-install-firefox-deb-apt-ubuntu-22-04
+
+## Mac 
+
+### Dota 2 upgrade MoltenVK (Vulkan translation layer for Metal)
+
+Download pre-compiled MoltenVK from https://github.com/KhronosGroup/MoltenVK/releases.
+
+Then, copy the library to the following:
+
+/Users/lukas/Library/Application Support/Steam/steamapps/common/dota 2 beta/game/bin/osx64/libMoltenVK.dylib
+
+### View GPU/CPU history
+
+Go to activity monitor -> Window -> Gpu/Cpu history
