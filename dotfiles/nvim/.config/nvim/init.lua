@@ -1,3 +1,3 @@
 -- bootstrap lazy.nvim, LazyVim and your plugins
 require("config.lazy")
-vim.lsp.set_log_level("debug") -- can be trace
+-- vim.lsp.set_log_level("debug") -- can be trace
