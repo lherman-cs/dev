@@ -192,11 +192,6 @@ func (cfg *Config) Commit() error {
 
 func cmdInitHandler() error {
 	var cfg Config
-	err := cfg.Load()
-	if !errors.Is(err, errNotSetup) {
-		return err
-	}
-
 	cfg.Default()
 	return cfg.Commit()
 }
