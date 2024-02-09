@@ -238,7 +238,9 @@ func cmdConfigHandler() error {
 		return err
 	}
 
-	return json.NewEncoder(os.Stdout).Encode(&cfg)
+  encoder := json.NewEncoder(os.Stdout)
+	encoder.SetIndent("", "    ")
+  return encoder.Encode(&cfg)
 }
 
 func cmdFindHandler(toFind string) error {
