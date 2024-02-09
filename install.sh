@@ -17,6 +17,7 @@ function append_shell() {
 append_shell 'export PATH=$PATH:/opt/homebrew/bin'
 
 PACKAGES=(
+  jq
 	git
 	htop
 	neovim
