@@ -1,12 +1,16 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"flag"
+	"fmt"
 	"log/slog"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 )
 
 var (
@@ -91,13 +95,13 @@ func lazyJoin(fns ...func() error) error {
 type Config struct {
 	Resolver string            `json:"resolver"`
 	Members  map[string]string `json:"members"`
-	filepath *string
+	dirPath  *string
 }
 
 func (cfg *Config) Default() {
 	cfg.Resolver = DEFAULT_RESOLVER
 	cfg.Members = make(map[string]string)
-	cfg.filepath = nil
+	cfg.dirPath = nil
 }
 
 func (cfg *Config) Load() error {
@@ -128,25 +132,26 @@ func (cfg *Config) Load() error {
 		)
 
 		if err == nil {
-			cfg.filepath = &configPath
+			cfg.dirPath = &dirPath
 		}
 	}
 	return err
 }
 
 func (cfg *Config) Commit() error {
-	var configPath string
+	var configDir string
 
-	if cfg.filepath != nil {
-		configPath = *cfg.filepath
+	if cfg.dirPath != nil {
+		configDir = *cfg.dirPath
 	} else {
 		dirPath, err := os.Getwd()
 		if err != nil {
 			return errors.Join(errCommit, err)
 		}
-		configPath = filepath.Join(dirPath, CONFIG_FILENAME)
+		configDir = dirPath
 	}
 
+	configPath := filepath.Join(configDir, CONFIG_FILENAME)
 	configFile, err := os.OpenFile(configPath, os.O_RDWR|os.O_TRUNC, 0755)
 	if err != nil {
 		return errors.Join(errCommit, err)
@@ -174,7 +179,33 @@ func cmdInitHandler() error {
 }
 
 func cmdSyncHandler() error {
-	return nil
+	var cfg Config
+	err := cfg.Load()
+	if err != nil {
+		return err
+	}
+
+	execCmd := exec.Command("sh", "-c", cfg.Resolver)
+	execCmd.Path = *cfg.dirPath
+	output, err := execCmd.Output()
+	if err != nil {
+		return err
+	}
+
+	foundPaths := bytes.Split(output, []byte("\n"))
+	for _, foundPath := range foundPaths {
+		foundPathAbs, err := filepath.Abs(string(foundPath))
+		if err != nil {
+			slog.Warn(fmt.Sprintf("failed to get an absolute path of %s", foundPath))
+			continue
+		}
+
+		foundMember := filepath.Base(foundPathAbs)
+		cfg.Members[foundMember] = foundPathAbs
+	}
+
+	cfg.Members["root"] = *cfg.dirPath
+	return cfg.Commit()
 }
 
 func cmdConfigHandler() error {
@@ -187,6 +218,45 @@ func cmdConfigHandler() error {
 	return json.NewEncoder(os.Stdout).Encode(&cfg)
 }
 
-func cmdFindHandler(path string) error {
-	return nil
+func cmdFindHandler(toFind string) error {
+	var cfg Config
+	err := cfg.Load()
+	if err != nil {
+		return err
+	}
+
+	var matches []string
+	for member, memberPath := range cfg.Members {
+		// FIXME: in nix neovim, pwd is aliases to /local/home instead of /home
+		// So, prefix matching won't work.
+		if strings.Contains(toFind, memberPath) {
+			matches = append(matches, member)
+		}
+	}
+
+	longestPath := ""
+	longestMember := ""
+	for _, member := range matches {
+		path := cfg.Members[member]
+
+		// No need to split the path as they all share the same prefix
+		if len(path) > len(longestPath) {
+			longestPath = path
+			longestMember = member
+		}
+	}
+
+	if longestPath == "" {
+		return errors.New("failed to find a related workspace member")
+	}
+
+	findResult := struct {
+		Member string `json:"member"`
+		Path   string `json:"path"`
+	}{
+		Member: longestMember,
+		Path:   longestPath,
+	}
+
+  return json.NewEncoder(os.Stdout).Encode(&findResult)
 }
