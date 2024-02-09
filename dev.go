@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"text/template"
 )
 
 var (
@@ -24,7 +25,7 @@ type CmdHandler func(...any) error
 const (
 	CONFIG_FILENAME  = "workspace.json"
 	DEFAULT_RESOLVER = "fd -H '^.git$' | xargs dirname"
-	MAKE_TEMPL       = `
+	MAKE_TEMPLATE       = `
 define tmux
 	tmux new-window -n $1 "source ~/.extend.rc; $(subst $\",,$(2))"
 endef
@@ -32,6 +33,10 @@ endef
 define kill
     tmux kill-window -t $(1) || true
 endef
+
+{{range $member, $path := .}}
+{{ $member }} := {{ $path }}
+{{- end}}
 `
 )
 const MAKE_FILENAME = "workspace.mk"
@@ -157,8 +162,8 @@ func (cfg *Config) Commit() error {
 		return errors.Join(errCommit, err)
 	}
 
-  jsonEncoder := json.NewEncoder(configFile)
-  jsonEncoder.SetIndent("", "    ")
+	jsonEncoder := json.NewEncoder(configFile)
+	jsonEncoder.SetIndent("", "    ")
 	err = errors.Join(
 		jsonEncoder.Encode(cfg),
 		configFile.Close(),
@@ -166,7 +171,23 @@ func (cfg *Config) Commit() error {
 	if err != nil {
 		return errors.Join(errCommit, err)
 	}
-	return nil
+
+	makeTag := ""
+	makeTempl, err := template.New(makeTag).Parse(MAKE_TEMPLATE)
+	if err != nil {
+		return errors.Join(errCommit, err)
+	}
+
+	makePath := filepath.Join(configDir, MAKE_FILENAME)
+	makeFile, err := os.OpenFile(makePath, os.O_RDWR|os.O_TRUNC|os.O_CREATE, 0755)
+	if err != nil {
+		return errors.Join(errCommit, err)
+	}
+
+	return errors.Join(
+		makeTempl.ExecuteTemplate(makeFile, makeTag, cfg.Members),
+		makeFile.Close(),
+	)
 }
 
 func cmdInitHandler() error {
@@ -260,5 +281,5 @@ func cmdFindHandler(toFind string) error {
 		Path:   longestPath,
 	}
 
-  return json.NewEncoder(os.Stdout).Encode(&findResult)
+	return json.NewEncoder(os.Stdout).Encode(&findResult)
 }
