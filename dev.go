@@ -119,7 +119,7 @@ func (cfg *Config) Load() error {
 		}
 
 		dirPath = filepath.Dir(dirPath)
-		if dirPath == "." {
+		if dirPath == "/" {
 			return errNotSetup
 		}
 	}
@@ -152,13 +152,15 @@ func (cfg *Config) Commit() error {
 	}
 
 	configPath := filepath.Join(configDir, CONFIG_FILENAME)
-	configFile, err := os.OpenFile(configPath, os.O_RDWR|os.O_TRUNC, 0755)
+	configFile, err := os.OpenFile(configPath, os.O_RDWR|os.O_TRUNC|os.O_CREATE, 0755)
 	if err != nil {
 		return errors.Join(errCommit, err)
 	}
 
+  jsonEncoder := json.NewEncoder(configFile)
+  jsonEncoder.SetIndent("", "    ")
 	err = errors.Join(
-		json.NewEncoder(configFile).Encode(cfg),
+		jsonEncoder.Encode(cfg),
 		configFile.Close(),
 	)
 	if err != nil {
@@ -186,7 +188,7 @@ func cmdSyncHandler() error {
 	}
 
 	execCmd := exec.Command("sh", "-c", cfg.Resolver)
-	execCmd.Path = *cfg.dirPath
+	execCmd.Dir = *cfg.dirPath
 	output, err := execCmd.Output()
 	if err != nil {
 		return err
