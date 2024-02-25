@@ -4,7 +4,7 @@ WORKSPACE_DIR=$HOME/workspace
 DEV_REPO_DIR=$WORKSPACE_DIR/dev
 
 # Install nix package manager
-sh <(curl -L https://nixos.org/nix/install) --yes
+# sh <(curl -L https://nixos.org/nix/install) --yes
 
 function append_shell() {
 	if [ "$SHELL" = "bash" ]; then
@@ -14,10 +14,8 @@ function append_shell() {
 	fi
 }
 
-append_shell 'export PATH=$PATH:/opt/homebrew/bin'
-
 PACKAGES=(
-  jq
+	jq
 	git
 	htop
 	neovim
@@ -28,7 +26,6 @@ PACKAGES=(
 	ripgrep
 	go
 	fd
-	just
 )
 if [[ "$OSTYPE" == "linux-gnu"* ]]; then
 	sudo apt update && sudo apt install -y ${PACKAGES[*]}
