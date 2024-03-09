@@ -4,6 +4,13 @@
 bash <(curl -L https://raw.githubusercontent.com/lherman-cs/dev/master/install.sh)
 ```
 
+## Useful Commands
+
+```
+nix profile install . --name dev
+nix profile update dev
+```
+
 ## LSP Configs
 https://github.com/neovim/nvim-lspconfig/blob/master/CONFIG.md
 
