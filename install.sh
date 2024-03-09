@@ -3,42 +3,18 @@
 WORKSPACE_DIR=$HOME/workspace
 DEV_REPO_DIR=$WORKSPACE_DIR/dev
 
-# Install nix package manager
-# sh <(curl -L https://nixos.org/nix/install) --yes
-
 function append_shell() {
-	if [ "$SHELL" = "bash" ]; then
+	if [[ $SHELL == *"bash"* ]]; then
 		echo "$1" >>~/.bashrc
 	else
 		echo "$1" >>~/.zshrc
 	fi
 }
 
-PACKAGES=(
-	jq
-	git
-	htop
-	neovim
-	tmux
-	stow
-	curl
-	fzf
-	ripgrep
-	go
-	fd
-)
-if [[ "$OSTYPE" == "linux-gnu"* ]]; then
-	sudo apt update && sudo apt install -y ${PACKAGES[*]}
-elif [[ "$OSTYPE" == "darwin"* ]]; then
-	/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-	append_shell 'export PATH=$PATH:/opt/homebrew/bin'
-	export PATH=$PATH:/opt/homebrew/bin
-	brew install ${PACKAGES[*]}
-else
-	# Unknown.
-	echo "Unknown OSTYPE: $OSTYPE"
-	exit 1
-fi
+# Install nix package manager
+curl --proto '=https' --tlsv1.2 -sSf -L https://install.determinate.systems/nix |
+	sh -s -- install --no-confirm --no-modify-profile
+. /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh
 
 mkdir -p $WORKSPACE_DIR
 
@@ -53,12 +29,8 @@ fi
 
 cd $DEV_REPO_DIR
 git remote set-url origin git@github.com:lherman-cs/dev.git
+nix profile install .
 
 cd $DEV_REPO_DIR/dotfiles
 stow --target=$HOME --verbose --restow --no-folding */
 append_shell "source '$HOME/.extend.rc'"
-
-# curl -sf https://gobinaries.com/lherman-cs/dev | sh
-# go install
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-go install .
