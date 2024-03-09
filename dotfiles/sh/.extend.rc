@@ -1,3 +1,5 @@
+. /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh
+
 export PATH="/snap/bin:$PATH"
 export PATH="$HOME/go/bin:$PATH"
 export PATH="$HOME/bin:$PATH"
@@ -11,10 +13,6 @@ export PATH="$PATH:$HOME/Android/Sdk/platform-tools"
 export PATH=$PATH:/usr/local/go/bin
 export PATH=$PATH:$HOME/.local/bin
 export ANDROID_SDK_ROOT=$HOME/Android/Sdk
-
-# Mac Specific
-export PATH="$PATH:/opt/homebrew/bin"
-
 
 wf() {
 	if [ $# -eq 0 ]; then

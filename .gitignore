@@ -1,5 +1,8 @@
 dev
 
+# Mac OS generates these files from HFS to exfat...
+\._*
+
 
 # Added by cargo
 
