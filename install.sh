@@ -34,6 +34,3 @@ nix profile install .
 cd $DEV_REPO_DIR/dotfiles
 stow --target=$HOME --verbose --restow --no-folding */
 append_shell "source '$HOME/.extend.rc'"
-
-# Auto load after install
-source $HOME/.extend.rc
