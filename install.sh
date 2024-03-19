@@ -34,3 +34,6 @@ nix profile install .
 cd $DEV_REPO_DIR/dotfiles
 stow --target=$HOME --verbose --restow --no-folding */
 append_shell "source '$HOME/.extend.rc'"
+
+# Install nerd fonts
+curl -sS https://webi.sh/nerdfont | sh

@@ -8,7 +8,7 @@ bash <(curl -L https://raw.githubusercontent.com/lherman-cs/dev/master/install.s
 
 ```
 nix profile install . --name dev
-nix profile update dev
+nix profile upgrade dev
 ```
 
 ## LSP Configs
@@ -32,20 +32,7 @@ Host personal
 
 ## Missing nerd symbols
 
-### Ubuntu
-
-1.) Download a Nerd Font, https://www.nerdfonts.com/font-downloads. Specifically "Ubuntu Nerd Font"
-
-2.) Unzip and copy to ~/.fonts
-
-3.) Run the command fc-cache -fv to manually rebuild the font cache
-
-### Mac
-
-```
-brew tap homebrew/cask-fonts
-brew install --cask font-jetbrains-mono-nerd-font
-```
+https://webinstall.dev/nerdfont/
 
 ## Disable sleep on close lid (MAC)
 
