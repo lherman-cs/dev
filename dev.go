@@ -203,8 +203,11 @@ func cmdSyncHandler() error {
 		return err
 	}
 
+  if cfg.dirPath != nil {
+    os.Chdir(*cfg.dirPath)
+  }
+
 	execCmd := exec.Command("sh", "-c", cfg.Resolver)
-	execCmd.Dir = *cfg.dirPath
 	output, err := execCmd.Output()
 	if err != nil {
 		return err
