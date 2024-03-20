@@ -42,7 +42,7 @@
             ripgrep
             fd
             jq
-            go
+            go_1_22
             nodejs
           ];
         };
