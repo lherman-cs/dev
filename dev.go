@@ -213,6 +213,7 @@ func cmdSyncHandler() error {
 		return err
 	}
 
+  cfg.Members = make(map[string]string)
 	foundPaths := bytes.Split(output, []byte("\n"))
 	for _, foundPath := range foundPaths {
 		foundPathAbs, err := filepath.Abs(string(foundPath))
