@@ -48,15 +48,20 @@ local workspace_picker = function(hook_fn)
     :find()
 end
 
+local find_project_doc = function(project_dir)
+	-- TODO: Fancify the search
+	local paths = vim.split(vim.fn.glob(project_dir .. '/*.md'), '\n')
+	if table.getn(paths) == 0 then
+		return project_dir
+	end
+
+	return paths[1]
+end
+
 local find_workspaces = function()
   local handler = function(opts)
-    vim.cmd("e " .. opts.cwd)
-    -- local project_doc_path = find_project_doc(opts.cwd)
-    -- if project_doc_path == "" then
-    --   require("telescope.builtin").find_files(opts)
-    -- else
-    --   vim.cmd("e " .. project_doc_path)
-    -- end
+    -- vim.cmd("e " .. opts.cwd)
+    vim.cmd("e " .. find_project_doc(opts.cwd))
   end
   workspace_picker(handler)
 end
