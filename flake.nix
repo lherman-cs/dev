@@ -33,6 +33,7 @@
             curl
             git
             htop
+            gh
             devenv.packages.${system}.devenv
 
             tmux
