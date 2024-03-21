@@ -39,7 +39,7 @@ local workspace_picker = function(hook_fn)
           local selection = action_state.get_selected_entry()
           local workspace_path = config["members"][selection[1]]
           opts.cwd = workspace_path
-          vim.api.nvim_set_current_dir(workspace_path)
+          -- vim.api.nvim_set_current_dir(workspace_path)
           hook_fn(opts)
         end)
         return true
