@@ -12,15 +12,14 @@ end
 
 local keys_only = function(tbl)
   local new_tbl = {}
-  for k,_ in pairs(tbl) do
+  for k, _ in pairs(tbl) do
     table.insert(new_tbl, k)
   end
   return new_tbl
 end
 
-
 -- our picker function: colors
-local workspace_picker = function(hook_fn)
+local workspace_picker = function()
   local opts = {}
 
   local config = load_config()
@@ -38,9 +37,7 @@ local workspace_picker = function(hook_fn)
           actions.close(prompt_bufnr)
           local selection = action_state.get_selected_entry()
           local workspace_path = config["members"][selection[1]]
-          opts.cwd = workspace_path
-          -- vim.api.nvim_set_current_dir(workspace_path)
-          hook_fn(opts)
+          vim.cmd("Neotree dir=" .. workspace_path)
         end)
         return true
       end,
@@ -48,26 +45,8 @@ local workspace_picker = function(hook_fn)
     :find()
 end
 
-local find_project_doc = function(project_dir)
-	-- TODO: Fancify the search
-	local paths = vim.split(vim.fn.glob(project_dir .. '/*.md'), '\n')
-	if table.getn(paths) == 0 then
-		return project_dir
-	end
-
-	return paths[1]
-end
-
-local find_workspaces = function()
-  local handler = function(opts)
-    -- vim.cmd("e " .. opts.cwd)
-    vim.cmd("e " .. find_project_doc(opts.cwd))
-  end
-  workspace_picker(handler)
-end
-
 return require("telescope").register_extension({
   exports = {
-    find_workspaces = find_workspaces,
+    find_workspaces = workspace_picker,
   },
 })
