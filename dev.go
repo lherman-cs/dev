@@ -25,7 +25,7 @@ type CmdHandler func(...any) error
 const (
 	CONFIG_FILENAME  = "workspace.json"
 	DEFAULT_RESOLVER = "fd -H '^.git$' | xargs dirname"
-	MAKE_TEMPLATE       = `
+	MAKE_TEMPLATE    = `
 define tmux
 	tmux new-window -n $1 "source ~/.extend.rc; $(subst $\",,$(2))"
 endef
@@ -237,9 +237,9 @@ func cmdConfigHandler() error {
 		return err
 	}
 
-  encoder := json.NewEncoder(os.Stdout)
+	encoder := json.NewEncoder(os.Stdout)
 	encoder.SetIndent("", "    ")
-  return encoder.Encode(&cfg)
+	return encoder.Encode(&cfg)
 }
 
 func cmdFindHandler(toFind string) error {
