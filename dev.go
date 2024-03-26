@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/json"
 	"errors"
@@ -10,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"text/template"
 )
@@ -82,6 +84,8 @@ func app() error {
 			func() error { return cmdFind.Parse(args) },
 			func() error { return cmdFindHandler(*cmdFindPath) },
 		)
+	case "log":
+		return cmdLogHandler(args)
 	default:
 		return errInvalidCmd
 	}
@@ -203,9 +207,9 @@ func cmdSyncHandler() error {
 		return err
 	}
 
-  if cfg.dirPath != nil {
-    os.Chdir(*cfg.dirPath)
-  }
+	if cfg.dirPath != nil {
+		os.Chdir(*cfg.dirPath)
+	}
 
 	execCmd := exec.Command("sh", "-c", cfg.Resolver)
 	output, err := execCmd.Output()
@@ -213,7 +217,7 @@ func cmdSyncHandler() error {
 		return err
 	}
 
-  cfg.Members = make(map[string]string)
+	cfg.Members = make(map[string]string)
 	foundPaths := bytes.Split(output, []byte("\n"))
 	for _, foundPath := range foundPaths {
 		foundPathAbs, err := filepath.Abs(string(foundPath))
@@ -283,4 +287,58 @@ func cmdFindHandler(toFind string) error {
 	}
 
 	return json.NewEncoder(os.Stdout).Encode(&findResult)
+}
+
+func filter(data map[string]interface{}, filters map[string]*regexp.Regexp, prefix string) bool {
+	for k, v := range data {
+		k = fmt.Sprintf("%s.%s", prefix, k)
+		nextData, ok := v.(map[string]interface{})
+		if ok {
+			return filter(nextData, filters, k)
+		}
+
+		f, ok := filters[k]
+		if ok {
+			vStr := fmt.Sprint(v)
+			delete(filters, k)
+			if !f.MatchString(vStr) {
+				return false
+			}
+		}
+	}
+
+	return true
+}
+
+func cmdLogHandler(args []string) error {
+	if len(args)%2 != 0 {
+		return fmt.Errorf("log filters must be even")
+	}
+
+	filters := make(map[string]*regexp.Regexp)
+	for i := 0; i < len(args); i += 2 {
+		key := args[i]
+		rawPattern := args[i+1]
+		filters[key] = regexp.MustCompile(rawPattern)
+	}
+
+	scanner := bufio.NewScanner(os.Stdin)
+	for scanner.Scan() {
+		data := make(map[string]interface{})
+		line := scanner.Bytes()
+		err := json.Unmarshal(line, &data)
+		if err != nil {
+			continue
+		}
+
+		localFilters := make(map[string]*regexp.Regexp)
+		for k, f := range filters {
+			localFilters[k] = f
+		}
+		if filter(data, localFilters, "") && len(localFilters) == 0 {
+			fmt.Println(string(line))
+		}
+	}
+
+	return nil
 }
