@@ -9,6 +9,13 @@ bash <(curl -L https://raw.githubusercontent.com/lherman-cs/dev/master/install.s
 ```
 nix profile install . --name dev
 nix profile upgrade dev
+
+## dev log
+
+Constraints:
+
+* Rows: 100k
+* Process Time: <100ms
 ```
 
 ## LSP Configs

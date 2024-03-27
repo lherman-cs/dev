@@ -3,7 +3,6 @@ package main
 import (
 	"bufio"
 	"bytes"
-	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -14,6 +13,9 @@ import (
 	"regexp"
 	"strings"
 	"text/template"
+
+	"github.com/goccy/go-json"
+	// "encoding/json"
 )
 
 var (
@@ -289,24 +291,31 @@ func cmdFindHandler(toFind string) error {
 	return json.NewEncoder(os.Stdout).Encode(&findResult)
 }
 
-func filter(data map[string]interface{}, filters map[string]*regexp.Regexp, prefix string) bool {
-	for k, v := range data {
-		k = fmt.Sprintf("%s.%s", prefix, k)
-		nextData, ok := v.(map[string]interface{})
-		if ok {
-			return filter(nextData, filters, k)
-		}
-
-		f, ok := filters[k]
-		if ok {
-			vStr := fmt.Sprint(v)
-			delete(filters, k)
-			if !f.MatchString(vStr) {
-				return false
-			}
+func match(data map[string]interface{}, key string, pattern *regexp.Regexp) bool {
+	var ok bool
+	var value interface{}
+	tokens := strings.Split(key, ".")
+	for _, token := range tokens {
+		value = data[token]
+		data, ok = value.(map[string]interface{})
+		if !ok {
+			break
 		}
 	}
 
+	if value != nil {
+		return pattern.MatchString(fmt.Sprint(value))
+	}
+
+	return false
+}
+
+func filter(data map[string]interface{}, filters map[string]*regexp.Regexp) bool {
+	for k, f := range filters {
+		if !match(data, k, f) {
+			return false
+		}
+	}
 	return true
 }
 
@@ -326,16 +335,13 @@ func cmdLogHandler(args []string) error {
 	for scanner.Scan() {
 		data := make(map[string]interface{})
 		line := scanner.Bytes()
+
 		err := json.Unmarshal(line, &data)
 		if err != nil {
 			continue
 		}
 
-		localFilters := make(map[string]*regexp.Regexp)
-		for k, f := range filters {
-			localFilters[k] = f
-		}
-		if filter(data, localFilters, "") && len(localFilters) == 0 {
+		if filter(data, filters) {
 			fmt.Println(string(line))
 		}
 	}
