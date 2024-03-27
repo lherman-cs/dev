@@ -14,8 +14,8 @@ import (
 	"strings"
 	"text/template"
 
+	"github.com/bytedance/sonic"
 	"github.com/goccy/go-json"
-	// "encoding/json"
 )
 
 var (
@@ -291,7 +291,7 @@ func cmdFindHandler(toFind string) error {
 	return json.NewEncoder(os.Stdout).Encode(&findResult)
 }
 
-func match(data map[string]interface{}, key string, pattern *regexp.Regexp) bool {
+func matchGoJson(data map[string]interface{}, key string, pattern *regexp.Regexp) bool {
 	var ok bool
 	var value interface{}
 	tokens := strings.Split(key, ".")
@@ -310,13 +310,33 @@ func match(data map[string]interface{}, key string, pattern *regexp.Regexp) bool
 	return false
 }
 
-func filter(data map[string]interface{}, filters map[string]*regexp.Regexp) bool {
+func filterGoJson(data map[string]interface{}, filters map[string]*regexp.Regexp) bool {
 	for k, f := range filters {
-		if !match(data, k, f) {
+		if !matchGoJson(data, k, f) {
 			return false
 		}
 	}
 	return true
+}
+
+func decodeGoJson(filters map[string]*regexp.Regexp, line []byte) bool {
+	data := make(map[string]interface{})
+	err := json.Unmarshal(line, &data)
+	if err != nil {
+		return false
+	}
+
+	return filterGoJson(data, filters)
+}
+
+func decodeSonic(filters map[string]*regexp.Regexp, line []byte) bool {
+	data := make(map[string]interface{})
+	err := sonic.Unmarshal(line, &data)
+	if err != nil {
+		return false
+	}
+
+	return filterGoJson(data, filters)
 }
 
 func cmdLogHandler(args []string) error {
@@ -334,15 +354,8 @@ func cmdLogHandler(args []string) error {
 	scanner := bufio.NewScanner(os.Stdin)
 	writer := bufio.NewWriter(os.Stdout)
 	for scanner.Scan() {
-		data := make(map[string]interface{})
 		line := scanner.Bytes()
-
-		err := json.Unmarshal(line, &data)
-		if err != nil {
-			continue
-		}
-
-		if filter(data, filters) {
+		if decodeGoJson(filters, line) {
 			fmt.Fprintln(writer, string(line))
 		}
 	}
