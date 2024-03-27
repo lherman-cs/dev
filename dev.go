@@ -330,13 +330,30 @@ func decodeGoJson(filters map[string]*regexp.Regexp, line []byte) bool {
 }
 
 func decodeSonic(filters map[string]*regexp.Regexp, line []byte) bool {
-	data := make(map[string]interface{})
-	err := sonic.Unmarshal(line, &data)
+	root, err := sonic.Get(line)
 	if err != nil {
 		return false
 	}
 
-	return filterGoJson(data, filters)
+	for k, f := range filters {
+		tokens := strings.Split(k, ".")
+		value := &root
+		for _, token := range tokens {
+			value = value.Get(token)
+			if value != nil {
+				return false
+			}
+		}
+		str, err := value.String()
+		if err != nil {
+			return false
+		}
+
+		if !f.MatchString(str) {
+			return false
+		}
+	}
+	return true
 }
 
 func cmdLogHandler(args []string) error {
