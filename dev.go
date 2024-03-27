@@ -333,8 +333,6 @@ func cmdLogHandler(args []string) error {
 
 	reader := os.Stdin
 	readBuffer := make([]byte, 2048*2048)
-	leftoverBuffer := make([]byte, 1024)
-	leftoverSize := 0
 	for {
 		n, err := reader.Read(readBuffer)
 		if err == io.EOF {
@@ -342,29 +340,19 @@ func cmdLogHandler(args []string) error {
 		}
 
 		// Find the last '\n' (byte=10)
-		m := 0
-		for i := n - 1; i >= 0; i-- {
-			if readBuffer[i] == 10 {
-				m = i
-				break
+		lines := bytes.Split(readBuffer[:n], []byte{10})
+		offset := 0
+		for _, line := range lines {
+      offset += len(line) + 1
+			jsonData := make(map[string]interface{})
+			if err = json.Unmarshal(line, &jsonData); err == nil {
+				if filter(jsonData, filters) {
+					fmt.Println(string(line))
+				}
 			}
 		}
 
-		data := make([]byte, m+leftoverSize)
-		copy(data, leftoverBuffer[:leftoverSize])
-		copy(data[leftoverSize:], readBuffer[:m])
-		copy(leftoverBuffer, readBuffer[m+1:n])
-		leftoverSize = n - m
-
-		jsonData := make(map[string]interface{})
-		err = json.Unmarshal(data, &jsonData)
-		if err != nil {
-			continue
-		}
-
-		if filter(jsonData, filters) {
-			fmt.Println(string(data))
-		}
+    copy(readBuffer, readBuffer[offset-1:n])
 	}
 
 	return nil
