@@ -1,11 +1,11 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"errors"
 	"flag"
 	"fmt"
-	"io"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -331,39 +331,18 @@ func cmdLogHandler(args []string) error {
 		filters[key] = regexp.MustCompile(rawPattern)
 	}
 
-	reader := os.Stdin
-	readBuffer := make([]byte, 2048*2048)
-	leftoverBuffer := make([]byte, 1024)
-	leftoverSize := 0
-	for {
-		n, err := reader.Read(readBuffer)
-		if err == io.EOF {
-			break
-		}
+	scanner := bufio.NewScanner(os.Stdin)
+	for scanner.Scan() {
+		data := make(map[string]interface{})
+		line := scanner.Bytes()
 
-		// Find the last '\n' (byte=10)
-		m := 0
-		for i := n - 1; i >= 0; i-- {
-			if readBuffer[i] == 10 {
-				m = i
-				break
-			}
-		}
-
-		data := make([]byte, m+leftoverSize)
-		copy(data, leftoverBuffer[:leftoverSize])
-		copy(data[leftoverSize:], readBuffer[:m])
-		copy(leftoverBuffer, readBuffer[m+1:n])
-		leftoverSize = n - m
-
-		jsonData := make(map[string]interface{})
-		err = json.Unmarshal(data, &jsonData)
+		err := json.Unmarshal(line, &data)
 		if err != nil {
 			continue
 		}
 
-		if filter(jsonData, filters) {
-			fmt.Println(string(data))
+		if filter(data, filters) {
+			fmt.Println(string(line))
 		}
 	}
 
