@@ -332,6 +332,7 @@ func cmdLogHandler(args []string) error {
 	}
 
 	scanner := bufio.NewScanner(os.Stdin)
+	writer := bufio.NewWriter(os.Stdout)
 	for scanner.Scan() {
 		data := make(map[string]interface{})
 		line := scanner.Bytes()
@@ -342,7 +343,7 @@ func cmdLogHandler(args []string) error {
 		}
 
 		if filter(data, filters) {
-			fmt.Println(string(line))
+			fmt.Fprintln(writer, string(line))
 		}
 	}
 
