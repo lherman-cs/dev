@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -13,9 +14,6 @@ import (
 	"regexp"
 	"strings"
 	"text/template"
-
-	"github.com/bytedance/sonic"
-	"github.com/goccy/go-json"
 )
 
 var (
@@ -327,33 +325,6 @@ func decodeGoJson(filters map[string]*regexp.Regexp, line []byte) bool {
 	}
 
 	return filterGoJson(data, filters)
-}
-
-func decodeSonic(filters map[string]*regexp.Regexp, line []byte) bool {
-	root, err := sonic.Get(line)
-	if err != nil {
-		return false
-	}
-
-	for k, f := range filters {
-		tokens := strings.Split(k, ".")
-		value := &root
-		for _, token := range tokens {
-			value = value.Get(token)
-			if value != nil {
-				return false
-			}
-		}
-		str, err := value.String()
-		if err != nil {
-			return false
-		}
-
-		if !f.MatchString(str) {
-			return false
-		}
-	}
-	return true
 }
 
 func cmdLogHandler(args []string) error {
