@@ -341,6 +341,7 @@ func cmdLogHandler(args []string) error {
 
 	scanner := bufio.NewScanner(os.Stdin)
 	writer := bufio.NewWriter(os.Stdout)
+  defer writer.Flush()
 	for scanner.Scan() {
 		line := scanner.Bytes()
 		if decodeGoJson(filters, line) {
