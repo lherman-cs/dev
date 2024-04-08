@@ -2,7 +2,7 @@ return {
   {
     "neovim/nvim-lspconfig",
     opts = {
-      autoformat = false,
+      autoformat = true,
       servers = {
         kotlin_language_server = {
           settings = {
