@@ -1,8 +1,17 @@
 return {
-  "rcarriga/nvim-notify",
-  opts = {
-    max_width = function()
-      return math.floor(vim.o.columns * 0.75)
-    end,
+  {
+    "rcarriga/nvim-notify",
+    opts = {
+      max_width = function()
+        return math.floor(vim.o.columns * 0.75)
+      end,
+    },
+  },
+  { "catppuccin/nvim", opts = { flavour = "latte" } },
+  {
+    "LazyVim/LazyVim",
+    opts = {
+      colorscheme = "catppuccin",
+    },
   },
 }
