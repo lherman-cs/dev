@@ -34,6 +34,7 @@
             htop
             gh
             devenv
+            mosh
 
             tmux
             neovim
