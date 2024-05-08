@@ -2,9 +2,8 @@
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     flake-utils.url = "github:numtide/flake-utils";
-    devenv.url = "github:cachix/devenv";
   };
-  outputs = { nixpkgs, flake-utils, devenv, ... } :
+  outputs = { nixpkgs, flake-utils, ... } :
     flake-utils.lib.eachDefaultSystem (system:
       let
         pkgs = nixpkgs.legacyPackages.${system};
@@ -34,7 +33,7 @@
             git
             htop
             gh
-            devenv.packages.${system}.devenv
+            devenv
 
             tmux
             neovim
