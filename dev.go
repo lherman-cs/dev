@@ -26,7 +26,7 @@ type CmdHandler func(...any) error
 
 const (
 	CONFIG_FILENAME  = "workspace.json"
-	DEFAULT_RESOLVER = "fd -H '^.git$' | xargs dirname"
+	DEFAULT_RESOLVER = "fd -H '^.git$' | xargs -I{} dirname {}"
 	MAKE_TEMPLATE    = `
 define tmux
 	tmux new-window -n $1 "source ~/.extend.rc; $(subst $\",,$(2))"
@@ -341,7 +341,7 @@ func cmdLogHandler(args []string) error {
 
 	scanner := bufio.NewScanner(os.Stdin)
 	writer := bufio.NewWriter(os.Stdout)
-  defer writer.Flush()
+	defer writer.Flush()
 	for scanner.Scan() {
 		line := scanner.Bytes()
 		if decodeGoJson(filters, line) {
