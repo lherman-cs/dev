@@ -44,7 +44,7 @@
             fd
             jq
             yq
-            go_1_22
+            go
             nodejs
           ];
         };
