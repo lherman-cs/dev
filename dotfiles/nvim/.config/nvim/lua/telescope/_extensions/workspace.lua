@@ -46,8 +46,17 @@ local workspace_picker = function()
           -- https://github.com/LazyVim/LazyVim/blob/50626e30925909450bbfe934d1a50e1d34d007c7//lua/lazyvim/util/root.lua#L166-L173
           --
           -- So, changing the buffer should trigger the change in root detection
-          vim.cmd("e " .. workspace_path)
+          local contents = vim.split(vim.fn.glob(workspace_path .. "/*"), "\n", { trimempty = true })
+          for i = 1, #contents do
+            if vim.fn.isdirectory(contents[i]) == 0 then
+              vim.cmd.edit(contents[i])
+              return
+            end
+          end
+
+          vim.cmd.edit(workspace_path)
         end)
+
         return true
       end,
     })
