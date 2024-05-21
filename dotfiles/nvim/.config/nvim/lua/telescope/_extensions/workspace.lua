@@ -37,7 +37,16 @@ local workspace_picker = function()
           actions.close(prompt_bufnr)
           local selection = action_state.get_selected_entry()
           local workspace_path = config["members"][selection[1]]
-          vim.cmd("Neotree dir=" .. workspace_path)
+
+          -- lazy vim uses an internal root finding based on these:
+          -- * lsp workspace folders
+          -- * lsp root_dir
+          -- * root pattern of filename of the current buffer
+          -- * root pattern of cwd
+          -- https://github.com/LazyVim/LazyVim/blob/50626e30925909450bbfe934d1a50e1d34d007c7//lua/lazyvim/util/root.lua#L166-L173
+          --
+          -- So, changing the buffer should trigger the change in root detection
+          vim.cmd("e " .. workspace_path)
         end)
         return true
       end,
