@@ -38,7 +38,6 @@
 
             tmux
             neovim
-            stow
             fzf
             ripgrep
             fd

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -17,7 +18,7 @@ import (
 )
 
 var (
-	errInvalidCmd = errors.New("expected: [init, sync, config, find]")
+	errInvalidCmd = errors.New("expected: [init, sync, config, find, link]")
 	errNotSetup   = errors.New("workspace has not been setup")
 	errCommit     = errors.New("failed to commit config")
 )
@@ -51,11 +52,25 @@ func main() {
 }
 
 func app() error {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return err
+	}
+	homedir, err := os.UserHomeDir()
+	if err != nil {
+		return err
+	}
+
 	cmdInit := flag.NewFlagSet("init", flag.ExitOnError)
 	cmdSync := flag.NewFlagSet("sync", flag.ExitOnError)
 	cmdConfig := flag.NewFlagSet("config", flag.ExitOnError)
 	cmdFind := flag.NewFlagSet("find", flag.ExitOnError)
 	cmdFindPath := cmdFind.String("path", "", "path")
+	cmdLink := flag.NewFlagSet("link", flag.ExitOnError)
+	cmdLinkFrom := cmdLink.String("from", cwd, "from")
+	cmdLinkTo := cmdLink.String("to", homedir, "to")
+	cmdLinkDry := cmdLink.Bool("dry", false, "dry")
+	cmdLinkForce := cmdLink.Bool("force", false, "force will try to override existing files")
 
 	if len(os.Args) < 2 {
 		return errInvalidCmd
@@ -83,6 +98,11 @@ func app() error {
 		return lazyJoin(
 			func() error { return cmdFind.Parse(args) },
 			func() error { return cmdFindHandler(*cmdFindPath) },
+		)
+	case "link":
+		return lazyJoin(
+			func() error { return cmdLink.Parse(args) },
+			func() error { return cmdLinkHandler(*cmdLinkFrom, *cmdLinkTo, *cmdLinkDry, *cmdLinkForce) },
 		)
 	case "log":
 		return cmdLogHandler(args)
@@ -325,6 +345,59 @@ func decodeGoJson(filters map[string]*regexp.Regexp, line []byte) bool {
 	}
 
 	return filterGoJson(data, filters)
+}
+
+func cmdLinkHandler(from, to string, dry, force bool) error {
+	var err error
+	from, err = filepath.Abs(from)
+	if err != nil {
+		return fmt.Errorf("failed to get the absolute for 'from': %w", err)
+	}
+
+	to, err = filepath.Abs(to)
+	if err != nil {
+		return fmt.Errorf("failed to get the absolute for 'to': %w", err)
+	}
+
+	return filepath.Walk(from, func(path string, info fs.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		if info.IsDir() {
+			return nil
+		}
+
+		newPath := strings.Replace(path, from, to, 1)
+		newDir := filepath.Dir(newPath)
+
+		err = os.MkdirAll(newDir, 0700)
+		if err != nil {
+			return fmt.Errorf("failed to create a new directory at %s: %w", newDir, err)
+		}
+
+		if !dry {
+			_, err = os.Stat(newPath)
+			if err == nil {
+				if !force {
+					return fmt.Errorf("%s already exists. use -force to override", newPath)
+				}
+
+				err = os.Remove(newPath)
+				if err != nil {
+					return fmt.Errorf("failed to delete %s: %w", newPath, err)
+				}
+			}
+
+			err = os.Symlink(path, newPath)
+			if err != nil {
+				return fmt.Errorf("failed to create a symlink at %s: %w", newPath, err)
+			}
+		}
+
+		slog.Info("linked", "from", path, "to", newPath)
+		return nil
+	})
 }
 
 func cmdLogHandler(args []string) error {
