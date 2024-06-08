@@ -383,7 +383,7 @@ func cmdLinkHandler(from, to string, dry, force bool) error {
 					return fmt.Errorf("%s already exists. use -force to override", newPath)
 				}
 
-				err = os.Remove(newPath)
+				err = os.RemoveAll(newPath)
 				if err != nil {
 					return fmt.Errorf("failed to delete %s: %w", newPath, err)
 				}
