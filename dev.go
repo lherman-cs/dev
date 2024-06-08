@@ -69,7 +69,7 @@ func app() error {
 	cmdLink := flag.NewFlagSet("link", flag.ExitOnError)
 	cmdLinkFrom := cmdLink.String("from", cwd, "from")
 	cmdLinkTo := cmdLink.String("to", homedir, "to")
-	cmdLinkDry := cmdLink.Bool("dry", false, "dry")
+	cmdLinkReal := cmdLink.Bool("real", false, "real")
 	cmdLinkForce := cmdLink.Bool("force", false, "force will try to override existing files")
 
 	if len(os.Args) < 2 {
@@ -102,7 +102,7 @@ func app() error {
 	case "link":
 		return lazyJoin(
 			func() error { return cmdLink.Parse(args) },
-			func() error { return cmdLinkHandler(*cmdLinkFrom, *cmdLinkTo, *cmdLinkDry, *cmdLinkForce) },
+			func() error { return cmdLinkHandler(*cmdLinkFrom, *cmdLinkTo, *cmdLinkReal, *cmdLinkForce) },
 		)
 	case "log":
 		return cmdLogHandler(args)
@@ -347,7 +347,7 @@ func decodeGoJson(filters map[string]*regexp.Regexp, line []byte) bool {
 	return filterGoJson(data, filters)
 }
 
-func cmdLinkHandler(from, to string, dry, force bool) error {
+func cmdLinkHandler(from, to string, real, force bool) error {
 	var err error
 	from, err = filepath.Abs(from)
 	if err != nil {
@@ -376,7 +376,7 @@ func cmdLinkHandler(from, to string, dry, force bool) error {
 			return fmt.Errorf("failed to create a new directory at %s: %w", newDir, err)
 		}
 
-		if !dry {
+		if real {
 			_, err = os.Stat(newPath)
 			if err == nil {
 				if !force {
@@ -395,7 +395,7 @@ func cmdLinkHandler(from, to string, dry, force bool) error {
 			}
 		}
 
-		slog.Info("linked", "from", path, "to", newPath)
+		slog.Info("linked", "real", real, "from", path, "to", newPath)
 		return nil
 	})
 }

@@ -32,7 +32,7 @@ git remote set-url origin git@github.com:lherman-cs/dev.git
 nix profile install .
 go install
 
-dev link -from $PWD/dotfiles -force
+dev link -from $PWD/dotfiles -force -real
 append_shell "source '$HOME/.extend.rc'"
 
 # Install nerd fonts
