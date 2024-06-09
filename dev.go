@@ -368,7 +368,6 @@ func cmdRunHandler(workflow string) error {
 		sh = "bash"
 	}
 
-	now := time.Now()
 	for name, script := range parsedJobs {
 		name, script := name, script
 		run := func(logName string) error {
@@ -385,7 +384,7 @@ func cmdRunHandler(workflow string) error {
 		}
 
 		go func() {
-			logName := fmt.Sprintf("%d-%s.%s.log", now.Unix(), workflow, name)
+			logName := fmt.Sprintf("%s.%s.log", workflow, name)
 			startAt := time.Now()
 			err := run(logName)
 			resCh <- JobResult{
