@@ -7,6 +7,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"io/fs"
 	"log/slog"
 	"os"
@@ -347,19 +348,30 @@ func cmdRunHandler(workflow string) error {
 	}
 
 	parsedJobs := make(Jobs, len(jobs))
+	tmpl := template.New("")
 	for name, script := range jobs {
-		tmpl, err := template.New(name).Parse(script)
-		if err != nil {
-			return fmt.Errorf("failed to parse script for %s.%s: %w", workflow, name, err)
-		}
-
 		var buf bytes.Buffer
-		err = tmpl.Execute(&buf, &cfg)
-		if err != nil {
-			return fmt.Errorf("failed to interpolate script for %s.%s: %w", workflow, name, err)
+		io.WriteString(&buf, script)
+		for {
+			original := buf.String()
+			tmpl, err := tmpl.Parse(original)
+			if err != nil {
+				return fmt.Errorf("failed to parse script for %s.%s: %w", workflow, name, err)
+			}
+
+			buf.Reset()
+			err = tmpl.Execute(&buf, &cfg)
+			if err != nil {
+				return fmt.Errorf("failed to interpolate script for %s.%s: %w", workflow, name, err)
+			}
+
+			after := buf.String()
+			if after == original {
+				parsedJobs[name] = buf.String()
+				break
+			}
 		}
 
-		parsedJobs[name] = buf.String()
 	}
 
 	resCh := make(chan JobResult, len(parsedJobs))
