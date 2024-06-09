@@ -15,10 +15,11 @@ import (
 	"regexp"
 	"strings"
 	"text/template"
+	"time"
 )
 
 var (
-	errInvalidCmd = errors.New("expected: [init, sync, config, find, link]")
+	errInvalidCmd = errors.New("expected: [init, sync, config, run, find, link]")
 	errNotSetup   = errors.New("workspace has not been setup")
 	errCommit     = errors.New("failed to commit config")
 )
@@ -64,8 +65,12 @@ func app() error {
 	cmdInit := flag.NewFlagSet("init", flag.ExitOnError)
 	cmdSync := flag.NewFlagSet("sync", flag.ExitOnError)
 	cmdConfig := flag.NewFlagSet("config", flag.ExitOnError)
+	cmdRun := flag.NewFlagSet("run", flag.ExitOnError)
+	cmdRunWorkflow := cmdRun.String("workflow", "", "workflow")
+
 	cmdFind := flag.NewFlagSet("find", flag.ExitOnError)
 	cmdFindPath := cmdFind.String("path", "", "path")
+
 	cmdLink := flag.NewFlagSet("link", flag.ExitOnError)
 	cmdLinkFrom := cmdLink.String("from", cwd, "from")
 	cmdLinkTo := cmdLink.String("to", homedir, "to")
@@ -94,6 +99,11 @@ func app() error {
 			func() error { return cmdConfig.Parse(args) },
 			cmdConfigHandler,
 		)
+	case "run":
+		return lazyJoin(
+			func() error { return cmdRun.Parse(args) },
+			func() error { return cmdRunHandler(*cmdRunWorkflow) },
+		)
 	case "find":
 		return lazyJoin(
 			func() error { return cmdFind.Parse(args) },
@@ -121,15 +131,30 @@ func lazyJoin(fns ...func() error) error {
 	return nil
 }
 
+type JobResult struct {
+	StartAt  time.Time
+	Workflow string
+	Job      string
+	LogPath  string
+	Err      error
+}
+
+type Jobs map[string]string
+
 type Config struct {
-	Resolver string            `json:"resolver"`
-	Members  map[string]string `json:"members"`
-	dirPath  *string
+	Resolver  string            `json:"resolver"`
+	Members   map[string]string `json:"members"`
+	Workflows map[string]Jobs   `json:"workflows"`
+	dirPath   *string
 }
 
 func (cfg *Config) Default() {
 	cfg.Resolver = DEFAULT_RESOLVER
 	cfg.Members = make(map[string]string)
+	cfg.Workflows = make(map[string]Jobs)
+	cfg.Workflows["echo"] = Jobs{
+		"resolver": "echo \"{{.Resolver}}\"",
+	}
 	cfg.dirPath = nil
 }
 
@@ -307,6 +332,81 @@ func cmdFindHandler(toFind string) error {
 	}
 
 	return json.NewEncoder(os.Stdout).Encode(&findResult)
+}
+
+func cmdRunHandler(workflow string) error {
+	var cfg Config
+	err := cfg.Load()
+	if err != nil {
+		return err
+	}
+
+	jobs, ok := cfg.Workflows[workflow]
+	if !ok {
+		return fmt.Errorf("%s doesn't exist in workflows", workflow)
+	}
+
+	parsedJobs := make(Jobs, len(jobs))
+	for name, script := range jobs {
+		tmpl, err := template.New(name).Parse(script)
+		if err != nil {
+			return fmt.Errorf("failed to parse script for %s.%s: %w", workflow, name, err)
+		}
+
+		var buf bytes.Buffer
+		err = tmpl.Execute(&buf, &cfg)
+		if err != nil {
+			return fmt.Errorf("failed to interpolate script for %s.%s: %w", workflow, name, err)
+		}
+
+		parsedJobs[name] = buf.String()
+	}
+
+	resCh := make(chan JobResult, len(parsedJobs))
+	sh := os.Getenv("SHELL")
+	if sh == "" {
+		sh = "bash"
+	}
+
+	now := time.Now()
+	for name, script := range parsedJobs {
+		name, script := name, script
+		run := func(logName string) error {
+			logFile, err := os.Create(logName)
+			if err != nil {
+				return fmt.Errorf("failed to create %s: %w", logName, err)
+			}
+			defer logFile.Close()
+
+			cmd := exec.Command(sh, "-c", script)
+			cmd.Stdout = logFile
+			cmd.Stderr = logFile
+			return cmd.Run()
+		}
+
+		go func() {
+			logName := fmt.Sprintf("%d-%s.%s.log", now.Unix(), workflow, name)
+			startAt := time.Now()
+			err := run(logName)
+			resCh <- JobResult{
+				StartAt:  startAt,
+				Workflow: workflow,
+				Job:      name,
+				LogPath:  logName,
+				Err:      err,
+			}
+		}()
+		slog.Info("executing", "workflow", workflow, "job", name, "script", script)
+	}
+
+	for i := 0; i < len(parsedJobs); i++ {
+		res := <-resCh
+		slog.Info("finished",
+			"workflow", res.Workflow, "job", res.Job, "duration", time.Since(res.StartAt),
+			"log", res.LogPath, "err", res.Err)
+	}
+
+	return nil
 }
 
 func matchGoJson(data map[string]interface{}, key string, pattern *regexp.Regexp) bool {
