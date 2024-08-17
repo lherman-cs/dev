@@ -17,6 +17,9 @@ Constraints:
 
 * Rows: 100k
 * Process Time: <100ms
+
+## Move nix to external
+https://discourse.nixos.org/t/how-to-move-nix-store-to-external-drive-on-macos/19592/3
 ```
 
 ## LSP Configs
