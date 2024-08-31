@@ -12,7 +12,8 @@ export PATH="$PATH:$HOME/Android/Sdk/emulator"
 export PATH="$PATH:$HOME/Android/Sdk/platform-tools"
 export PATH=$PATH:/usr/local/go/bin
 export PATH=$PATH:$HOME/.local/bin
-export ANDROID_SDK_ROOT=$HOME/Android/Sdk
+
+export ANDROID_SDK_ROOT=$HOME/Library/Android/sdk
 
 # Flutter
 export PATH=$HOME/flutter/bin:$PATH
