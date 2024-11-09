@@ -15,26 +15,12 @@
             # TODO: replace with stdenv: 
             # https://discourse.nixos.org/t/how-to-set-up-a-nix-shell-with-gnu-build-toolchain-build-essential/38579/3
            
-            # build essentials
-            bison
-            flex
-            fontforge
-            makeWrapper
-            pkg-config
-            gnumake
-            gcc
-            libiconv
-            autoconf
-            automake
-            libtool # freetype calls glibtoolize
-
             # personal system tools
             curl
             git
             htop
             gh
             devenv
-            mosh
 
             tmux
             neovim
