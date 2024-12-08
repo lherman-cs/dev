@@ -5,7 +5,7 @@ return {
     "tpope/vim-fugitive",
     cmd = "G",
   },
-  { "catppuccin/nvim", opts = { flavour = "latte" } },
+  { "catppuccin/nvim", opts = { flavour = "mocha" } },
   {
     "LazyVim/LazyVim",
     opts = {
