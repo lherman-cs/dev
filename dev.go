@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"log"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -28,9 +29,10 @@ var (
 type CmdHandler func(...any) error
 
 const (
-	CONFIG_FILENAME  = "workspace.json"
-	DEFAULT_RESOLVER = "fd -H '^.git$' | xargs -I{} dirname {}"
-	MAKE_TEMPLATE    = `
+	CONFIG_FILENAME          = "workspace.json"
+	CONFIG_OVERRIDE_FILENAME = "workspace.override.json"
+	DEFAULT_RESOLVER         = "fd -H '^.git$' | xargs -I{} dirname {}"
+	MAKE_TEMPLATE            = `
 define tmux
 	tmux new-window -n $1 "source ~/.extend.rc; $(subst $\",,$(2))"
 endef
@@ -188,6 +190,13 @@ func (cfg *Config) Load() error {
 
 		if err == nil {
 			cfg.dirPath = &dirPath
+
+			overrideFile, err := os.Open(filepath.Join(dirPath, CONFIG_OVERRIDE_FILENAME))
+			if err == nil {
+				json.NewDecoder(overrideFile).Decode(cfg)
+				log.Println(cfg)
+				overrideFile.Close()
+			}
 		}
 	}
 	return err
