@@ -14,6 +14,7 @@ export PATH=$PATH:/usr/local/go/bin
 export PATH=$PATH:$HOME/.local/bin
 
 export ANDROID_SDK_ROOT=$HOME/Library/Android/sdk
+export KUBECONFIG="${KUBECONFIG}:config"
 
 # Flutter
 export PATH=$HOME/flutter/bin:$PATH
