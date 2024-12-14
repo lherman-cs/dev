@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"log"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -194,7 +193,6 @@ func (cfg *Config) Load() error {
 			overrideFile, err := os.Open(filepath.Join(dirPath, CONFIG_OVERRIDE_FILENAME))
 			if err == nil {
 				json.NewDecoder(overrideFile).Decode(cfg)
-				log.Println(cfg)
 				overrideFile.Close()
 			}
 		}
