@@ -1,6 +1,5 @@
 #!/bin/bash
 
-#TODO WIP
 WORKSPACE_DIR=$HOME/workspace
 DEV_REPO_DIR=$WORKSPACE_DIR/dev
 
@@ -12,21 +11,10 @@ function append_shell() {
 	fi
 }
 
-# Install deps
-
-sudo apt update && sudo apt install -y git fzf ripgrep
-
-sudo snap install --classic \
-	curl \
-        htop \
-        tmux \
-        gh \
-        nvim \
-        fd
-        yq
-        go
-        nodejs
-
+# Install nix package manager
+curl --proto '=https' --tlsv1.2 -sSf -L https://install.determinate.systems/nix |
+	sh -s -- install --no-confirm --no-modify-profile
+. /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh
 
 mkdir -p $WORKSPACE_DIR
 
@@ -41,6 +29,7 @@ fi
 
 cd $DEV_REPO_DIR
 git remote set-url origin git@github.com:lherman-cs/dev.git
+nix profile install .
 
 go run . link -from $PWD/dotfiles -force -real
 append_shell "source '$HOME/.extend.rc'"
@@ -48,4 +37,3 @@ go install
 
 # Install nerd fonts
 curl -sS https://webi.sh/nerdfont | sh
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
