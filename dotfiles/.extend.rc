@@ -30,6 +30,13 @@ wcd() {
   cd $(wf $1)
 }
 
+ghs() {
+  read -p username? username
+  token=$(gh auth token)
+  echo "searching for ${username}"
+  curl --request GET --url "https://api.github.com/users/${username}/events/public" --header "Authorization: Bearer ${token}" | jq '.[] | select(.payload.commits) | .payload.commits[].author.email' | sort | uniq
+}
+
 alias v='nvim'
 alias p='python3'
 alias tasks="vim $HOME/tasks.txt"
