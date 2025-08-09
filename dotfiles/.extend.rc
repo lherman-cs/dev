@@ -31,7 +31,8 @@ wcd() {
 }
 
 ghs() {
-  read -p username? username
+  echo -n "username?"
+  read username
   token=$(gh auth token)
   echo "searching for ${username}"
   curl --request GET --url "https://api.github.com/users/${username}/events/public" --header "Authorization: Bearer ${token}" | jq '.[] | select(.payload.commits) | .payload.commits[].author.email' | sort | uniq
