@@ -50,3 +50,4 @@ go install
 
 # Install nerd fonts
 curl -sS https://webi.sh/nerdfont | sh
+sudo dnf install -y wl-clipboard
