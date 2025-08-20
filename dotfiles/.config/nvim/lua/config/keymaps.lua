@@ -14,7 +14,7 @@ vim.keymap.set("n", "<leader>5", "5gt", { desc = "Tab go to 5" })
 vim.keymap.set("v", "<leader>y", "<cmd>lua YANK_CODE_URL()<cr>", { desc = "Yank code URL" })
 
 function string.insert(str1, str2, pos)
-    return str1:sub(1,pos)..str2..str1:sub(pos+1)
+  return str1:sub(1, pos) .. str2 .. str1:sub(pos + 1)
 end
 
 function YANK_CODE_URL()
