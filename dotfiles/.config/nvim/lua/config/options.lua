@@ -4,4 +4,4 @@
 vim.filetype.add({ extension = { templ = "templ" } })
 
 -- unhide back ticks in typing
-vim.conceallevel = 0
+vim.opt.conceallevel = 0
