@@ -1,6 +1,6 @@
 return {
   { "windwp/nvim-ts-autotag", enabled = false },
-  { "echasnovski/mini.pairs", enabled = false },
+  { "nvim-mini/mini.pairs", enabled = false },
   {
     "tpope/vim-fugitive",
     cmd = "G",
