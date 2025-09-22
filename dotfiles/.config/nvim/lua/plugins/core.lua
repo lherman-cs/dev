@@ -5,11 +5,14 @@ return {
     "tpope/vim-fugitive",
     cmd = "G",
   },
-  { "catppuccin/nvim", opts = { flavour = "mocha" }, name = "catppuccin", priority = 1000 },
+  -- { "catppuccin/nvim", opts = { flavour = "mocha" }, name = "catppuccin", priority = 1000 },
+  {
+    "rebelot/kanagawa.nvim",
+  },
   {
     "LazyVim/LazyVim",
     opts = {
-      colorscheme = "catppuccin",
+      colorscheme = "kanagawa",
     },
   },
   {
