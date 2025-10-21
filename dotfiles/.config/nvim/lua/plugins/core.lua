@@ -49,6 +49,19 @@ return {
   {
     "neovim/nvim-lspconfig",
     opts = {
+      servers = {
+        rust_analyzer = {
+          cargo = {
+            loadOutDirsFromCheck = true, -- needed for macro expansion
+          },
+          procMacro = {
+            enable = true, -- expand procedural macros
+          },
+          checkOnSave = {
+            command = "clippy", -- optional, for linting
+          },
+        },
+      },
       inlay_hints = { enabled = false },
     },
   },
