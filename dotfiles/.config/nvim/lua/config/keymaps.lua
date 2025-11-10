@@ -64,5 +64,6 @@ function YANK_CODE_URL()
   )
 
   uri = string.insert(uri, "\n", math.floor(vim.o.columns * 0.75) - 1) -- -1 for \n char
-  print(uri)
+  vim.fn.setreg("+", uri)
+  print("🔗 Copied GitHub link to clipboard:\n" .. uri)
 end
