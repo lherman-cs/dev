@@ -5,3 +5,4 @@ vim.filetype.add({ extension = { templ = "templ" } })
 
 -- unhide back ticks in typing
 vim.opt.conceallevel = 0
+vim.opt.clipboard = "unnamed"
