@@ -11,13 +11,12 @@ function append_shell() {
   fi
 }
 
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+# /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 
-brew install \
+sudo pacman -S \
   curl \
   git \
   htop \
-  gh \
   tmux \
   neovim \
   fzf \
@@ -26,8 +25,8 @@ brew install \
   jq \
   yq \
   go \
-  node \
-  rust-analyzer \
+  nvm \
+  deno \
   rustup
 
 mkdir -p $WORKSPACE_DIR
@@ -49,5 +48,5 @@ append_shell "source '$HOME/.extend.rc'"
 go install
 
 # Install nerd fonts
-curl -sS https://webi.sh/nerdfont | sh
-sudo dnf install -y wl-clipboard
+# curl -sS https://webi.sh/nerdfont | sh
+# sudo dnf install -y wl-clipboard
