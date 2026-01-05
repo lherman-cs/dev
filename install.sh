@@ -26,7 +26,8 @@ sudo pacman -S \
   jq \
   yq \
   go \
-  nvm \
+  nodejs \
+  npm \
   deno \
   rustup
 
