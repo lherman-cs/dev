@@ -6,13 +6,23 @@ return {
     cmd = "G",
   },
   -- { "catppuccin/nvim", opts = { flavour = "mocha" }, name = "catppuccin", priority = 1000 },
+  -- {
+  --   "rebelot/kanagawa.nvim",
+  -- },
   {
-    "rebelot/kanagawa.nvim",
+    "folke/tokyonight.nvim",
+    opts = {
+      transparent = true,
+      styles = {
+        sidebars = "transparent",
+        floats = "transparent",
+      },
+    },
   },
   {
     "LazyVim/LazyVim",
     opts = {
-      colorscheme = "kanagawa",
+      colorscheme = "tokyonight",
     },
   },
   {
