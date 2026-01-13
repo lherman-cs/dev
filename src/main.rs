@@ -90,6 +90,123 @@ enum Commands {
         /// Key-value pairs for filtering (e.g., level error workflow sync)
         filters: Vec<String>,
     },
+
+    /// List all workspace members
+    List {
+        /// Show full paths instead of just names
+        #[arg(short, long)]
+        full: bool,
+
+        /// Output format: table (default), json, or paths
+        #[arg(short = 'o', long, default_value = "table")]
+        output: String,
+    },
+
+    /// Add a new member to the workspace
+    Add {
+        /// Name for the member
+        name: String,
+
+        /// Path to the member (defaults to current directory)
+        #[arg(short, long)]
+        path: Option<PathBuf>,
+    },
+
+    /// Remove a member from the workspace
+    Remove {
+        /// Name of the member to remove
+        name: String,
+    },
+
+    /// Edit the workspace configuration in your default editor
+    Edit,
+
+    /// Validate the workspace configuration
+    Validate {
+        /// Fix common issues automatically
+        #[arg(short, long)]
+        fix: bool,
+    },
+
+    /// Show information about a specific member
+    Info {
+        /// Name of the member
+        name: String,
+    },
+
+    /// Create a new workflow
+    Workflow {
+        #[command(subcommand)]
+        action: WorkflowAction,
+    },
+
+    /// Show the path to the workspace root
+    Root,
+
+    /// Execute a command in each workspace member
+    Exec {
+        /// Command to execute
+        command: String,
+
+        /// Additional arguments for the command
+        args: Vec<String>,
+
+        /// Run in parallel
+        #[arg(short, long)]
+        parallel: bool,
+
+        /// Members to run on (all if not specified)
+        #[arg(short, long)]
+        members: Vec<String>,
+    },
+
+    /// Show workspace statistics
+    Stats,
+}
+
+#[derive(Subcommand)]
+enum WorkflowAction {
+    /// List all workflows
+    List,
+
+    /// Add a new workflow
+    Add {
+        /// Workflow name
+        name: String,
+    },
+
+    /// Remove a workflow
+    Remove {
+        /// Workflow name
+        name: String,
+    },
+
+    /// Add a job to a workflow
+    AddJob {
+        /// Workflow name
+        workflow: String,
+
+        /// Job name
+        job: String,
+
+        /// Job script/command
+        script: String,
+    },
+
+    /// Remove a job from a workflow
+    RemoveJob {
+        /// Workflow name
+        workflow: String,
+
+        /// Job name
+        job: String,
+    },
+
+    /// Show details of a workflow
+    Show {
+        /// Workflow name
+        name: String,
+    },
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -239,6 +356,581 @@ fn cmd_init() -> Result<()> {
     let config = Config::default();
     config.commit()?;
     info!("Workspace initialized successfully");
+    Ok(())
+}
+
+fn cmd_list(full: bool, output: &str) -> Result<()> {
+    let config = Config::load()?;
+
+    match output {
+        "json" => {
+            let json = serde_json::to_string_pretty(&config.members)?;
+            println!("{}", json);
+        }
+        "paths" => {
+            for path in config.members.values() {
+                println!("{}", path);
+            }
+        }
+        "table" | _ => {
+            if config.members.is_empty() {
+                info!("No workspace members found. Run 'workspace sync' to discover members.");
+                return Ok(());
+            }
+
+            let mut members: Vec<_> = config.members.iter().collect();
+            members.sort_by_key(|(name, _)| *name);
+
+            // Calculate max name length for alignment
+            let max_name_len = members.iter().map(|(n, _)| n.len()).max().unwrap_or(0);
+
+            println!("\n{:width$}  Path", "Member", width = max_name_len);
+            println!("{}", "─".repeat(max_name_len + 2 + 50));
+
+            for (name, path) in members {
+                if full {
+                    println!("{:width$}  {}", name, path, width = max_name_len);
+                } else {
+                    // Try to show relative path or ~ for home
+                    let display_path = if let Ok(home) = std::env::var("HOME") {
+                        path.replace(&home, "~")
+                    } else {
+                        path.clone()
+                    };
+                    println!("{:width$}  {}", name, display_path, width = max_name_len);
+                }
+            }
+            println!();
+        }
+    }
+
+    Ok(())
+}
+
+fn cmd_add(name: String, path: Option<PathBuf>) -> Result<()> {
+    let mut config = Config::load()?;
+
+    let target_path = if let Some(p) = path {
+        fs::canonicalize(&p).with_context(|| format!("Failed to resolve path: {}", p.display()))?
+    } else {
+        std::env::current_dir().context("Failed to get current directory")?
+    };
+
+    if config.members.contains_key(&name) {
+        warn!("Member '{}' already exists, updating path", name);
+    }
+
+    let path_str = target_path.to_string_lossy().to_string();
+    config.members.insert(name.clone(), path_str.clone());
+    config.commit()?;
+
+    info!("Added member '{}' -> {}", name, path_str);
+    Ok(())
+}
+
+fn cmd_remove(name: String) -> Result<()> {
+    let mut config = Config::load()?;
+
+    if config.members.remove(&name).is_some() {
+        config.commit()?;
+        info!("Removed member '{}'", name);
+    } else {
+        bail!("Member '{}' not found in workspace", name);
+    }
+
+    Ok(())
+}
+
+fn cmd_edit() -> Result<()> {
+    let config = Config::load()?;
+    let config_dir = config
+        .dir_path
+        .ok_or_else(|| anyhow!("Could not determine config directory"))?;
+    let config_path = config_dir.join(CONFIG_FILENAME);
+
+    let editor = std::env::var("EDITOR")
+        .or_else(|_| std::env::var("VISUAL"))
+        .unwrap_or_else(|_| "vim".to_string());
+
+    info!("Opening {} with {}", config_path.display(), editor);
+
+    let status = Command::new(&editor)
+        .arg(&config_path)
+        .status()
+        .with_context(|| format!("Failed to launch editor: {}", editor))?;
+
+    if !status.success() {
+        bail!("Editor exited with non-zero status");
+    }
+
+    // Validate the edited config
+    match Config::load() {
+        Ok(_) => info!("Configuration is valid"),
+        Err(e) => {
+            error!("Configuration validation failed: {:#}", e);
+            bail!("Invalid configuration after edit");
+        }
+    }
+
+    Ok(())
+}
+
+fn cmd_validate(fix: bool) -> Result<()> {
+    let mut config = Config::load()?;
+    let mut issues = Vec::new();
+    let mut fixed = Vec::new();
+
+    // Check if resolver is empty
+    if config.resolver.is_empty() {
+        issues.push("Resolver is empty".to_string());
+        if fix {
+            config.resolver = DEFAULT_RESOLVER.to_string();
+            fixed.push("Set resolver to default".to_string());
+        }
+    }
+
+    // Check if members have valid paths
+    let mut invalid_members = Vec::new();
+    for (name, path) in &config.members {
+        if !Path::new(path).exists() {
+            issues.push(format!(
+                "Member '{}' points to non-existent path: {}",
+                name, path
+            ));
+            invalid_members.push(name.clone());
+        }
+    }
+
+    if fix && !invalid_members.is_empty() {
+        for name in &invalid_members {
+            config.members.remove(name);
+            fixed.push(format!("Removed member '{}' with invalid path", name));
+        }
+    }
+
+    // Check for duplicate paths
+    let mut path_counts: HashMap<String, Vec<String>> = HashMap::new();
+    for (name, path) in &config.members {
+        path_counts
+            .entry(path.clone())
+            .or_insert_with(Vec::new)
+            .push(name.clone());
+    }
+
+    for (path, names) in path_counts {
+        if names.len() > 1 {
+            issues.push(format!(
+                "Duplicate path '{}' used by members: {}",
+                path,
+                names.join(", ")
+            ));
+        }
+    }
+
+    // Check workflows
+    for (wf_name, jobs) in &config.workflows {
+        if jobs.is_empty() {
+            issues.push(format!("Workflow '{}' has no jobs", wf_name));
+        }
+
+        for (job_name, script) in jobs {
+            if script.trim().is_empty() {
+                issues.push(format!("Job '{}.{}' has empty script", wf_name, job_name));
+            }
+        }
+    }
+
+    // Report results
+    if issues.is_empty() {
+        info!("✓ Configuration is valid!");
+        return Ok(());
+    }
+
+    println!("\nValidation Issues:");
+    for issue in &issues {
+        println!("  ✗ {}", issue);
+    }
+
+    if fix {
+        if !fixed.is_empty() {
+            println!("\nFixed:");
+            for fix in &fixed {
+                println!("  ✓ {}", fix);
+            }
+            config.commit()?;
+            info!("Configuration updated with fixes");
+        } else {
+            warn!("No automatic fixes available for these issues");
+        }
+    } else {
+        println!("\nRun with --fix to automatically resolve some issues");
+    }
+
+    if !fix || (fix && issues.len() > fixed.len()) {
+        bail!("Configuration has {} issue(s)", issues.len());
+    }
+
+    Ok(())
+}
+
+fn cmd_info(name: String) -> Result<()> {
+    let config = Config::load()?;
+
+    let path = config
+        .members
+        .get(&name)
+        .ok_or_else(|| anyhow!("Member '{}' not found", name))?;
+
+    println!("\nMember: {}", name);
+    println!("Path:   {}", path);
+
+    // Check if path exists
+    let path_obj = Path::new(path);
+    println!("Exists: {}", if path_obj.exists() { "yes" } else { "no" });
+
+    if path_obj.exists() {
+        // Get metadata
+        if let Ok(metadata) = fs::metadata(path) {
+            println!(
+                "Type:   {}",
+                if metadata.is_dir() {
+                    "directory"
+                } else {
+                    "file"
+                }
+            );
+
+            if let Ok(canonical) = fs::canonicalize(path) {
+                println!("Canon:  {}", canonical.display());
+            }
+        }
+
+        // Check if it's a git repository
+        let git_dir = path_obj.join(".git");
+        if git_dir.exists() {
+            println!("Git:    yes");
+
+            // Try to get git info
+            if let Ok(output) = Command::new("git")
+                .current_dir(path)
+                .args(&["rev-parse", "--abbrev-ref", "HEAD"])
+                .output()
+            {
+                if output.status.success() {
+                    let branch = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                    println!("Branch: {}", branch);
+                }
+            }
+        }
+    }
+
+    // Find workflows that reference this member
+    let mut referencing_workflows = Vec::new();
+    let member_ref = format!("{{{{.Members.{}}}}}", name);
+
+    for (wf_name, jobs) in &config.workflows {
+        for (job_name, script) in jobs {
+            if script.contains(&member_ref) {
+                referencing_workflows.push(format!("{}.{}", wf_name, job_name));
+            }
+        }
+    }
+
+    if !referencing_workflows.is_empty() {
+        println!("\nReferenced in workflows:");
+        for wf in referencing_workflows {
+            println!("  - {}", wf);
+        }
+    }
+
+    println!();
+    Ok(())
+}
+
+fn cmd_workflow(action: WorkflowAction) -> Result<()> {
+    match action {
+        WorkflowAction::List => {
+            let config = Config::load()?;
+
+            if config.workflows.is_empty() {
+                info!("No workflows defined");
+                return Ok(());
+            }
+
+            println!("\nWorkflows:");
+            for (name, jobs) in &config.workflows {
+                println!(
+                    "  {} ({} job{})",
+                    name,
+                    jobs.len(),
+                    if jobs.len() == 1 { "" } else { "s" }
+                );
+                for job_name in jobs.keys() {
+                    println!("    - {}", job_name);
+                }
+            }
+            println!();
+        }
+
+        WorkflowAction::Add { name } => {
+            let mut config = Config::load()?;
+
+            if config.workflows.contains_key(&name) {
+                bail!("Workflow '{}' already exists", name);
+            }
+
+            config.workflows.insert(name.clone(), HashMap::new());
+            config.commit()?;
+            info!("Created workflow '{}'", name);
+        }
+
+        WorkflowAction::Remove { name } => {
+            let mut config = Config::load()?;
+
+            if config.workflows.remove(&name).is_some() {
+                config.commit()?;
+                info!("Removed workflow '{}'", name);
+            } else {
+                bail!("Workflow '{}' not found", name);
+            }
+        }
+
+        WorkflowAction::AddJob {
+            workflow,
+            job,
+            script,
+        } => {
+            let mut config = Config::load()?;
+
+            let jobs = config
+                .workflows
+                .entry(workflow.clone())
+                .or_insert_with(HashMap::new);
+
+            if jobs.contains_key(&job) {
+                warn!(
+                    "Job '{}' already exists in workflow '{}', updating",
+                    job, workflow
+                );
+            }
+
+            jobs.insert(job.clone(), script.clone());
+            config.commit()?;
+            info!("Added job '{}' to workflow '{}'", job, workflow);
+        }
+
+        WorkflowAction::RemoveJob { workflow, job } => {
+            let mut config = Config::load()?;
+
+            let jobs = config
+                .workflows
+                .get_mut(&workflow)
+                .ok_or_else(|| anyhow!("Workflow '{}' not found", workflow))?;
+
+            if jobs.remove(&job).is_some() {
+                config.commit()?;
+                info!("Removed job '{}' from workflow '{}'", job, workflow);
+            } else {
+                bail!("Job '{}' not found in workflow '{}'", job, workflow);
+            }
+        }
+
+        WorkflowAction::Show { name } => {
+            let config = Config::load()?;
+
+            let jobs = config
+                .workflows
+                .get(&name)
+                .ok_or_else(|| anyhow!("Workflow '{}' not found", name))?;
+
+            println!("\nWorkflow: {}", name);
+            println!("Jobs: {}\n", jobs.len());
+
+            for (job_name, script) in jobs {
+                println!("  {}:", job_name);
+                for line in script.lines() {
+                    println!("    {}", line);
+                }
+                println!();
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn cmd_root() -> Result<()> {
+    let config = Config::load()?;
+    let root = config
+        .dir_path
+        .ok_or_else(|| anyhow!("Could not determine workspace root"))?;
+    println!("{}", root.display());
+    Ok(())
+}
+
+fn cmd_exec(
+    command: String,
+    args: Vec<String>,
+    parallel: bool,
+    members: Vec<String>,
+) -> Result<()> {
+    let config = Config::load()?;
+
+    // Determine which members to run on
+    let target_members: Vec<_> = if members.is_empty() {
+        config.members.iter().collect()
+    } else {
+        members
+            .iter()
+            .map(|name| {
+                config
+                    .members
+                    .get(name)
+                    .map(|path| (name, path))
+                    .ok_or_else(|| anyhow!("Member '{}' not found", name))
+            })
+            .collect::<Result<Vec<_>>>()?
+    };
+
+    if target_members.is_empty() {
+        info!("No members to execute on");
+        return Ok(());
+    }
+
+    let full_command = if args.is_empty() {
+        command.clone()
+    } else {
+        format!("{} {}", command, args.join(" "))
+    };
+
+    info!(
+        "Executing '{}' on {} member(s)",
+        full_command,
+        target_members.len()
+    );
+
+    if parallel {
+        let (tx, rx) = mpsc::channel();
+        let count = target_members.len();
+
+        for (name, path) in target_members {
+            let name = (*name).clone();
+            let path = path.clone();
+            let cmd = command.clone();
+            let args = args.clone();
+            let tx = tx.clone();
+
+            thread::spawn(move || {
+                let result = execute_in_member(&name, &path, &cmd, &args);
+                let _ = tx.send((name, result));
+            });
+        }
+
+        drop(tx);
+
+        for (name, result) in rx {
+            match result {
+                Ok(_) => info!("✓ {}: success", name),
+                Err(e) => error!("✗ {}: {}", name, e),
+            }
+        }
+    } else {
+        for (name, path) in target_members {
+            info!("Executing in '{}'...", name);
+            match execute_in_member(name, path, &command, &args) {
+                Ok(output) => {
+                    if !output.is_empty() {
+                        println!("{}", output);
+                    }
+                }
+                Err(e) => error!("Failed in '{}': {}", name, e),
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn execute_in_member(name: &str, path: &str, command: &str, args: &[String]) -> Result<String> {
+    let output = Command::new(command)
+        .args(args)
+        .current_dir(path)
+        .output()
+        .with_context(|| format!("Failed to execute command in '{}'", name))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        bail!("Command failed: {}", stderr.trim());
+    }
+
+    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+}
+
+fn cmd_stats() -> Result<()> {
+    let config = Config::load()?;
+
+    println!("\nWorkspace Statistics");
+    println!("====================\n");
+
+    // Basic counts
+    println!("Members:   {}", config.members.len());
+    println!("Workflows: {}", config.workflows.len());
+
+    let total_jobs: usize = config.workflows.values().map(|jobs| jobs.len()).sum();
+    println!("Total Jobs: {}\n", total_jobs);
+
+    // Member analysis
+    println!("Members:");
+    let mut existing = 0;
+    let mut missing = 0;
+    let mut git_repos = 0;
+
+    for (name, path) in &config.members {
+        let path_obj = Path::new(path);
+        if path_obj.exists() {
+            existing += 1;
+            if path_obj.join(".git").exists() {
+                git_repos += 1;
+            }
+        } else {
+            missing += 1;
+        }
+    }
+
+    println!("  Existing:     {}", existing);
+    println!("  Missing:      {}", missing);
+    println!("  Git repos:    {}\n", git_repos);
+
+    // Workflow analysis
+    if !config.workflows.is_empty() {
+        println!("Workflows:");
+        let mut workflow_stats: Vec<_> = config
+            .workflows
+            .iter()
+            .map(|(name, jobs)| (name, jobs.len()))
+            .collect();
+        workflow_stats.sort_by_key(|(_, count)| std::cmp::Reverse(*count));
+
+        for (name, count) in workflow_stats.iter().take(5) {
+            println!(
+                "  {:20} {} job{}",
+                name,
+                count,
+                if *count == 1 { "" } else { "s" }
+            );
+        }
+
+        if workflow_stats.len() > 5 {
+            println!("  ... and {} more", workflow_stats.len() - 5);
+        }
+    }
+
+    // Workspace root info
+    if let Some(root) = &config.dir_path {
+        println!("\nWorkspace root: {}", root.display());
+    }
+
+    println!();
     Ok(())
 }
 
@@ -719,6 +1411,21 @@ fn main() {
             force,
         } => cmd_link(from, to, real, force),
         Commands::Log { filters } => cmd_log(filters),
+        Commands::List { full, output } => cmd_list(full, &output),
+        Commands::Add { name, path } => cmd_add(name, path),
+        Commands::Remove { name } => cmd_remove(name),
+        Commands::Edit => cmd_edit(),
+        Commands::Validate { fix } => cmd_validate(fix),
+        Commands::Info { name } => cmd_info(name),
+        Commands::Workflow { action } => cmd_workflow(action),
+        Commands::Root => cmd_root(),
+        Commands::Exec {
+            command,
+            args,
+            parallel,
+            members,
+        } => cmd_exec(command, args, parallel, members),
+        Commands::Stats => cmd_stats(),
     };
 
     if let Err(e) = result {
