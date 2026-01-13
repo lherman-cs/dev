@@ -45,9 +45,9 @@ fi
 cd $DEV_REPO_DIR
 git remote set-url origin git@github.com:lherman-cs/dev.git
 
-go run . link -from $PWD/dotfiles -force -real
+cargo install --path .
+dev link --from $PWD/dotfiles --force --real
 append_shell "source '$HOME/.extend.rc'"
-go install
 
 # Install nerd fonts
 # curl -sS https://webi.sh/nerdfont | sh
