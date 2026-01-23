@@ -16,7 +16,7 @@ use tracing_subscriber::FmtSubscriber;
 
 const CONFIG_FILENAME: &str = "workspace.json";
 const CONFIG_OVERRIDE_FILENAME: &str = "workspace.override.json";
-const DEFAULT_RESOLVER: &str = "fd -H '^.git$' | xargs -I{} dirname {}";
+const DEFAULT_RESOLVER: &str = "fd -H '^.git$' * | xargs -I{} dirname {}";
 const MAKE_FILENAME: &str = "workspace.mk";
 
 const MAKE_TEMPLATE: &str = r#"

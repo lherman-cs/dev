@@ -18,6 +18,7 @@ brew install \
   clipboard \
   curl \
   git \
+  git-lfs \
   htop \
   tmux \
   neovim \
