@@ -12,24 +12,23 @@ function append_shell() {
 }
 
 # /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+# eval $(home/linuxbrew/.linuxbrew/bin/brew shellenv bash)
 
-sudo pacman -S \
-  wl-clipboard \
+brew install \
+  clipboard \
   curl \
   git \
   htop \
   tmux \
   neovim \
+  fd \
   fzf \
   ripgrep \
-  fd \
   jq \
   yq \
   go \
   nodejs \
-  npm \
-  deno \
-  rustup
+  npm
 
 mkdir -p $WORKSPACE_DIR
 
@@ -45,6 +44,7 @@ fi
 cd $DEV_REPO_DIR
 git remote set-url origin git@github.com:lherman-cs/dev.git
 
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 cargo install --path .
 dev link --from $PWD/dotfiles --force --real
 append_shell "source '$HOME/.extend.rc'"
