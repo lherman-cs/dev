@@ -71,6 +71,12 @@ return {
         --     command = "clippy", -- optional, for linting
         --   },
         -- },
+        wc_language_server = {
+          autostart = true,
+          filetypes = { "html", "astro", "vue", "svelte" },
+          root_dir_patterns = { "wc.config.js", "package.json", ".git" },
+          tsdk = vim.fn.getcwd() .. "/node_modules/typescript/lib",
+        },
       },
       inlay_hints = { enabled = false },
     },
