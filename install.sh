@@ -15,6 +15,7 @@ function append_shell() {
 # eval $(home/linuxbrew/.linuxbrew/bin/brew shellenv bash)
 
 brew install \
+  gcc \
   clipboard \
   curl \
   git \
