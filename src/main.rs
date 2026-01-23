@@ -219,6 +219,14 @@ struct Config {
     dir_path: Option<PathBuf>,
 }
 
+// A helper struct that makes all fields optional for the override file
+#[derive(Deserialize)]
+struct PartialConfig {
+    resolver: Option<String>,
+    members: Option<HashMap<String, String>>,
+    workflows: Option<HashMap<String, HashMap<String, String>>>,
+}
+
 impl Default for Config {
     fn default() -> Self {
         let mut workflows = HashMap::new();
@@ -236,56 +244,45 @@ impl Default for Config {
 }
 
 impl Config {
-    /// Load configuration by searching current and parent directories
-    fn load() -> Result<Self> {
+    /// Load ONLY the base config (use this for commands that modify and save, like Add/Remove)
+    fn load_base() -> Result<Self> {
         let mut current_dir = std::env::current_dir().context("Failed to get current directory")?;
 
         loop {
             let config_path = current_dir.join(CONFIG_FILENAME);
-
             if config_path.is_file() {
-                let file = File::open(&config_path).with_context(|| {
-                    format!("Failed to open config file: {}", config_path.display())
-                })?;
-
-                let mut config: Config = serde_json::from_reader(BufReader::new(file))
-                    .with_context(|| {
-                        format!("Failed to parse config file: {}", config_path.display())
-                    })?;
-
-                config.dir_path = Some(current_dir.clone());
-
-                // Try to load and merge override file
-                let override_path = current_dir.join(CONFIG_OVERRIDE_FILENAME);
-                if override_path.is_file() {
-                    match File::open(&override_path) {
-                        Ok(override_file) => {
-                            if let Ok(override_config) =
-                                serde_json::from_reader::<_, Config>(BufReader::new(override_file))
-                            {
-                                config.resolver = override_config.resolver;
-                                config.members.extend(override_config.members);
-                                for (workflow_name, jobs) in override_config.workflows {
-                                    config
-                                        .workflows
-                                        .entry(workflow_name)
-                                        .or_insert_with(HashMap::new)
-                                        .extend(jobs);
-                                }
-                            }
-                        }
-                        Err(e) => warn!("Could not open override file: {}", e),
-                    }
-                }
-
+                let file = File::open(&config_path)?;
+                let mut config: Config = serde_json::from_reader(BufReader::new(file))?;
+                config.dir_path = Some(current_dir);
                 return Ok(config);
             }
-
-            // Move to parent directory
             if !current_dir.pop() {
                 bail!("Workspace has not been setup. Run 'workspace init' first.");
             }
         }
+    }
+
+    /// Load base + overrides (use this for "read-only" commands like Run, List, Info)
+    fn load() -> Result<Self> {
+        let mut config = Self::load_base()?;
+        let base_dir = config.dir_path.as_ref().unwrap();
+        let override_path = base_dir.join(CONFIG_OVERRIDE_FILENAME);
+
+        if override_path.is_file() {
+            if let Ok(file) = File::open(&override_path) {
+                // Parse as PartialConfig so we don't error if fields are missing
+                if let Ok(overrides) = serde_json::from_reader::<_, PartialConfig>(BufReader::new(file)) {
+                    if let Some(r) = overrides.resolver { config.resolver = r; }
+                    if let Some(m) = overrides.members { config.members.extend(m); }
+                    if let Some(w) = overrides.workflows {
+                        for (wf_name, jobs) in w {
+                            config.workflows.entry(wf_name).or_default().extend(jobs);
+                        }
+                    }
+                }
+            }
+        }
+        Ok(config)
     }
 
     /// Save configuration to disk
