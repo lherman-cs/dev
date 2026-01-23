@@ -51,5 +51,5 @@ dev link --from $PWD/dotfiles --force --real
 append_shell "source '$HOME/.extend.rc'"
 
 # Install nerd fonts
-# curl -sS https://webi.sh/nerdfont | sh
+curl -sS https://webi.sh/nerdfont | sh
 # sudo dnf install -y wl-clipboard
