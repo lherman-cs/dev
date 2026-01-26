@@ -15,23 +15,9 @@ use tracing::{Level, error, info, warn};
 use tracing_subscriber::FmtSubscriber;
 
 const CONFIG_FILENAME: &str = "workspace.json";
-const CONFIG_OVERRIDE_FILENAME: &str = "workspace.override.json";
+const LOCK_FILENAME: &str = "workspace.lock.json";
 const DEFAULT_RESOLVER: &str = "fd -H '^.git$' * | xargs -I{} dirname {}";
 const MAKE_FILENAME: &str = "workspace.mk";
-
-const MAKE_TEMPLATE: &str = r#"
-define tmux
-	tmux new-window -n $1 "source ~/.extend.rc; $(subst $",,$(2))"
-endef
-
-define kill
-    tmux kill-window -t $(1) || true
-endef
-
-{{#each members}}
-{{@key}} := {{this}}
-{{/each}}
-"#;
 
 #[derive(Parser)]
 #[command(name = "workspace")]
@@ -44,7 +30,12 @@ struct Cli {
 #[derive(Subcommand)]
 enum Commands {
     /// Initialize a new workspace configuration
-    Init,
+    Init {
+        /// Pattern to search for (will be wrapped in fd command)
+        /// Example: "Cargo.toml" becomes "fd -H 'Cargo.toml' * | xargs -I{} dirname {}"
+        #[arg(short, long)]
+        pattern: Option<String>,
+    },
 
     /// Sync workspace members using the resolver
     Sync,
@@ -212,19 +203,15 @@ enum WorkflowAction {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 struct Config {
     resolver: String,
-    members: HashMap<String, String>,
     workflows: HashMap<String, HashMap<String, String>>,
 
     #[serde(skip)]
     dir_path: Option<PathBuf>,
 }
 
-// A helper struct that makes all fields optional for the override file
-#[derive(Deserialize)]
-struct PartialConfig {
-    resolver: Option<String>,
-    members: Option<HashMap<String, String>>,
-    workflows: Option<HashMap<String, HashMap<String, String>>>,
+#[derive(Debug, Serialize, Deserialize, Clone)]
+struct LockFile {
+    members: HashMap<String, String>,
 }
 
 impl Default for Config {
@@ -236,16 +223,49 @@ impl Default for Config {
 
         Self {
             resolver: DEFAULT_RESOLVER.to_string(),
-            members: HashMap::new(),
             workflows,
             dir_path: None,
         }
     }
 }
 
-impl Config {
-    /// Load ONLY the base config (use this for commands that modify and save, like Add/Remove)
-    fn load_base() -> Result<Self> {
+impl Default for LockFile {
+    fn default() -> Self {
+        Self {
+            members: HashMap::new(),
+        }
+    }
+}
+
+/// RAII guard for configuration that auto-commits on drop
+struct ConfigGuard {
+    config: Config,
+    lock: LockFile,
+    should_commit: bool,
+}
+
+impl ConfigGuard {
+    /// Load configuration (read-only, won't auto-commit)
+    fn load() -> Result<Self> {
+        let (config, lock) = Self::load_files()?;
+        Ok(Self {
+            config,
+            lock,
+            should_commit: false,
+        })
+    }
+
+    /// Load configuration for modification (will auto-commit on drop)
+    fn load_mut() -> Result<Self> {
+        let (config, lock) = Self::load_files()?;
+        Ok(Self {
+            config,
+            lock,
+            should_commit: true,
+        })
+    }
+
+    fn load_files() -> Result<(Config, LockFile)> {
         let mut current_dir = std::env::current_dir().context("Failed to get current directory")?;
 
         loop {
@@ -253,8 +273,18 @@ impl Config {
             if config_path.is_file() {
                 let file = File::open(&config_path)?;
                 let mut config: Config = serde_json::from_reader(BufReader::new(file))?;
-                config.dir_path = Some(current_dir);
-                return Ok(config);
+                config.dir_path = Some(current_dir.clone());
+
+                // Load lock file
+                let lock_path = current_dir.join(LOCK_FILENAME);
+                let lock = if lock_path.is_file() {
+                    let file = File::open(&lock_path)?;
+                    serde_json::from_reader(BufReader::new(file))?
+                } else {
+                    LockFile::default()
+                };
+
+                return Ok((config, lock));
             }
             if !current_dir.pop() {
                 bail!("Workspace has not been setup. Run 'workspace init' first.");
@@ -262,65 +292,78 @@ impl Config {
         }
     }
 
-    /// Load base + overrides (use this for "read-only" commands like Run, List, Info)
-    fn load() -> Result<Self> {
-        let mut config = Self::load_base()?;
-        let base_dir = config.dir_path.as_ref().unwrap();
-        let override_path = base_dir.join(CONFIG_OVERRIDE_FILENAME);
-
-        if override_path.is_file() {
-            if let Ok(file) = File::open(&override_path) {
-                // Parse as PartialConfig so we don't error if fields are missing
-                if let Ok(overrides) = serde_json::from_reader::<_, PartialConfig>(BufReader::new(file)) {
-                    if let Some(r) = overrides.resolver { config.resolver = r; }
-                    if let Some(m) = overrides.members { config.members.extend(m); }
-                    if let Some(w) = overrides.workflows {
-                        for (wf_name, jobs) in w {
-                            config.workflows.entry(wf_name).or_default().extend(jobs);
-                        }
-                    }
-                }
-            }
-        }
-        Ok(config)
+    /// Get reference to config
+    fn config(&self) -> &Config {
+        &self.config
     }
 
-    /// Save configuration to disk
+    /// Get mutable reference to config
+    fn config_mut(&mut self) -> &mut Config {
+        &mut self.config
+    }
+
+    /// Get reference to lock file
+    fn lock(&self) -> &LockFile {
+        &self.lock
+    }
+
+    /// Get mutable reference to lock file
+    fn lock_mut(&mut self) -> &mut LockFile {
+        &mut self.lock
+    }
+
+    /// Get all members
+    fn members(&self) -> &HashMap<String, String> {
+        &self.lock.members
+    }
+
+    /// Get mutable reference to members
+    fn members_mut(&mut self) -> &mut HashMap<String, String> {
+        &mut self.lock.members
+    }
+
+    /// Disable auto-commit (for read-only operations)
+    fn read_only(mut self) -> Self {
+        self.should_commit = false;
+        self
+    }
+
+    /// Manually commit (also happens automatically on drop if should_commit is true)
     fn commit(&self) -> Result<()> {
-        let config_dir = self
+        let config_dir = self.config
             .dir_path
             .as_ref()
             .cloned()
             .or_else(|| std::env::current_dir().ok())
             .ok_or_else(|| anyhow!("Failed to determine config directory"))?;
 
-        // Write JSON config with pretty formatting
+        // Write JSON config
         let config_path = config_dir.join(CONFIG_FILENAME);
         let file = File::create(&config_path)
             .with_context(|| format!("Failed to create config file: {}", config_path.display()))?;
+        serde_json::to_writer_pretty(file, &self.config).context("Failed to write config file")?;
 
-        serde_json::to_writer_pretty(file, self).context("Failed to write config file")?;
+        // Write lock file
+        let lock_path = config_dir.join(LOCK_FILENAME);
+        let file = File::create(&lock_path)
+            .with_context(|| format!("Failed to create lock file: {}", lock_path.display()))?;
+        serde_json::to_writer_pretty(file, &self.lock).context("Failed to write lock file")?;
 
         // Write Makefile
-        self.write_makefile(&config_dir)?;
+        // self.write_makefile(&config_dir)?;
 
         info!("Configuration committed to {}", config_dir.display());
         Ok(())
     }
 
-    /// Generate and write Makefile
     fn write_makefile(&self, config_dir: &Path) -> Result<()> {
         let make_path = config_dir.join(MAKE_FILENAME);
         let mut file = File::create(&make_path)
             .with_context(|| format!("Failed to create Makefile: {}", make_path.display()))?;
 
-        // Write the header
         writeln!(file)?;
         writeln!(file, "define tmux")?;
-        writeln!(
-            file,
-            "\ttmux new-window -n $1 \"source ~/.extend.rc; $(subst $\\\",,$(2))\""
-        )?;
+        writeln!(file, "\ttmux new-window -n $1 \"source ~/.extend.rc; $(subst $\\\",,$(2))\"")?;
         writeln!(file, "endef")?;
         writeln!(file)?;
         writeln!(file, "define kill")?;
@@ -328,8 +371,7 @@ impl Config {
         writeln!(file, "endef")?;
         writeln!(file)?;
 
-        // Write member variables
-        for (member, path) in &self.members {
+        for (member, path) in &self.lock.members {
             writeln!(file, "{} := {}", member, path)?;
         }
 
@@ -337,6 +379,16 @@ impl Config {
             .with_context(|| format!("Failed to flush Makefile: {}", make_path.display()))?;
 
         Ok(())
+    }
+}
+
+impl Drop for ConfigGuard {
+    fn drop(&mut self) {
+        if self.should_commit {
+            if let Err(e) = self.commit() {
+                error!("Failed to auto-commit configuration: {:#}", e);
+            }
+        }
     }
 }
 
@@ -349,46 +401,68 @@ struct JobResult {
     error: Option<String>,
 }
 
-fn cmd_init() -> Result<()> {
-    let config = Config::default();
-    config.commit()?;
+fn cmd_init(pattern: Option<String>) -> Result<()> {
+    let resolver = if let Some(pat) = pattern {
+        format!("fd -H '{}' * | xargs -I{{}} dirname {{}}", pat)
+    } else {
+        DEFAULT_RESOLVER.to_string()
+    };
+
+    let mut config = Config::default();
+    config.resolver = resolver;
+    
+    let lock = LockFile::default();
+    
+    let config_dir = std::env::current_dir().context("Failed to get current directory")?;
+    
+    // Write initial files
+    let config_path = config_dir.join(CONFIG_FILENAME);
+    let file = File::create(&config_path)?;
+    serde_json::to_writer_pretty(file, &config)?;
+
+    let lock_path = config_dir.join(LOCK_FILENAME);
+    let file = File::create(&lock_path)?;
+    serde_json::to_writer_pretty(file, &lock)?;
+
     info!("Workspace initialized successfully");
-    Ok(())
+    info!("Resolver: {}", config.resolver);
+    
+    // Immediately sync
+    cmd_sync()
 }
 
 fn cmd_list(full: bool, output: &str) -> Result<()> {
-    let config = Config::load()?;
+    let guard = ConfigGuard::load()?.read_only();
+    let members = guard.members();
 
     match output {
         "json" => {
-            let json = serde_json::to_string_pretty(&config.members)?;
+            let json = serde_json::to_string_pretty(&members)?;
             println!("{}", json);
         }
         "paths" => {
-            for path in config.members.values() {
+            for path in members.values() {
                 println!("{}", path);
             }
         }
         "table" | _ => {
-            if config.members.is_empty() {
+            if members.is_empty() {
                 info!("No workspace members found. Run 'workspace sync' to discover members.");
                 return Ok(());
             }
 
-            let mut members: Vec<_> = config.members.iter().collect();
-            members.sort_by_key(|(name, _)| *name);
+            let mut member_list: Vec<_> = members.iter().collect();
+            member_list.sort_by_key(|(name, _)| *name);
 
-            // Calculate max name length for alignment
-            let max_name_len = members.iter().map(|(n, _)| n.len()).max().unwrap_or(0);
+            let max_name_len = member_list.iter().map(|(n, _)| n.len()).max().unwrap_or(0);
 
             println!("\n{:width$}  Path", "Member", width = max_name_len);
             println!("{}", "─".repeat(max_name_len + 2 + 50));
 
-            for (name, path) in members {
+            for (name, path) in member_list {
                 if full {
                     println!("{:width$}  {}", name, path, width = max_name_len);
                 } else {
-                    // Try to show relative path or ~ for home
                     let display_path = if let Ok(home) = std::env::var("HOME") {
                         path.replace(&home, "~")
                     } else {
@@ -405,7 +479,7 @@ fn cmd_list(full: bool, output: &str) -> Result<()> {
 }
 
 fn cmd_add(name: String, path: Option<PathBuf>) -> Result<()> {
-    let mut config = Config::load()?;
+    let mut guard = ConfigGuard::load_mut()?;
 
     let target_path = if let Some(p) = path {
         fs::canonicalize(&p).with_context(|| format!("Failed to resolve path: {}", p.display()))?
@@ -413,23 +487,21 @@ fn cmd_add(name: String, path: Option<PathBuf>) -> Result<()> {
         std::env::current_dir().context("Failed to get current directory")?
     };
 
-    if config.members.contains_key(&name) {
+    if guard.members().contains_key(&name) {
         warn!("Member '{}' already exists, updating path", name);
     }
 
     let path_str = target_path.to_string_lossy().to_string();
-    config.members.insert(name.clone(), path_str.clone());
-    config.commit()?;
+    guard.members_mut().insert(name.clone(), path_str.clone());
 
     info!("Added member '{}' -> {}", name, path_str);
     Ok(())
 }
 
 fn cmd_remove(name: String) -> Result<()> {
-    let mut config = Config::load()?;
+    let mut guard = ConfigGuard::load_mut()?;
 
-    if config.members.remove(&name).is_some() {
-        config.commit()?;
+    if guard.members_mut().remove(&name).is_some() {
         info!("Removed member '{}'", name);
     } else {
         bail!("Member '{}' not found in workspace", name);
@@ -439,9 +511,10 @@ fn cmd_remove(name: String) -> Result<()> {
 }
 
 fn cmd_edit() -> Result<()> {
-    let config = Config::load()?;
-    let config_dir = config
+    let guard = ConfigGuard::load()?.read_only();
+    let config_dir = guard.config()
         .dir_path
+        .as_ref()
         .ok_or_else(|| anyhow!("Could not determine config directory"))?;
     let config_path = config_dir.join(CONFIG_FILENAME);
 
@@ -461,7 +534,7 @@ fn cmd_edit() -> Result<()> {
     }
 
     // Validate the edited config
-    match Config::load() {
+    match ConfigGuard::load() {
         Ok(_) => info!("Configuration is valid"),
         Err(e) => {
             error!("Configuration validation failed: {:#}", e);
@@ -473,41 +546,43 @@ fn cmd_edit() -> Result<()> {
 }
 
 fn cmd_validate(fix: bool) -> Result<()> {
-    let mut config = Config::load()?;
+    let mut guard = if fix {
+        ConfigGuard::load_mut()?
+    } else {
+        ConfigGuard::load()?.read_only()
+    };
+
     let mut issues = Vec::new();
     let mut fixed = Vec::new();
 
     // Check if resolver is empty
-    if config.resolver.is_empty() {
+    if guard.config().resolver.is_empty() {
         issues.push("Resolver is empty".to_string());
         if fix {
-            config.resolver = DEFAULT_RESOLVER.to_string();
+            guard.config_mut().resolver = DEFAULT_RESOLVER.to_string();
             fixed.push("Set resolver to default".to_string());
         }
     }
 
     // Check if members have valid paths
     let mut invalid_members = Vec::new();
-    for (name, path) in &config.members {
+    for (name, path) in guard.members() {
         if !Path::new(path).exists() {
-            issues.push(format!(
-                "Member '{}' points to non-existent path: {}",
-                name, path
-            ));
+            issues.push(format!("Member '{}' points to non-existent path: {}", name, path));
             invalid_members.push(name.clone());
         }
     }
 
     if fix && !invalid_members.is_empty() {
         for name in &invalid_members {
-            config.members.remove(name);
+            guard.members_mut().remove(name);
             fixed.push(format!("Removed member '{}' with invalid path", name));
         }
     }
 
     // Check for duplicate paths
     let mut path_counts: HashMap<String, Vec<String>> = HashMap::new();
-    for (name, path) in &config.members {
+    for (name, path) in guard.members() {
         path_counts
             .entry(path.clone())
             .or_insert_with(Vec::new)
@@ -516,16 +591,12 @@ fn cmd_validate(fix: bool) -> Result<()> {
 
     for (path, names) in path_counts {
         if names.len() > 1 {
-            issues.push(format!(
-                "Duplicate path '{}' used by members: {}",
-                path,
-                names.join(", ")
-            ));
+            issues.push(format!("Duplicate path '{}' used by members: {}", path, names.join(", ")));
         }
     }
 
     // Check workflows
-    for (wf_name, jobs) in &config.workflows {
+    for (wf_name, jobs) in &guard.config().workflows {
         if jobs.is_empty() {
             issues.push(format!("Workflow '{}' has no jobs", wf_name));
         }
@@ -551,10 +622,9 @@ fn cmd_validate(fix: bool) -> Result<()> {
     if fix {
         if !fixed.is_empty() {
             println!("\nFixed:");
-            for fix in &fixed {
-                println!("  ✓ {}", fix);
+            for fix_msg in &fixed {
+                println!("  ✓ {}", fix_msg);
             }
-            config.commit()?;
             info!("Configuration updated with fixes");
         } else {
             warn!("No automatic fixes available for these issues");
@@ -571,43 +641,31 @@ fn cmd_validate(fix: bool) -> Result<()> {
 }
 
 fn cmd_info(name: String) -> Result<()> {
-    let config = Config::load()?;
+    let guard = ConfigGuard::load()?.read_only();
 
-    let path = config
-        .members
+    let path = guard.members()
         .get(&name)
         .ok_or_else(|| anyhow!("Member '{}' not found", name))?;
 
     println!("\nMember: {}", name);
     println!("Path:   {}", path);
 
-    // Check if path exists
     let path_obj = Path::new(path);
     println!("Exists: {}", if path_obj.exists() { "yes" } else { "no" });
 
     if path_obj.exists() {
-        // Get metadata
         if let Ok(metadata) = fs::metadata(path) {
-            println!(
-                "Type:   {}",
-                if metadata.is_dir() {
-                    "directory"
-                } else {
-                    "file"
-                }
-            );
+            println!("Type:   {}", if metadata.is_dir() { "directory" } else { "file" });
 
             if let Ok(canonical) = fs::canonicalize(path) {
                 println!("Canon:  {}", canonical.display());
             }
         }
 
-        // Check if it's a git repository
         let git_dir = path_obj.join(".git");
         if git_dir.exists() {
             println!("Git:    yes");
 
-            // Try to get git info
             if let Ok(output) = Command::new("git")
                 .current_dir(path)
                 .args(&["rev-parse", "--abbrev-ref", "HEAD"])
@@ -625,7 +683,7 @@ fn cmd_info(name: String) -> Result<()> {
     let mut referencing_workflows = Vec::new();
     let member_ref = format!("{{{{.Members.{}}}}}", name);
 
-    for (wf_name, jobs) in &config.workflows {
+    for (wf_name, jobs) in &guard.config().workflows {
         for (job_name, script) in jobs {
             if script.contains(&member_ref) {
                 referencing_workflows.push(format!("{}.{}", wf_name, job_name));
@@ -647,21 +705,16 @@ fn cmd_info(name: String) -> Result<()> {
 fn cmd_workflow(action: WorkflowAction) -> Result<()> {
     match action {
         WorkflowAction::List => {
-            let config = Config::load()?;
+            let guard = ConfigGuard::load()?.read_only();
 
-            if config.workflows.is_empty() {
+            if guard.config().workflows.is_empty() {
                 info!("No workflows defined");
                 return Ok(());
             }
 
             println!("\nWorkflows:");
-            for (name, jobs) in &config.workflows {
-                println!(
-                    "  {} ({} job{})",
-                    name,
-                    jobs.len(),
-                    if jobs.len() == 1 { "" } else { "s" }
-                );
+            for (name, jobs) in &guard.config().workflows {
+                println!("  {} ({} job{})", name, jobs.len(), if jobs.len() == 1 { "" } else { "s" });
                 for job_name in jobs.keys() {
                     println!("    - {}", job_name);
                 }
@@ -670,62 +723,51 @@ fn cmd_workflow(action: WorkflowAction) -> Result<()> {
         }
 
         WorkflowAction::Add { name } => {
-            let mut config = Config::load()?;
+            let mut guard = ConfigGuard::load_mut()?;
 
-            if config.workflows.contains_key(&name) {
+            if guard.config().workflows.contains_key(&name) {
                 bail!("Workflow '{}' already exists", name);
             }
 
-            config.workflows.insert(name.clone(), HashMap::new());
-            config.commit()?;
+            guard.config_mut().workflows.insert(name.clone(), HashMap::new());
             info!("Created workflow '{}'", name);
         }
 
         WorkflowAction::Remove { name } => {
-            let mut config = Config::load()?;
+            let mut guard = ConfigGuard::load_mut()?;
 
-            if config.workflows.remove(&name).is_some() {
-                config.commit()?;
+            if guard.config_mut().workflows.remove(&name).is_some() {
                 info!("Removed workflow '{}'", name);
             } else {
                 bail!("Workflow '{}' not found", name);
             }
         }
 
-        WorkflowAction::AddJob {
-            workflow,
-            job,
-            script,
-        } => {
-            let mut config = Config::load()?;
+        WorkflowAction::AddJob { workflow, job, script } => {
+            let mut guard = ConfigGuard::load_mut()?;
 
-            let jobs = config
+            let jobs = guard.config_mut()
                 .workflows
                 .entry(workflow.clone())
                 .or_insert_with(HashMap::new);
 
             if jobs.contains_key(&job) {
-                warn!(
-                    "Job '{}' already exists in workflow '{}', updating",
-                    job, workflow
-                );
+                warn!("Job '{}' already exists in workflow '{}', updating", job, workflow);
             }
 
             jobs.insert(job.clone(), script.clone());
-            config.commit()?;
             info!("Added job '{}' to workflow '{}'", job, workflow);
         }
 
         WorkflowAction::RemoveJob { workflow, job } => {
-            let mut config = Config::load()?;
+            let mut guard = ConfigGuard::load_mut()?;
 
-            let jobs = config
+            let jobs = guard.config_mut()
                 .workflows
                 .get_mut(&workflow)
                 .ok_or_else(|| anyhow!("Workflow '{}' not found", workflow))?;
 
             if jobs.remove(&job).is_some() {
-                config.commit()?;
                 info!("Removed job '{}' from workflow '{}'", job, workflow);
             } else {
                 bail!("Job '{}' not found in workflow '{}'", job, workflow);
@@ -733,9 +775,9 @@ fn cmd_workflow(action: WorkflowAction) -> Result<()> {
         }
 
         WorkflowAction::Show { name } => {
-            let config = Config::load()?;
+            let guard = ConfigGuard::load()?.read_only();
 
-            let jobs = config
+            let jobs = guard.config()
                 .workflows
                 .get(&name)
                 .ok_or_else(|| anyhow!("Workflow '{}' not found", name))?;
@@ -757,31 +799,25 @@ fn cmd_workflow(action: WorkflowAction) -> Result<()> {
 }
 
 fn cmd_root() -> Result<()> {
-    let config = Config::load()?;
-    let root = config
+    let guard = ConfigGuard::load()?.read_only();
+    let root = guard.config()
         .dir_path
+        .as_ref()
         .ok_or_else(|| anyhow!("Could not determine workspace root"))?;
     println!("{}", root.display());
     Ok(())
 }
 
-fn cmd_exec(
-    command: String,
-    args: Vec<String>,
-    parallel: bool,
-    members: Vec<String>,
-) -> Result<()> {
-    let config = Config::load()?;
+fn cmd_exec(command: String, args: Vec<String>, parallel: bool, members: Vec<String>) -> Result<()> {
+    let guard = ConfigGuard::load()?.read_only();
 
-    // Determine which members to run on
     let target_members: Vec<_> = if members.is_empty() {
-        config.members.iter().collect()
+        guard.members().iter().collect()
     } else {
         members
             .iter()
             .map(|name| {
-                config
-                    .members
+                guard.members()
                     .get(name)
                     .map(|path| (name, path))
                     .ok_or_else(|| anyhow!("Member '{}' not found", name))
@@ -800,15 +836,10 @@ fn cmd_exec(
         format!("{} {}", command, args.join(" "))
     };
 
-    info!(
-        "Executing '{}' on {} member(s)",
-        full_command,
-        target_members.len()
-    );
+    info!("Executing '{}' on {} member(s)", full_command, target_members.len());
 
     if parallel {
         let (tx, rx) = mpsc::channel();
-        let count = target_members.len();
 
         for (name, path) in target_members {
             let name = (*name).clone();
@@ -864,25 +895,23 @@ fn execute_in_member(name: &str, path: &str, command: &str, args: &[String]) -> 
 }
 
 fn cmd_stats() -> Result<()> {
-    let config = Config::load()?;
+    let guard = ConfigGuard::load()?.read_only();
 
     println!("\nWorkspace Statistics");
     println!("====================\n");
 
-    // Basic counts
-    println!("Members:   {}", config.members.len());
-    println!("Workflows: {}", config.workflows.len());
+    println!("Members:   {}", guard.members().len());
+    println!("Workflows: {}", guard.config().workflows.len());
 
-    let total_jobs: usize = config.workflows.values().map(|jobs| jobs.len()).sum();
+    let total_jobs: usize = guard.config().workflows.values().map(|jobs| jobs.len()).sum();
     println!("Total Jobs: {}\n", total_jobs);
 
-    // Member analysis
     println!("Members:");
     let mut existing = 0;
     let mut missing = 0;
     let mut git_repos = 0;
 
-    for (name, path) in &config.members {
+    for (_, path) in guard.members() {
         let path_obj = Path::new(path);
         if path_obj.exists() {
             existing += 1;
@@ -898,10 +927,9 @@ fn cmd_stats() -> Result<()> {
     println!("  Missing:      {}", missing);
     println!("  Git repos:    {}\n", git_repos);
 
-    // Workflow analysis
-    if !config.workflows.is_empty() {
+    if !guard.config().workflows.is_empty() {
         println!("Workflows:");
-        let mut workflow_stats: Vec<_> = config
+        let mut workflow_stats: Vec<_> = guard.config()
             .workflows
             .iter()
             .map(|(name, jobs)| (name, jobs.len()))
@@ -909,12 +937,7 @@ fn cmd_stats() -> Result<()> {
         workflow_stats.sort_by_key(|(_, count)| std::cmp::Reverse(*count));
 
         for (name, count) in workflow_stats.iter().take(5) {
-            println!(
-                "  {:20} {} job{}",
-                name,
-                count,
-                if *count == 1 { "" } else { "s" }
-            );
+            println!("  {:20} {} job{}", name, count, if *count == 1 { "" } else { "s" });
         }
 
         if workflow_stats.len() > 5 {
@@ -922,8 +945,7 @@ fn cmd_stats() -> Result<()> {
         }
     }
 
-    // Workspace root info
-    if let Some(root) = &config.dir_path {
+    if let Some(root) = &guard.config().dir_path {
         println!("\nWorkspace root: {}", root.display());
     }
 
@@ -932,24 +954,18 @@ fn cmd_stats() -> Result<()> {
 }
 
 fn cmd_sync() -> Result<()> {
-    let mut config = Config::load()?;
+    let mut guard = ConfigGuard::load_mut()?;
 
-    // Change to workspace directory if available
-    if let Some(dir_path) = &config.dir_path {
-        std::env::set_current_dir(dir_path).with_context(|| {
-            format!(
-                "Failed to change to workspace directory: {}",
-                dir_path.display()
-            )
-        })?;
+    if let Some(dir_path) = &guard.config().dir_path {
+        std::env::set_current_dir(dir_path)
+            .with_context(|| format!("Failed to change to workspace directory: {}", dir_path.display()))?;
     }
 
-    info!("Running resolver: {}", config.resolver);
+    info!("Running resolver: {}", guard.config().resolver);
 
-    // Execute resolver command
     let output = Command::new("sh")
         .arg("-c")
-        .arg(&config.resolver)
+        .arg(&guard.config().resolver)
         .output()
         .context("Failed to execute resolver command")?;
 
@@ -958,9 +974,8 @@ fn cmd_sync() -> Result<()> {
         bail!("Resolver command failed: {}", stderr.trim());
     }
 
-    // Parse resolver output
     let output_str = String::from_utf8_lossy(&output.stdout);
-    config.members.clear();
+    guard.members_mut().clear();
 
     for line in output_str.lines() {
         let line = line.trim();
@@ -973,12 +988,9 @@ fn cmd_sync() -> Result<()> {
                 if let Some(member_name) = abs_path.file_name() {
                     let member_name = member_name.to_string_lossy().to_string();
                     let path_str = abs_path.to_string_lossy().to_string();
-                    config.members.insert(member_name, path_str);
+                    guard.members_mut().insert(member_name, path_str);
                 } else {
-                    warn!(
-                        "Could not extract member name from path: {}",
-                        abs_path.display()
-                    );
+                    warn!("Could not extract member name from path: {}", abs_path.display());
                 }
             }
             Err(e) => {
@@ -987,48 +999,71 @@ fn cmd_sync() -> Result<()> {
         }
     }
 
-    // Add root member
-    if let Some(dir_path) = &config.dir_path {
-        config
-            .members
-            .insert("root".to_string(), dir_path.to_string_lossy().to_string());
+    if let Some(dir_path) = guard.config().dir_path.clone() {
+        guard.members_mut().insert("root".to_string(), dir_path.to_string_lossy().to_string());
     }
 
-    info!("Found {} workspace members", config.members.len());
-    config.commit()?;
+    info!("Found {} workspace members", guard.members().len());
+    
+    // Manually commit before showing the list
+    guard.commit()?;
+    
+    // Show the workspace list
+    println!();
+    let member_list: Vec<_> = guard.members().iter().collect();
+    if !member_list.is_empty() {
+        let mut sorted_members = member_list.clone();
+        sorted_members.sort_by_key(|(name, _)| *name);
+        
+        let max_name_len = sorted_members.iter().map(|(n, _)| n.len()).max().unwrap_or(0);
+        
+        println!("{:width$}  Path", "Member", width = max_name_len);
+        println!("{}", "─".repeat(max_name_len + 2 + 50));
+        
+        for (name, path) in sorted_members {
+            let display_path = if let Ok(home) = std::env::var("HOME") {
+                path.replace(&home, "~")
+            } else {
+                path.clone()
+            };
+            println!("{:width$}  {}", name, display_path, width = max_name_len);
+        }
+        println!();
+    }
+    
     Ok(())
 }
 
 fn cmd_config() -> Result<()> {
-    let config = Config::load()?;
-    let json = serde_json::to_string_pretty(&config).context("Failed to serialize config")?;
+    let guard = ConfigGuard::load()?.read_only();
+    
+    let combined = serde_json::json!({
+        "resolver": guard.config().resolver,
+        "workflows": guard.config().workflows,
+        "members": guard.members(),
+    });
+    
+    let json = serde_json::to_string_pretty(&combined).context("Failed to serialize config")?;
     println!("{}", json);
     Ok(())
 }
 
 fn cmd_find(path: String) -> Result<()> {
-    let config = Config::load()?;
+    let guard = ConfigGuard::load()?.read_only();
 
-    // Try to canonicalize the search path, fallback to original if it fails
     let search_path = fs::canonicalize(&path).unwrap_or_else(|_| PathBuf::from(&path));
     let search_str = search_path.to_string_lossy();
 
-    // Find all matching members
-    let mut matches: Vec<(String, String)> = config
-        .members
+    let mut matches: Vec<(String, String)> = guard.members()
         .iter()
         .filter(|(_, member_path)| search_str.contains(member_path.as_str()))
         .map(|(k, v)| (k.clone(), v.clone()))
         .collect();
 
     if matches.is_empty() {
-        bail!(
-            "Failed to find a related workspace member for path: {}",
-            path
-        );
+        bail!("Failed to find a related workspace member for path: {}", path);
     }
 
-    // Find the longest matching path (most specific)
     matches.sort_by_key(|(_, path)| std::cmp::Reverse(path.len()));
     let (longest_member, longest_path) = &matches[0];
 
@@ -1042,9 +1077,9 @@ fn cmd_find(path: String) -> Result<()> {
 }
 
 fn cmd_run(workflow: String) -> Result<()> {
-    let config = Config::load()?;
+    let guard = ConfigGuard::load()?.read_only();
 
-    let jobs = config
+    let jobs = guard.config()
         .workflows
         .get(&workflow)
         .ok_or_else(|| anyhow!("Workflow '{}' does not exist", workflow))?;
@@ -1054,24 +1089,17 @@ fn cmd_run(workflow: String) -> Result<()> {
         return Ok(());
     }
 
-    // Parse job scripts with template interpolation
     let mut parsed_jobs = HashMap::new();
 
     for (name, script) in jobs {
-        let interpolated = interpolate_template(script, &config, &workflow, name)?;
+        let interpolated = interpolate_template(script, guard.config(), guard.members(), &workflow, name)?;
         parsed_jobs.insert(name.clone(), interpolated);
     }
 
-    info!(
-        "Running workflow '{}' with {} job(s)",
-        workflow,
-        parsed_jobs.len()
-    );
+    info!("Running workflow '{}' with {} job(s)", workflow, parsed_jobs.len());
 
-    // Execute jobs concurrently
     let shell = std::env::var("SHELL").unwrap_or_else(|_| "bash".to_string());
     let (tx, rx) = mpsc::channel();
-    let job_count = parsed_jobs.len();
 
     for (name, script) in parsed_jobs {
         let workflow = workflow.clone();
@@ -1099,10 +1127,8 @@ fn cmd_run(workflow: String) -> Result<()> {
         });
     }
 
-    // Drop the original sender so the receiver knows when all jobs are done
     drop(tx);
 
-    // Collect and report results
     let mut all_success = true;
     for result in rx {
         if let Some(error) = &result.error {
@@ -1132,28 +1158,26 @@ fn cmd_run(workflow: String) -> Result<()> {
     Ok(())
 }
 
-/// Interpolate template variables in script
 fn interpolate_template(
     script: &str,
     config: &Config,
+    members: &HashMap<String, String>,
     workflow: &str,
     job: &str,
 ) -> Result<String> {
     let mut current = script.to_string();
     let max_iterations = 10;
 
-    for iteration in 0..max_iterations {
+    for _ in 0..max_iterations {
         let mut result = current.clone();
         let mut changed = false;
 
-        // Replace {{.Resolver}}
         if result.contains("{{.Resolver}}") {
             result = result.replace("{{.Resolver}}", &config.resolver);
             changed = true;
         }
 
-        // Replace {{.Members.member_name}}
-        for (member, path) in &config.members {
+        for (member, path) in members {
             let pattern = format!("{{{{.Members.{}}}}}", member);
             if result.contains(&pattern) {
                 result = result.replace(&pattern, path);
@@ -1161,7 +1185,6 @@ fn interpolate_template(
             }
         }
 
-        // Replace {{.Workflows.workflow_name.job_name}}
         for (wf_name, wf_jobs) in &config.workflows {
             for (job_name, job_script) in wf_jobs {
                 let pattern = format!("{{{{.Workflows.{}.{}}}}}", wf_name, job_name);
@@ -1187,7 +1210,6 @@ fn interpolate_template(
     );
 }
 
-/// Execute a single job and write output to log file
 fn execute_job(shell: &str, script: &str, log_name: &str) -> Result<()> {
     let log_file = File::create(log_name)
         .with_context(|| format!("Failed to create log file: {}", log_name))?;
@@ -1221,20 +1243,13 @@ fn cmd_link(from: Option<PathBuf>, to: Option<PathBuf>, real: bool, force: bool)
 
     let to_abs = fs::canonicalize(&to)
         .or_else(|_| {
-            // Target might not exist yet, just convert to absolute
             std::env::current_dir()
                 .map(|cwd| cwd.join(&to))
-                .and_then(|p| Ok(p))
         })
         .with_context(|| format!("Failed to get absolute path for target: {}", to.display()))?;
 
-    info!(
-        "Linking from {} to {}",
-        from_abs.display(),
-        to_abs.display()
-    );
+    info!("Linking from {} to {}", from_abs.display(), to_abs.display());
 
-    // Walk through all files in source directory
     walkdir::WalkDir::new(&from_abs)
         .into_iter()
         .filter_map(|e| e.ok())
@@ -1242,7 +1257,6 @@ fn cmd_link(from: Option<PathBuf>, to: Option<PathBuf>, real: bool, force: bool)
         .try_for_each(|entry| -> Result<()> {
             let source_path = entry.path();
 
-            // Calculate relative path from source root
             let relative = source_path
                 .strip_prefix(&from_abs)
                 .context("Failed to strip prefix")?;
@@ -1252,50 +1266,32 @@ fn cmd_link(from: Option<PathBuf>, to: Option<PathBuf>, real: bool, force: bool)
                 .parent()
                 .ok_or_else(|| anyhow!("Target path has no parent"))?;
 
-            // Create target directory if it doesn't exist
             if !target_dir.exists() {
-                fs::create_dir_all(target_dir).with_context(|| {
-                    format!("Failed to create directory: {}", target_dir.display())
-                })?;
+                fs::create_dir_all(target_dir)
+                    .with_context(|| format!("Failed to create directory: {}", target_dir.display()))?;
             }
 
             if real {
-                // Check if target already exists
                 if target_path.exists() {
                     if !force {
-                        bail!(
-                            "{} already exists. Use --force to override",
-                            target_path.display()
-                        );
+                        bail!("{} already exists. Use --force to override", target_path.display());
                     }
 
-                    fs::remove_file(&target_path).with_context(|| {
-                        format!("Failed to delete existing file: {}", target_path.display())
-                    })?;
+                    fs::remove_file(&target_path)
+                        .with_context(|| format!("Failed to delete existing file: {}", target_path.display()))?;
                 }
 
-                // Create symlink
                 #[cfg(unix)]
-                std::os::unix::fs::symlink(source_path, &target_path).with_context(|| {
-                    format!("Failed to create symlink: {}", target_path.display())
-                })?;
+                std::os::unix::fs::symlink(source_path, &target_path)
+                    .with_context(|| format!("Failed to create symlink: {}", target_path.display()))?;
 
                 #[cfg(windows)]
-                std::os::windows::fs::symlink_file(source_path, &target_path).with_context(
-                    || format!("Failed to create symlink: {}", target_path.display()),
-                )?;
+                std::os::windows::fs::symlink_file(source_path, &target_path)
+                    .with_context(|| format!("Failed to create symlink: {}", target_path.display()))?;
 
-                info!(
-                    "Linked {} -> {}",
-                    source_path.display(),
-                    target_path.display()
-                );
+                info!("Linked {} -> {}", source_path.display(), target_path.display());
             } else {
-                info!(
-                    "[DRY-RUN] Would link {} -> {}",
-                    source_path.display(),
-                    target_path.display()
-                );
+                info!("[DRY-RUN] Would link {} -> {}", source_path.display(), target_path.display());
             }
 
             Ok(())
@@ -1309,7 +1305,6 @@ fn cmd_log(filters: Vec<String>) -> Result<()> {
         bail!("Log filters must be provided as key-value pairs (even number of arguments)");
     }
 
-    // Build regex filters
     let mut filter_map: HashMap<String, Regex> = HashMap::new();
     for chunk in filters.chunks(2) {
         let key = chunk[0].clone();
@@ -1318,7 +1313,6 @@ fn cmd_log(filters: Vec<String>) -> Result<()> {
         filter_map.insert(key, pattern);
     }
 
-    // Read from stdin and filter JSON lines
     let stdin = io::stdin();
     let reader = BufReader::new(stdin.lock());
     let stdout = io::stdout();
@@ -1336,15 +1330,12 @@ fn cmd_log(filters: Vec<String>) -> Result<()> {
     Ok(())
 }
 
-/// Check if a JSON line matches all filters
 fn matches_filters(line: &str, filters: &HashMap<String, Regex>) -> bool {
-    // Try to parse as JSON
     let parsed: Value = match serde_json::from_str(line) {
         Ok(v) => v,
         Err(_) => return false,
     };
 
-    // Check all filters
     for (key, pattern) in filters {
         if !match_json_path(&parsed, key, pattern) {
             return false;
@@ -1354,12 +1345,10 @@ fn matches_filters(line: &str, filters: &HashMap<String, Regex>) -> bool {
     true
 }
 
-/// Match a JSON value at a given path against a regex pattern
 fn match_json_path(value: &Value, path: &str, pattern: &Regex) -> bool {
     let keys: Vec<&str> = path.split('.').collect();
     let mut current = value;
 
-    // Navigate through nested JSON structure
     for key in keys {
         match current {
             Value::Object(map) => match map.get(key) {
@@ -1370,7 +1359,6 @@ fn match_json_path(value: &Value, path: &str, pattern: &Regex) -> bool {
         }
     }
 
-    // Match the final value against the pattern
     match current {
         Value::String(s) => pattern.is_match(s),
         Value::Number(n) => pattern.is_match(&n.to_string()),
@@ -1381,7 +1369,6 @@ fn match_json_path(value: &Value, path: &str, pattern: &Regex) -> bool {
 }
 
 fn main() {
-    // Initialize logging
     let subscriber = FmtSubscriber::builder()
         .with_max_level(Level::INFO)
         .with_target(false)
@@ -1392,21 +1379,15 @@ fn main() {
 
     tracing::subscriber::set_global_default(subscriber).expect("Failed to set tracing subscriber");
 
-    // Parse CLI and execute commands
     let cli = Cli::parse();
 
     let result = match cli.command {
-        Commands::Init => cmd_init(),
+        Commands::Init { pattern } => cmd_init(pattern),
         Commands::Sync => cmd_sync(),
         Commands::Config => cmd_config(),
         Commands::Run { workflow } => cmd_run(workflow),
         Commands::Find { path } => cmd_find(path),
-        Commands::Link {
-            from,
-            to,
-            real,
-            force,
-        } => cmd_link(from, to, real, force),
+        Commands::Link { from, to, real, force } => cmd_link(from, to, real, force),
         Commands::Log { filters } => cmd_log(filters),
         Commands::List { full, output } => cmd_list(full, &output),
         Commands::Add { name, path } => cmd_add(name, path),
@@ -1416,12 +1397,7 @@ fn main() {
         Commands::Info { name } => cmd_info(name),
         Commands::Workflow { action } => cmd_workflow(action),
         Commands::Root => cmd_root(),
-        Commands::Exec {
-            command,
-            args,
-            parallel,
-            members,
-        } => cmd_exec(command, args, parallel, members),
+        Commands::Exec { command, args, parallel, members } => cmd_exec(command, args, parallel, members),
         Commands::Stats => cmd_stats(),
     };
 
