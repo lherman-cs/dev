@@ -53,3 +53,4 @@ export LOCALE_ARCHIVE=/usr/lib/locale/locale-archive
 [ -s "$HOME/.work.rc" ] && source $HOME/.work.rc
 
 # . "$HOME/.cargo/env"
+export RUSTC_WRAPPER=$(which sccache)
