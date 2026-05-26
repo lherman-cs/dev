@@ -44,6 +44,8 @@ alias tasks="vim $HOME/tasks.txt"
 alias fopen='xdg-open `fzf`'
 alias fcat='cat `fzf`'
 alias fless='cat `fzf`'
+alias headless-on='sudo systemctl isolate multi-user.target'
+alias headless-off='sudo systemctl isolate graphical.target'
 # Debug env setup
 alias dap-go="dlv --headless=true --listen=:10001 --api-version=2 --log --log-output=dap exec"
 export GOFLAGS="-gcflags=all=-N -gcflags=-l" # always include debug information
@@ -53,4 +55,3 @@ export LOCALE_ARCHIVE=/usr/lib/locale/locale-archive
 [ -s "$HOME/.work.rc" ] && source $HOME/.work.rc
 
 # . "$HOME/.cargo/env"
-export RUSTC_WRAPPER=$(which sccache)
