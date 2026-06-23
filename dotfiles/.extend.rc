@@ -55,3 +55,4 @@ export LOCALE_ARCHIVE=/usr/lib/locale/locale-archive
 [ -s "$HOME/.work.rc" ] && source $HOME/.work.rc
 
 # . "$HOME/.cargo/env"
+eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
