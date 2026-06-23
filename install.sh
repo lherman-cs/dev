@@ -7,21 +7,19 @@ set -euo pipefail
 WORKSPACE_DIR="${WORKSPACE_DIR:-$HOME/workspace}"
 DEV_REPO_DIR="$WORKSPACE_DIR/dev"
 
-# Helper for logging (No colors)
-log() { echo "==> $1"; }
-error() { echo "Error: $1" >&2; }
+# Helper for logging (Colors restored)
+log() { echo -e "\033[1;32m==>\033[0m $1"; }
+warn() { echo -e "\033[1;33mWarning:\033[0m $1"; }
+error() { echo -e "\033[1;31mError:\033[0m $1" >&2; }
 
 function append_shell() {
     local line="$1"
-    # Detect shell based on parent process if $SHELL isn't reliable, 
-    # but fallback to standard rc files.
     if [[ "${SHELL:-}" == *"bash"* ]]; then
         local rc_file="$HOME/.bashrc"
     else
         local rc_file="$HOME/.zshrc"
     fi
 
-    # Avoid duplicating the line if the script is run multiple times
     if ! grep -Fxq "$line" "$rc_file" 2>/dev/null; then
         echo "$line" >> "$rc_file"
         log "Added to $rc_file: $line"
@@ -33,7 +31,6 @@ if ! command -v brew &>/dev/null; then
     log "Installing Homebrew..."
     /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
     
-    # Dynamically locate brew env instead of hardcoding linuxbrew path
     if [ -d "/home/linuxbrew/.linuxbrew" ]; then
         eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
     elif [ -d "/opt/homebrew" ]; then
@@ -57,37 +54,45 @@ mkdir -p "$WORKSPACE_DIR"
 if [ -d "$DEV_REPO_DIR" ]; then
     log "Detected existing $DEV_REPO_DIR. Updating..."
     cd "$DEV_REPO_DIR"
-    git pull origin master
+    git pull origin master || warn "Git pull failed. Proceeding anyway."
 else
     log "Cloning dev repository..."
     cd "$WORKSPACE_DIR"
-    # Using HTTPS for initial clone in case SSH keys aren't set up yet
     git clone https://github.com/lherman-cs/dev.git
 fi
 
 # Ensure we are in the right directory before proceeding
 cd "$DEV_REPO_DIR"
 
-# Switch to SSH URL for future pushes (will fail gracefully later if keys aren't set up yet)
-git remote set-url origin git@github.com:lherman-cs/dev.git
+# Allow changing the remote to fail gracefully if git isn't playing nice
+log "Setting git remote URL to SSH..."
+git remote set-url origin git@github.com:lherman-cs/dev.git || warn "Could not set git remote to SSH."
 
 # 4. Install Rust
 if ! command -v cargo &>/dev/null; then
     log "Installing Rust..."
     curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
     # Source cargo env immediately so the current script can use 'cargo'
-    source "$HOME/.cargo/env"
+    if [ -f "$HOME/.cargo/env" ]; then
+        source "$HOME/.cargo/env"
+    fi
 else
     log "Rust/Cargo already installed."
 fi
 
 # 5. Build and Link Dev Tools
 log "Building local cargo package..."
-cargo install --path .
+# Explicitly add cargo to the temporary path just in case sourcing failed
+export PATH="$HOME/.cargo/bin:$PATH"
+
+if command -v cargo &>/dev/null; then
+    # || true prevents a compilation error from killing the whole script
+    cargo install --path . || error "Cargo install failed! Check compilation errors above."
+else
+    error "Cargo binary not found. Skipping build."
+fi
 
 log "Linking dotfiles..."
-# Ensure the 'dev' binary built by cargo is accessible
-export PATH="$HOME/.cargo/bin:$PATH"
 if command -v dev &>/dev/null; then
     dev link --from "$PWD/dotfiles" --force --real
 else
