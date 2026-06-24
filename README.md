@@ -146,6 +146,12 @@ sudo networkctl reconfigure enx00e04ce20cdf
 ip addr show enx00e04ce20cdf
 ```
 
+or  with NetworkManager
+
+```
+sudo nmcli device modify enp0s13f0u2u1u3 ipv4.method manual ipv4.addresses 192.168.4.1/24
+```
+
 ### Bypassing MAC xprotectd
 
 Mac by default will limit using more than 1 CPU. To bypass this, we need to flag these binaries as developer tools
