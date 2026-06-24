@@ -28,8 +28,8 @@ https://discourse.nixos.org/t/how-to-move-nix-store-to-external-drive-on-macos/1
 
 Some issues with NVIM LSP:
 
-* Kotlin LSP ignores hardcoded patterns, <https://github.com/fwcd/kotlin-language-server/issues/464>
-  * workaround `ln -s build generated`
+- Kotlin LSP ignores hardcoded patterns, <https://github.com/fwcd/kotlin-language-server/issues/464>
+  - workaround `ln -s build generated`
 
 ## Use a different ssh key for different projects
 
@@ -144,4 +144,20 @@ ConfigureWithoutCarrier=yes
 sudo networkctl reload
 sudo networkctl reconfigure enx00e04ce20cdf
 ip addr show enx00e04ce20cdf
+```
+
+### Bypassing MAC xprotectd
+
+Mac by default will limit using more than 1 CPU. To bypass this, we need to flag these binaries as developer tools
+
+**Whitelist iTerm & `tmux`**
+
+1. Run `open /opt/homebrew/bin/` to view the `tmux` binary in Finder.
+2. Go to **System Settings > Privacy & Security > Developer Tools**.
+3. Click **`+`** and drag **`tmux`** from Finder into the list.
+4. Ensure both **iTerm** and **tmux** are toggled **ON**.
+5. Restart the server to apply permissions:
+
+```bash
+tmux kill-server
 ```
