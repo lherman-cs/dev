@@ -152,6 +152,31 @@ or  with NetworkManager
 sudo nmcli device modify enp0s13f0u2u1u3 ipv4.method manual ipv4.addresses 192.168.4.1/24
 ```
 
+### Headless Mode
+
+**Prohibit from going asleep after closing the lid**
+
+`sudo vim /etc/systemd/logind.conf`
+
+```
+[Login]
+HandleLidSwitchExternalPower=ignore
+HandleLidSwitchDocked=ignore
+```
+
+`sudo systemctl restart systemd-logind`
+
+**Default to headless mode**
+
+sudo systemctl set-default multi-user.target
+
+**Temporary gui mode**
+
+sudo systemctl isolate graphical.target
+
+**Temporari headless mode**
+sudo systemctl isolate multi-user.target
+
 ### Bypassing MAC xprotectd
 
 Mac by default will limit using more than 1 CPU. To bypass this, we need to flag these binaries as developer tools
