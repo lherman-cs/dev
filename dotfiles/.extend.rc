@@ -56,3 +56,4 @@ export LOCALE_ARCHIVE=/usr/lib/locale/locale-archive
 
 # . "$HOME/.cargo/env"
 eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
+ulimit -n 65535
