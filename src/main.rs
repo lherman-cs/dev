@@ -42,6 +42,12 @@ enum Commands {
 
     /// Display current workspace configuration
     Config,
+    #[command(alias = "r")]
+    Review {
+        /// Base branch to compare against (defaults to main)
+        #[arg(short, long, default_value = "main")]
+        base: String,
+    },
 
     /// Run a workflow
     Run {
@@ -1153,6 +1159,61 @@ fn cmd_find(path: String) -> Result<()> {
     Ok(())
 }
 
+fn cmd_review(base: String) -> Result<()> {
+    let remote_output = Command::new("git")
+        .args(["config", "--get", "remote.origin.url"])
+        .output()
+        .context("Failed to get git remote URL. Are you inside a Git repository?")?;
+
+    if !remote_output.status.success() {
+        bail!("Git remote 'origin' not found.");
+    }
+
+    let remote_url = String::from_utf8_lossy(&remote_output.stdout)
+        .trim()
+        .to_string();
+
+    let owner_repo =
+        if let Some(cap) = Regex::new(r"github\.com[:/](.+?)(?:\.git)?$")?.captures(&remote_url) {
+            cap.get(1).unwrap().as_str().to_string()
+        } else {
+            bail!("Could not parse GitHub repository from URL: {}", remote_url);
+        };
+
+    let branch_output = Command::new("git")
+        .args(["branch", "--show-current"])
+        .output()
+        .context("Failed to get current git branch")?;
+
+    let branch = String::from_utf8_lossy(&branch_output.stdout)
+        .trim()
+        .to_string();
+    if branch.is_empty() {
+        bail!("Not currently on a valid Git branch (detached HEAD?).");
+    }
+
+    // 4. Build compare URL
+    let compare_url = format!(
+        "https://github.com/{}/compare/{}...{}",
+        owner_repo, base, branch
+    );
+    info!("Opening compare view: {}", compare_url);
+
+    // 5. Open URL in default web browser
+    #[cfg(target_os = "macos")]
+    Command::new("open").arg(&compare_url).spawn()?;
+
+    #[cfg(target_os = "linux")]
+    Command::new("xdg-open").arg(&compare_url).spawn()?;
+
+    #[cfg(target_os = "windows")]
+    Command::new("cmd")
+        .args(["/C", "start", &compare_url])
+        .spawn()?;
+
+    Ok(())
+}
+
 fn cmd_run(workflow: String) -> Result<()> {
     let guard = ConfigGuard::load()?.read_only();
 
@@ -1484,6 +1545,7 @@ fn main() {
         Commands::Init { pattern } => cmd_init(pattern),
         Commands::Sync => cmd_sync(),
         Commands::Config => cmd_config(),
+        Commands::Review { base } => cmd_review(base),
         Commands::Run { workflow } => cmd_run(workflow),
         Commands::Find { path } => cmd_find(path),
         Commands::Link {
