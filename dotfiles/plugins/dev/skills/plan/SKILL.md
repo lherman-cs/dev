@@ -5,11 +5,11 @@ description: Inspect a codebase and develop an implementation plan interactively
 
 # Plan
 
-Own the planning conversation in the visible parent thread so the user can shape every material decision. Do not change the parent model. Spawn the custom `planner` agent using `gpt-5.6-sol` with `high` reasoning, and bring its work back into the parent conversation.
+Own the planning conversation directly in the visible parent thread so the user can shape every material decision. Do not delegate planning or change the parent model.
 
 1. Read applicable repository instructions and inspect the relevant code, tests, dependencies, and working-tree state.
 2. Ask only questions whose answers materially affect behavior, architecture, compatibility, scope, or authorization. Continue useful read-only investigation while awaiting non-blocking details.
-3. Discuss meaningful alternatives and tradeoffs with the user. Forward material user feedback to the same planner agent for revision so Sol continues to own the technical plan. Recommend one approach explicitly.
+3. Discuss meaningful alternatives and tradeoffs with the user. Incorporate material feedback directly into the plan and recommend one approach explicitly.
 4. Produce a concise plan handoff containing:
    - goal and acceptance criteria;
    - decisions and constraints agreed with the user;
