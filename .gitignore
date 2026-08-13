@@ -15,3 +15,7 @@ dev
 # already existing elements were commented out
 
 #/target
+
+# The local Codex plugin namespace is intentionally named `dev`.
+!/dotfiles/plugins/dev/
+!/dotfiles/plugins/dev/**

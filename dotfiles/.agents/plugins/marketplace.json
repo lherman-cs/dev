@@ -5,10 +5,10 @@
   },
   "plugins": [
     {
-      "name": "plan-build-review",
+      "name": "dev",
       "source": {
         "source": "local",
-        "path": "./plugins/plan-build-review"
+        "path": "./plugins/dev"
       },
       "policy": {
         "installation": "AVAILABLE",
