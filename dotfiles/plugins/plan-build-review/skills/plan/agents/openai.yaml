@@ -1,0 +1,4 @@
+interface:
+  display_name: "Plan Code Change"
+  short_description: "Develop an implementation plan with Sol"
+  default_prompt: "Use $plan to inspect the codebase and develop an implementation plan with me."

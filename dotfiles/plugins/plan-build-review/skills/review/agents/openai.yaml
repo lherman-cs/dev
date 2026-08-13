@@ -1,0 +1,4 @@
+interface:
+  display_name: "Review Code Change"
+  short_description: "Review an implementation independently with Sol"
+  default_prompt: "Use $review to inspect and review the implemented change."

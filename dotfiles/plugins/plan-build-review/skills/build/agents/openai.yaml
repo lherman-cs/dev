@@ -1,0 +1,4 @@
+interface:
+  display_name: "Build Approved Plan"
+  short_description: "Build the approved plan in the Luna parent"
+  default_prompt: "Use $build to implement the approved plan in this Luna medium-effort thread."
