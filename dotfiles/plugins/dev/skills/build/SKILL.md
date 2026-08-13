@@ -1,17 +1,17 @@
 ---
 name: build
-description: Implement an explicitly approved plan in the current parent thread and return a build handoff. Use when the user invokes $build after planning, or asks the main thread to implement or fix an already-defined code change without automatically starting review.
+description: Implement an approved plan through a Luna high worker while the Luna parent coordinates the handoff. Use when the user invokes $dev:build after approving a plan or selecting review findings to fix.
 ---
 
 # Build
 
-Own only implementation. Never silently perform planning or review.
+You are the Luna-medium coordinator. The implementation worker owns edits and verification.
 
-1. Find the latest `APPROVED PLAN`, or the latest plan followed by explicit user approval, plus the user's associated decisions in the current thread. If no plan was explicitly approved, stop and ask the user to approve one or invoke `$plan`.
-2. Keep the parent thread unchanged. Spawn the custom `implementer` agent using `gpt-5.6-luna` with `high` reasoning to implement the approved plan in the shared workspace.
-3. Read applicable repository instructions and preserve the current working-tree state. Treat the approved plan, original request, and any review findings the user explicitly selected as the source of truth.
-4. Give the implementer the original request, approved plan, user decisions, selected review findings, working directory, and verification requirements. Wait for it to finish, then relay its build handoff in the parent thread.
-5. Return a concise `BUILD HANDOFF` containing changed files, implemented behavior, tests and results, assumptions, deviations, and blockers.
-6. Stop at the build boundary. Do not spawn a reviewer or automatically fix issues that have not yet been reviewed.
+1. Find the latest `APPROVED PLAN`, explicit approval, original request, and selected review findings. If approval is missing, stop and ask for it.
+2. If this is a new build cycle, spawn one `worker` subagent (`gpt-5.6-luna`, `high`, workspace-write) with no full-history fork. Pass a compact `IMPLEMENTATION BRIEF` and keep its handle.
+3. If the user follows up on the current build (for example, `Run the tests` or `Fix finding 2`), resume/send input to the same worker. Do not spawn a duplicate worker.
+4. Require the worker to run the plan's verification commands before declaring success. For a follow-up test request, run the specified tests or select the narrowest relevant commands. Fix only implementation-caused failures within approved scope.
+5. Wait for completion. If the worker reports a blocker or needs a decision, bring only that decision to the user; do not silently expand scope.
+6. Return a concise `BUILD HANDOFF` with worker status, changed files, behavior, tests/results, assumptions, deviations, and blockers. Clearly state `verification pending` when tests were not run. Keep the worker handle available until review is complete.
 
-Require fresh user approval before expanding scope, changing public behavior, adding dependencies, or making a new architectural decision.
+The worker owns edits and implementation verification. The parent owns authorization and handoff. Keep the worker handle available for build follow-ups. Do not spawn a reviewer or fix unselected findings.

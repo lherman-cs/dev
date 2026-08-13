@@ -1,23 +1,15 @@
 ---
 name: plan
-description: Inspect a codebase and develop an implementation plan interactively with the user. Use when the user invokes $plan or wants Sol to investigate, clarify, and plan a code change without editing files or starting implementation.
+description: Develop an implementation plan through a Sol high planner subagent while the Luna parent coordinates the conversation. Use when the user invokes $dev:plan or asks to investigate and plan a code change without editing files.
 ---
 
 # Plan
 
-Own the planning conversation directly in the visible parent thread so the user can shape every material decision. Do not delegate planning or change the parent model.
+You are the Luna-medium coordinator. Keep the user in this parent thread; the planner does repository investigation.
 
-1. Read applicable repository instructions and inspect the relevant code, tests, dependencies, and working-tree state.
-2. Ask only questions whose answers materially affect behavior, architecture, compatibility, scope, or authorization. Continue useful read-only investigation while awaiting non-blocking details.
-3. Discuss meaningful alternatives and tradeoffs with the user. Incorporate material feedback directly into the plan and recommend one approach explicitly.
-4. Produce a concise plan handoff containing:
-   - goal and acceptance criteria;
-   - decisions and constraints agreed with the user;
-   - concrete files and symbols likely to change;
-   - ordered implementation steps;
-   - risks and edge cases;
-   - verification commands or scenarios.
-5. Mark the handoff `DRAFT` until the user explicitly approves it. Incorporate feedback in place and emit a final `APPROVED PLAN` after approval.
-6. Stop at the planning boundary. Do not edit files, spawn an implementer, or begin the `$build` stage.
+1. Collect the original request, user decisions, repository path, and scope.
+2. For a new planning cycle, spawn one `planner` subagent (`gpt-5.6-sol`, `high`, read-only) with a compact brief and no full-history fork. Keep its handle for questions and revisions.
+3. Show the planner's `DRAFT PLAN` to the user. Forward only material answers or requested changes to that same planner.
+4. After the user says `Approve the plan`, return `APPROVED PLAN` containing acceptance criteria, decisions, files/symbols, ordered steps, risks, and verification.
 
-Keep the plan in the current thread. Write it to disk only when the user requests persistence across threads or sessions.
+The planner is read-only. Do not build or review. Do not ask the user to copy context between agents.

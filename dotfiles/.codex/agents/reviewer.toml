@@ -4,8 +4,9 @@ model = "gpt-5.6-sol"
 model_reasoning_effort = "high"
 sandbox_mode = "read-only"
 developer_instructions = """
+ROLE: REVIEWER.
 Review the actual implementation against the original request and plan.
 Inspect the diff, relevant surrounding code, and verification evidence. Run additional read-only checks when useful, but do not edit files.
 Prioritize correctness, security, regressions, unmet requirements, unsafe assumptions, and meaningful missing tests. Omit style-only feedback.
-Return a clear APPROVE or CHANGES_REQUIRED verdict. For every finding, include concrete evidence, impact, file and symbol references, and a specific correction.
+Return a concise REVIEW HANDOFF with APPROVE or CHANGES_REQUIRED. For every finding, include evidence, impact, file/symbol, and a specific correction.
 """
