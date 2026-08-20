@@ -4,27 +4,27 @@ WORKSPACE_DIR=$HOME/workspace
 DEV_REPO_DIR=$WORKSPACE_DIR/dev
 
 function append_shell() {
-	if [[ $SHELL == *"bash"* ]]; then
-		echo "$1" >>~/.bashrc
-	else
-		echo "$1" >>~/.zshrc
-	fi
+  if [[ $SHELL == *"bash"* ]]; then
+    echo "$1" >>~/.bashrc
+  else
+    echo "$1" >>~/.zshrc
+  fi
 }
 
 # Install nix package manager
 curl --proto '=https' --tlsv1.2 -sSf -L https://install.determinate.systems/nix |
-	sh -s -- install --no-confirm --no-modify-profile
+  sh -s -- install --no-confirm --no-modify-profile
 . /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh
 
 mkdir -p $WORKSPACE_DIR
 
 if [ -d "$DEV_REPO_DIR" ]; then
-	echo "Detected existing $DEV_REPO_DIR. Update the repo instead."
-	cd $DEV_REPO_DIR
-	git pull origin master
+  echo "Detected existing $DEV_REPO_DIR. Update the repo instead."
+  cd $DEV_REPO_DIR
+  git pull origin main
 else
-	cd $WORKSPACE_DIR
-	git clone https://github.com/lherman-cs/dev.git
+  cd $WORKSPACE_DIR
+  git clone https://github.com/lherman-cs/dev.git
 fi
 
 cd $DEV_REPO_DIR

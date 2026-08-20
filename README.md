@@ -1,7 +1,7 @@
 ## Bootstrap
 
 ```sh
-bash <(curl -L https://raw.githubusercontent.com/lherman-cs/dev/master/install.sh)
+bash <(curl -L https://raw.githubusercontent.com/lherman-cs/dev/main/install.sh)
 ```
 
 ## Useful Commands
@@ -24,7 +24,7 @@ https://discourse.nixos.org/t/how-to-move-nix-store-to-external-drive-on-macos/1
 
 ## LSP Configs
 
-<https://github.com/neovim/nvim-lspconfig/blob/master/CONFIG.md>
+<https://github.com/neovim/nvim-lspconfig/blob/main/CONFIG.md>
 
 Some issues with NVIM LSP:
 

@@ -54,7 +54,7 @@ mkdir -p "$WORKSPACE_DIR"
 if [ -d "$DEV_REPO_DIR" ]; then
   log "Detected existing $DEV_REPO_DIR. Updating..."
   cd "$DEV_REPO_DIR"
-  git pull origin master || warn "Git pull failed. Proceeding anyway."
+  git pull origin main || warn "Git pull failed. Proceeding anyway."
 else
   log "Cloning dev repository..."
   cd "$WORKSPACE_DIR"
