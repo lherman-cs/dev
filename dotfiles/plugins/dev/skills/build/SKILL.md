@@ -1,17 +1,34 @@
 ---
+
 name: build
-description: Implement an approved plan through a Luna high worker while the Luna parent coordinates the handoff. Use when the user invokes $dev:build after approving a plan or selecting review findings to fix.
----
+description: Implement a given specification faithfully. Use when the user provides a spec or implementation plan and wants it built
+-------------------------------------------------------------------------------------------------------------------------------------
 
 # Build
 
-You are the Luna-medium coordinator. The implementation worker owns edits and verification.
+Implement the given specification.
 
-1. Find the latest `APPROVED PLAN`, explicit approval, original request, and selected review findings. If approval is missing, stop and ask for it.
-2. If this is a new build cycle, spawn one `worker` subagent (`gpt-5.6-luna`, `high`, workspace-write) with no full-history fork. Pass a compact `IMPLEMENTATION BRIEF` and keep its handle.
-3. If the user follows up on the current build (for example, `Run the tests` or `Fix finding 2`), resume/send input to the same worker. Do not spawn a duplicate worker.
-4. Require the worker to run the plan's verification commands before declaring success. For a follow-up test request, run the specified tests or select the narrowest relevant commands. Fix only implementation-caused failures within approved scope.
-5. Wait for completion. If the worker reports a blocker or needs a decision, bring only that decision to the user; do not silently expand scope.
-6. Return a concise `BUILD HANDOFF` with worker status, changed files, behavior, tests/results, assumptions, deviations, and blockers. Clearly state `verification pending` when tests were not run. Keep the worker handle available until review is complete.
+Treat the specification as authoritative. Inspect the codebase as needed to understand how to implement it, but do not make assumptions that change or extend the specification.
 
-The worker owns edits and implementation verification. The parent owns authorization and handoff. Keep the worker handle available for build follow-ups. Do not spawn a reviewer or fix unselected findings.
+Implement routine details yourself when they are consistent with the specification.
+
+If you discover that continuing would require deviating from the specification, changing a requirement, or choosing between materially different interpretations that the specification does not resolve, stop before making that change and ask the user.
+
+Do not silently substitute what you think is a better design.
+
+## Checkpoints
+
+Break the implementation into coherent checkpoints.
+
+At each checkpoint:
+
+1. Complete and validate the current coherent unit of work.
+2. Create a descriptive commit that clearly explains what changed.
+3. Summarize the checkpoint and the validation performed.
+4. Stop and ask the user to confirm before continuing to the next checkpoint.
+
+Do not continue past a checkpoint without explicit user confirmation.
+
+Keep commits focused and descriptive. Do not mix unrelated work into the same commit.
+
+Before completing, compare the implementation against the specification and verify that it matches.

@@ -5,6 +5,10 @@ return {
     "tpope/vim-fugitive",
     cmd = "G",
   },
+  {
+    "esmuellert/codediff.nvim",
+    cmd = "CodeDiff",
+  },
   -- { "catppuccin/nvim", opts = { flavour = "mocha" }, name = "catppuccin", priority = 1000 },
   -- {
   --   "rebelot/kanagawa.nvim",
