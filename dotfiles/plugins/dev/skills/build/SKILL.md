@@ -2,7 +2,8 @@
 
 name: build
 description: Implement a given specification faithfully. Use when the user provides a spec or implementation plan and wants it built
--------------------------------------------------------------------------------------------------------------------------------------
+
+---
 
 # Build
 
