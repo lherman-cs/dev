@@ -5,9 +5,11 @@ description: Implement and validate a self-contained approved plan in an existin
 
 # Build
 
+This is the `gpt-5.6-luna` implementation role. Work in the current agent; the approved plan is already the output of the Sol planning role. The skill cannot change the active model, so if the current session is not Luna, disclose that model mismatch rather than claiming Luna or spawning a nested builder.
+
 Implement the approved plan faithfully. Treat it as authoritative for consequential behavior and use engineering judgment for local, behaviorally equivalent details.
 
-Work in the current agent. Do not spawn another implementation agent merely to repeat the plan.
+Work in the current agent. Do not spawn another implementation agent merely to repeat the plan, and do not use nested `codex exec` as a model-switching workaround.
 
 ## Normalize the inputs
 

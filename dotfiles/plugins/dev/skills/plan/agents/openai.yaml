@@ -2,4 +2,5 @@ interface:
   display_name: "Plan Code Change"
   short_description: "Plan changes with Sol"
   default_prompt: "Use $dev:plan to investigate and plan this change."
-allow_implicit_invocation: false
+policy:
+  allow_implicit_invocation: false

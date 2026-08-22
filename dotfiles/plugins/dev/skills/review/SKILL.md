@@ -21,16 +21,17 @@ Infer inputs when unambiguous. Confirm the boundary with a cheap status or diff-
 
 If no approved plan exists, state that fidelity cannot be assessed and ask whether to perform a general correctness review. If the diff mixes unrelated work or is too large for one coherent pass, ask the user to narrow it or approve a chunked review before spending the reviewer turn.
 
-## Choose the reviewer
+## Model and delegation contract
 
 Review a trivial documentation-only or mechanical diff directly in the parent.
 
-Otherwise spawn one read-only `reviewer` with no history fork and reuse it for follow-up:
+The parent coordinator is `gpt-5.6-luna`. For every non-trivial code review, make one native delegation to the configured `reviewer` agent, which must use `gpt-5.6-sol` with `high` reasoning. Sol is required for ordinary and high-risk reviews; do not select Terra or Luna for the reviewer role.
 
-- use `gpt-5.6-terra`, `high` for ordinary code review;
-- use `gpt-5.6-sol`, `high` when the plan or diff materially involves concurrency, unsafe code, protocol or wire compatibility, security boundaries, distributed state, or performance-critical paths.
+Reuse the same reviewer handle for follow-up. Do not fork the full conversation history. Pass only the normalized contract, repository path, exact review boundary, and output contract below. Do not start parallel reviewers or background retry processes.
 
-Do not run both by default. Pass only the normalized contract and output contract below.
+If native reviewer delegation is unavailable, do not launch nested `codex exec`, request network escalation, use `--approve-for-me`, or transmit repository contents to another process automatically. Those actions do not preserve the reviewer handle and may cross the user's authorization boundary. For a user request that permits general correctness review, complete the review locally in Luna and state `Sol reviewer unavailable` under Verification and Open questions. Otherwise stop with `DELEGATION UNAVAILABLE`. Never present the local result as an independent Sol review.
+
+If a delegation attempt starts but fails, wait for or terminate that attempt before falling back. Do not leave background agents running and do not retry the unchanged failed command more than once.
 
 Require inspection of the complete diff, relevant surrounding callers and consumers, affected tests, and validation evidence. Prioritize high-risk paths, then cover the full review boundary. Do not scan unrelated code for completeness theater.
 
