@@ -73,9 +73,9 @@ enum Commands {
         #[arg(short, long)]
         to: Option<PathBuf>,
 
-        /// Actually create symlinks (dry-run if false)
-        #[arg(short, long, default_value = "false")]
-        real: bool,
+        /// Apply changes (dry-run if false)
+        #[arg(short, long, visible_alias = "real", default_value_t = false)]
+        apply: bool,
 
         /// Force overwrite existing files
         #[arg(long, default_value = "false")]
@@ -1373,7 +1373,140 @@ fn execute_job(shell: &str, script: &str, log_name: &str) -> Result<()> {
     Ok(())
 }
 
-fn cmd_link(from: Option<PathBuf>, to: Option<PathBuf>, real: bool, force: bool) -> Result<()> {
+fn path_exists(path: &Path) -> bool {
+    fs::symlink_metadata(path).is_ok()
+}
+
+fn remove_existing(path: &Path) -> Result<()> {
+    let metadata = match fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(()),
+        Err(e) => return Err(e).with_context(|| format!("Failed to inspect {}", path.display())),
+    };
+
+    if metadata.file_type().is_symlink() || metadata.is_file() {
+        fs::remove_file(path)
+            .with_context(|| format!("Failed to remove file: {}", path.display()))?;
+    } else if metadata.is_dir() {
+        fs::remove_dir_all(path)
+            .with_context(|| format!("Failed to remove directory: {}", path.display()))?;
+    }
+
+    Ok(())
+}
+
+fn symlink_points_to(target: &Path, source: &Path) -> bool {
+    let Ok(link) = fs::read_link(target) else {
+        return false;
+    };
+
+    let resolved = if link.is_absolute() {
+        link
+    } else {
+        target.parent().unwrap_or_else(|| Path::new(".")).join(link)
+    };
+
+    fs::canonicalize(resolved).ok().as_deref() == fs::canonicalize(source).ok().as_deref()
+}
+
+fn create_symlink(source: &Path, target: &Path, is_dir: bool) -> Result<()> {
+    #[cfg(unix)]
+    {
+        let _ = is_dir;
+        std::os::unix::fs::symlink(source, target)
+            .with_context(|| format!("Failed to create symlink: {}", target.display()))?;
+    }
+
+    #[cfg(windows)]
+    {
+        if is_dir {
+            std::os::windows::fs::symlink_dir(source, target)
+                .with_context(|| format!("Failed to create directory symlink: {}", target.display()))?;
+        } else {
+            std::os::windows::fs::symlink_file(source, target)
+                .with_context(|| format!("Failed to create file symlink: {}", target.display()))?;
+        }
+    }
+
+    Ok(())
+}
+
+fn link_path(source: &Path, target: &Path, apply: bool, force: bool) -> Result<()> {
+    let source_metadata = fs::symlink_metadata(source)
+        .with_context(|| format!("Failed to inspect source: {}", source.display()))?;
+    let atomic_dir = source_metadata.is_dir() && source.join(".link-dir").is_file();
+
+    if source_metadata.is_dir() && !atomic_dir {
+        if path_exists(target) {
+            let target_metadata = fs::symlink_metadata(target)
+                .with_context(|| format!("Failed to inspect target: {}", target.display()))?;
+
+            if !target_metadata.is_dir() || target_metadata.file_type().is_symlink() {
+                if !force {
+                    bail!(
+                        "{} already exists and is not a directory. Use --force to override",
+                        target.display()
+                    );
+                }
+                if apply {
+                    remove_existing(target)?;
+                    fs::create_dir_all(target).with_context(|| {
+                        format!("Failed to create directory: {}", target.display())
+                    })?;
+                } else {
+                    info!("[DRY-RUN] Would replace {} with a directory", target.display());
+                }
+            }
+        } else if apply {
+            fs::create_dir_all(target)
+                .with_context(|| format!("Failed to create directory: {}", target.display()))?;
+        } else {
+            info!("[DRY-RUN] Would create directory {}", target.display());
+        }
+
+        let mut entries = fs::read_dir(source)
+            .with_context(|| format!("Failed to read directory: {}", source.display()))?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        entries.sort_by_key(|entry| entry.file_name());
+
+        for entry in entries {
+            link_path(&entry.path(), &target.join(entry.file_name()), apply, force)?;
+        }
+        return Ok(());
+    }
+
+    if path_exists(target) {
+        if symlink_points_to(target, source) {
+            info!("Already linked {} -> {}", source.display(), target.display());
+            return Ok(());
+        }
+
+        if !force {
+            bail!("{} already exists. Use --force to override", target.display());
+        }
+
+        if apply {
+            remove_existing(target)?;
+        } else {
+            info!("[DRY-RUN] Would replace {}", target.display());
+        }
+    }
+
+    if apply {
+        if let Some(parent) = target.parent() {
+            fs::create_dir_all(parent)
+                .with_context(|| format!("Failed to create directory: {}", parent.display()))?;
+        }
+        create_symlink(source, target, source_metadata.is_dir())?;
+        info!("Linked {} -> {}", source.display(), target.display());
+    } else {
+        info!("[DRY-RUN] Would link {} -> {}", source.display(), target.display());
+    }
+
+    Ok(())
+}
+
+fn cmd_link(from: Option<PathBuf>, to: Option<PathBuf>, apply: bool, force: bool) -> Result<()> {
     let from = from
         .or_else(|| std::env::current_dir().ok())
         .ok_or_else(|| anyhow!("Could not determine source directory"))?;
@@ -1385,79 +1518,22 @@ fn cmd_link(from: Option<PathBuf>, to: Option<PathBuf>, real: bool, force: bool)
     let from_abs = fs::canonicalize(&from)
         .with_context(|| format!("Failed to get absolute path for source: {}", from.display()))?;
 
-    let to_abs = fs::canonicalize(&to)
-        .or_else(|_| std::env::current_dir().map(|cwd| cwd.join(&to)))
-        .with_context(|| format!("Failed to get absolute path for target: {}", to.display()))?;
+    let to_abs = if to.is_absolute() {
+        to
+    } else {
+        std::env::current_dir()
+            .context("Failed to get current directory")?
+            .join(to)
+    };
 
     info!(
-        "Linking from {} to {}",
+        "Linking from {} to {}{}",
         from_abs.display(),
-        to_abs.display()
+        to_abs.display(),
+        if apply { "" } else { " (dry-run)" }
     );
 
-    walkdir::WalkDir::new(&from_abs)
-        .into_iter()
-        .filter_map(|e| e.ok())
-        .filter(|e| e.file_type().is_file())
-        .try_for_each(|entry| -> Result<()> {
-            let source_path = entry.path();
-
-            let relative = source_path
-                .strip_prefix(&from_abs)
-                .context("Failed to strip prefix")?;
-
-            let target_path = to_abs.join(relative);
-            let target_dir = target_path
-                .parent()
-                .ok_or_else(|| anyhow!("Target path has no parent"))?;
-
-            if !target_dir.exists() {
-                fs::create_dir_all(target_dir).with_context(|| {
-                    format!("Failed to create directory: {}", target_dir.display())
-                })?;
-            }
-
-            if real {
-                if target_path.exists() {
-                    if !force {
-                        bail!(
-                            "{} already exists. Use --force to override",
-                            target_path.display()
-                        );
-                    }
-
-                    fs::remove_file(&target_path).with_context(|| {
-                        format!("Failed to delete existing file: {}", target_path.display())
-                    })?;
-                }
-
-                #[cfg(unix)]
-                std::os::unix::fs::symlink(source_path, &target_path).with_context(|| {
-                    format!("Failed to create symlink: {}", target_path.display())
-                })?;
-
-                #[cfg(windows)]
-                std::os::windows::fs::symlink_file(source_path, &target_path).with_context(
-                    || format!("Failed to create symlink: {}", target_path.display()),
-                )?;
-
-                info!(
-                    "Linked {} -> {}",
-                    source_path.display(),
-                    target_path.display()
-                );
-            } else {
-                info!(
-                    "[DRY-RUN] Would link {} -> {}",
-                    source_path.display(),
-                    target_path.display()
-                );
-            }
-
-            Ok(())
-        })?;
-
-    Ok(())
+    link_path(&from_abs, &to_abs, apply, force)
 }
 
 fn cmd_log(filters: Vec<String>) -> Result<()> {
@@ -1551,9 +1627,9 @@ fn main() {
         Commands::Link {
             from,
             to,
-            real,
+            apply,
             force,
-        } => cmd_link(from, to, real, force),
+        } => cmd_link(from, to, apply, force),
         Commands::Log { filters } => cmd_log(filters),
         Commands::List { full, output } => cmd_list(full, &output),
         Commands::Add { name, path } => cmd_add(name, path),
