@@ -1,0 +1,7 @@
+interface:
+  display_name: "Dev Review"
+  short_description: "Review implementation against spec and plan"
+  default_prompt: "Use $dev-review to independently review the current implementation against its approved plan and spec."
+
+policy:
+  allow_implicit_invocation: false

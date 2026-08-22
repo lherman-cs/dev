@@ -1,6 +1,0 @@
-interface:
-  display_name: "Review Code Change"
-  short_description: "Review changes with Sol"
-  default_prompt: "Use $dev:review to independently review the implemented change."
-policy:
-  allow_implicit_invocation: false
