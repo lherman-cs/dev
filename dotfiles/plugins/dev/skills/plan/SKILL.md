@@ -1,164 +1,60 @@
 ---
-
-name: build
-description: Implement an approved implementation plan faithfully through a smaller builder model. Use when the user invokes $dev:build or asks to implement an approved plan with checkpointed commits and confirmation between checkpoints.
+name: plan
+description: Investigate a repository and produce an implementation-ready plan without editing code. Use when the user invokes $dev:plan or asks to plan a non-trivial change involving architecture, ownership, APIs, state, concurrency, migration, compatibility, or performance. Do not use for implementation or simple mechanical edits.
 ---
 
-# Build
+# Plan
 
-Implement the approved plan faithfully.
+Produce the smallest self-contained plan that lets a capable builder implement the change without making a consequential design decision.
 
-Treat the approved plan as the implementation specification. Do not redesign it during the build.
+Keep the user in the parent thread. Do not modify the repository, build, test, or commit.
 
-Your job is to translate the plan into working code, validate it, and stop at the defined checkpoints for user confirmation.
+## Normalize the request
 
-## Before implementation
+Recover this contract from the request, conversation, and workspace:
 
-1. Read the complete approved plan.
-2. Inspect the current repository state and the files and symbols named by the plan.
-3. Confirm that the repository still matches the assumptions in the approved plan.
-4. Identify the next implementation checkpoint.
-5. Implement only that checkpoint.
+1. **Task** — goal and observable completion criteria.
+2. **References** — repository path, relevant artifacts, errors, and prior decisions.
+3. **Constraints and non-goals** — behavior to preserve, approaches to avoid, and excluded scope.
 
-Do not silently reinterpret the plan based on what you would prefer to build.
+Do not require the user to follow this format or rewrite a rough prompt. Infer safe facts. Before spending a planner turn, ask only when missing information would materially change the goal, scope, or completion bar. Ask at most three concise questions in one turn, include a recommendation when useful, and never ask for facts repository inspection can establish.
 
-## Plan fidelity
+## Choose the cheapest sufficient route
 
-The approved plan is authoritative for:
+Plan directly in the parent when the change is localized, follows an established pattern, and contains no consequential choice.
 
-* architecture;
-* ownership;
-* APIs;
-* state representation;
-* concurrency;
-* lifecycle;
-* protocol semantics;
-* compatibility behavior;
-* performance-sensitive decisions;
-* scope.
+Otherwise spawn one `planner` using `gpt-5.6-sol`, `high` reasoning, a read-only task, and no history fork. Reuse it for the entire planning cycle. Send only the normalized contract, explicit decisions, repository path, and output contract below.
 
-You may independently choose routine implementation details when they preserve the plan exactly.
+Require the planner to read applicable repository instructions and inspect relevant code, tests, and history before recommending a design. It must distinguish repository evidence, user decisions, and recommendations.
 
-Examples include:
+## Resolve decisions before drafting
 
-* local variable names;
-* mechanical code movement;
-* equivalent internal expressions;
-* formatting;
-* straightforward error plumbing;
-* test organization.
+If inspection leaves a consequential choice about architecture, ownership, contracts, state, concurrency, lifecycle, protocol behavior, compatibility, performance or security invariants, migration, or scope, require `DECISION REQUEST` instead of a plan.
 
-Do not introduce new architectural decisions merely because they make implementation easier.
+Include at most three decisions. For each, give the evidence, viable options, material tradeoffs, and recommendation. Do not generate or regenerate a full plan while decisions remain. Forward answers to the same planner as a compact decision delta rather than replaying the conversation.
 
-## Deviation gate
+Leave local, behaviorally equivalent implementation choices to the builder.
 
-If repository investigation or implementation reveals that the approved plan cannot be followed as written, stop before deviating and ask the user.
+## Output contract
 
-This includes:
+Return `DRAFT PLAN` containing:
 
-* the repository materially differs from what the plan describes;
-* a named symbol or assumed behavior no longer exists;
-* two materially different implementations would produce different semantics;
-* one plan requirement conflicts with another;
-* the planned architecture cannot work as specified;
-* additional scope is required;
-* a stated invariant would need to change;
-* you believe the plan should be redesigned.
+1. **Goal and acceptance criteria**
+2. **Baseline** — repository revision or working-tree basis and relevant current flow
+3. **Decisions, invariants, and non-goals**
+4. **Implementation checkpoints**
+5. **Risks and failure behavior**
+6. **Final verification**
+7. **Open questions** — only unresolved user decisions; otherwise `None`
 
-When this happens, report:
+For each checkpoint, include only applicable files and symbols, behavior or ownership changes, data flow or state transitions, required removals or migrations, and targeted validation. End each checkpoint in a coherent repository state.
 
-1. the relevant approved-plan requirement;
-2. what you discovered;
-3. why continuing would require deviation;
-4. the smallest meaningful options.
+Be precise about behavior and boundaries, not line-by-line mechanics. Omit background that does not affect implementation or verification.
 
-Do not select an option or modify the plan yourself.
+## Approval
 
-Do not implement the deviation and disclose it afterward.
+Present the draft and remaining decisions separately. Accept clear natural-language approval; do not require a magic phrase.
 
-## Checkpoints
+If approved unchanged, reuse the draft as `APPROVED PLAN` without another planner turn. If the user requests material changes, send only the delta to the same planner and request one consolidated revision.
 
-Follow the checkpoints defined by the approved plan.
-
-For each checkpoint:
-
-1. Implement the complete checkpoint.
-2. Remove obsolete code required by that checkpoint.
-3. Run the checkpoint's specified validation.
-4. Inspect the resulting diff for unintended changes.
-5. Verify the checkpoint against the approved plan.
-6. Create one focused descriptive commit.
-7. Report:
-
-   * what changed;
-   * important files or symbols;
-   * validation performed;
-   * commit hash and subject;
-   * any observations relevant to later checkpoints.
-8. Stop and ask the user to confirm before continuing.
-
-Do not begin the next checkpoint without explicit user confirmation.
-
-If a checkpoint is too large to form one coherent commit, stop and ask before changing the checkpoint structure rather than silently repartitioning the approved plan.
-
-## Commits
-
-Create descriptive commits representing coherent completed states.
-
-Commit messages should describe the architectural or behavioral change, not the editing activity.
-
-Prefer:
-
-`refactor(routing): move forwarding ownership into participant`
-
-over:
-
-`update routing files`
-
-Do not mix unrelated cleanup into checkpoint commits.
-
-Do not amend, squash, reorder, or rewrite earlier checkpoint commits unless the user asks.
-
-## Scope discipline
-
-Implement only what the approved plan requires.
-
-Do not:
-
-* perform opportunistic cleanup;
-* generalize for hypothetical future requirements;
-* add compatibility shims not specified by the plan;
-* preserve obsolete machinery the plan says to remove;
-* redesign adjacent components;
-* fix unrelated issues discovered along the way.
-
-If unrelated work is worth mentioning, report it without implementing it.
-
-## Validation
-
-Passing tests is necessary but not sufficient.
-
-At each checkpoint, compare the actual diff to the checkpoint specification.
-
-Before final completion:
-
-1. Re-read the entire approved plan.
-2. Verify every acceptance criterion.
-3. Verify every invariant.
-4. Confirm required removals actually occurred.
-5. Confirm no unapproved scope or behavior was introduced.
-6. Run the complete final verification from the plan.
-7. Inspect the final commit range against the pre-build state.
-
-If the implementation differs materially from the approved plan, invoke the deviation gate rather than declaring completion.
-
-## Completion
-
-After the final checkpoint is confirmed, report:
-
-* completed checkpoints and commits;
-* acceptance criteria satisfied;
-* final validation results;
-* any remaining explicitly planned follow-up work.
-
-Do not claim completion merely because the repository builds or tests pass.
+Do not approve a plan that still requires the builder to make a consequential decision.

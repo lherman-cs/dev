@@ -2,3 +2,4 @@ interface:
   display_name: "Build Approved Plan"
   short_description: "Build and verify with Luna"
   default_prompt: "Use $dev:build to implement or verify the approved plan."
+allow_implicit_invocation: false
