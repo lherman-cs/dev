@@ -1,14 +1,13 @@
-```markdown
 ---
 name: dev-review
-description: Independently review a diff, branch, commit range, or completed plan for material correctness defects, architectural drift, and missing verification. Use explicitly when a fresh review is desired outside the normal dev-build supervision loop.
+description: Independently review a completed diff, commit, branch, or implementation plan result for material defects and deviations from intended behavior. Use explicitly after implementation when a focused fresh review is desired.
 ---
 
 # Dev Review
 
-Review completed implementation as a senior engineer.
+Review completed implementation with a fresh, adversarial objective.
 
-Find material defects. Do not restate the implementation or turn review into planning.
+Find material defects. Do not restate the implementation or resume building unless explicitly asked.
 
 ## Resolve
 
@@ -18,131 +17,123 @@ Determine the narrowest concrete review target:
 - commit or commit range;
 - branch;
 - named files;
-- implementation for a named plan.
+- implementation of a named plan.
 
 Read the relevant plan when one exists.
 
 Read `spec.md` only when needed to resolve architectural intent, invariants, or requirements not clear from the plan.
 
-Reuse established context. Do not broadly reinvestigate the repository merely to reconstruct it.
+Reuse established context.
+Do not repeat broad repository investigation.
 
-## Establish the contract
+## Contract
 
-Judge the change against, in order:
+Judge the implementation against, in order:
 
 1. explicit user decisions;
 2. approved spec;
 3. approved plan;
 4. repository invariants and documented behavior;
-5. existing tests and conventions.
+5. relevant existing tests and conventions.
 
 Do not invent requirements.
-
-Separate:
-
-- correctness defects;
-- material risks;
-- optional improvements;
-- style preferences.
-
-Only the first two belong in findings.
 
 ## Inspect
 
 Start from the diff.
 
-Inspect surrounding code, call sites, and data flow only as needed to prove or disprove a concern.
+Inspect surrounding code, call sites, and data flow only when needed to validate a concern.
 
 Prioritize:
 
-- correctness;
-- ownership and lifecycle;
-- state transitions and ordering;
-- concurrency;
-- error and cleanup paths;
-- API/protocol compatibility;
-- security boundaries;
-- performance-sensitive behavior;
-- changed-behavior test coverage;
-- accidental scope expansion;
+- incorrect or incomplete behavior;
+- violated invariants;
+- ownership or lifecycle mistakes;
+- state-transition and ordering bugs;
+- concurrency hazards;
+- missing error or cleanup paths;
+- API/protocol incompatibility;
+- security or performance regressions when relevant;
+- missing verification for changed behavior;
 - architectural drift;
-- unnecessary complexity that creates concrete risk.
+- accidental scope expansion.
 
-When a plan exists, verify that the implementation:
+Passing tests are evidence, not proof of correctness.
 
-- completes every required change;
-- preserves its invariants;
-- satisfies its acceptance criteria;
-- follows required ownership and data flow;
-- does not weaken requirements or substitute an unapproved design.
-
-Passing tests are evidence, not proof of plan completion.
-
-## Validate findings
+## Findings bar
 
 Report a finding only when you can establish:
 
-1. concrete behavior;
-2. repository evidence;
-3. a plausible triggering scenario;
-4. the violated contract or resulting harm.
+- concrete problematic behavior;
+- repository evidence;
+- a plausible triggering path;
+- the violated contract or resulting harm.
 
-Do not report speculative concerns, subjective style, or hypothetical future problems without a concrete failure path.
+Do not report:
+
+- subjective style;
+- optional cleanup;
+- speculative future concerns;
+- harmless deviations;
+- preferences without correctness impact.
 
 Prefer a few high-confidence findings over exhaustive commentary.
 
 ## Severity
 
 - **Critical** — catastrophic correctness, security, data-loss, or production failure.
-- **High** — material requirement violation or realistic path to significant incorrect behavior.
-- **Medium** — real defect or meaningful robustness issue with limited impact or likelihood.
+- **High** — material requirement violation or realistic significant failure.
+- **Medium** — real defect or robustness issue with bounded impact or likelihood.
 - **Low** — concrete minor defect worth fixing.
-
-Do not assign severity to cleanup or preferences.
 
 ## Classify
 
-For architectural conflicts, identify the failing layer:
+For each material design conflict identify whether it is:
 
 - **implementation issue** — code should change;
 - **plan issue** — implementation strategy or decomposition should change;
-- **spec issue** — destination, architecture, invariant, or requirement should change.
+- **spec issue** — destination or architectural requirement should change.
 
-Do not redesign during review unless explicitly asked.
+Do not redesign during review.
 
 ## Verify
 
-Run targeted checks when they materially increase confidence:
+Run targeted checks only when they materially increase confidence.
 
-- tests covering changed behavior;
-- focused compile/type/lint checks;
-- required simulations or benchmarks.
-
-Avoid expensive unrelated verification.
-
-State uncertainty when evidence is insufficient.
+Prefer tests or checks directly related to suspected findings.
+Avoid unrelated expensive verification.
 
 ## Output
 
+Optimize output for actionability.
+
 Lead with findings ordered by severity.
 
-Each finding should contain:
+Each finding contains only:
 
-- severity;
-- concise defect;
-- concrete location;
+`[Severity] location — defect`
+
+Then briefly explain:
+
 - why it is wrong;
 - triggering scenario or violated contract;
 - required outcome.
 
-Then state briefly:
+After findings, include only:
 
-- verification performed;
-- unresolved uncertainty.
+- **Verification** — relevant checks performed;
+- **Uncertainty** — only meaningful unresolved uncertainty.
 
-If there are no material findings, say so directly and mention any meaningful verification gap.
+If there are no material findings, say:
 
-Do not repeat the plan.
-Do not provide generic praise.
-Do not recommend unrelated cleanup.
-```
+`No material findings.`
+
+Then mention only meaningful verification gaps, if any.
+
+Do not:
+
+- summarize the implementation;
+- repeat the plan;
+- praise the code;
+- list harmless observations;
+- recommend unrelated cleanup.

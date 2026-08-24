@@ -1,13 +1,14 @@
 ---
 name: dev-build
-description: Execute one approved plans/<project>/<NN>-*.md through a Luna-high builder under Terra-high supervision. Implement, verify, review the diff, and correct implementation defects without reopening approved architecture.
+description: Implement one approved plan from plans/<project>/<NN>-*.md in the current thread and verify it without reopening approved architecture. Use only when explicitly invoked with a project and plan number or plan path.
 ---
 
 # Dev Build
 
-Execute one approved plan. Terra owns the work; Luna performs implementation.
+Implement one approved plan in the current thread.
 
-The plan is authoritative for intent, scope, architecture, and acceptance criteria.
+The plan owns intent, scope, architecture, and acceptance criteria.
+This phase owns implementation mechanics and verification.
 
 ## Resolve
 
@@ -18,98 +19,75 @@ Accept:
 
 Resolve exactly one plan and read it first.
 
-Reuse established session and repository context. Do not repeat `dev-plan` investigation.
+Reuse relevant session and repository context already established.
+Do not repeat `dev-plan` investigation.
 
-Read the sibling `spec.md` only when the plan is ambiguous or implementation evidence suggests a plan/spec conflict.
+Read the sibling `spec.md` only when:
 
-## Delegate
+- the plan is materially ambiguous; or
+- repository reality appears to contradict the plan.
 
-Spawn one `builder` subagent:
+## Implement
 
-- model: `gpt-5.6-luna`
-- reasoning effort: `high`
-- repository write access
+Work only within the approved plan.
 
-Give it only:
+1. Inspect affected code and nearby dependencies as needed.
+2. Prefer plan facts over re-deriving architecture or implementation strategy.
+3. Follow existing repository conventions for local mechanics.
+4. Make the smallest coherent changes that satisfy the plan.
+5. Resolve cheap implementation details directly.
+6. Avoid unrelated cleanup or opportunistic refactors.
 
-- repository root;
-- exact plan path;
-- material current-session decisions missing from the plan.
-
-Do not copy the plan into the prompt or replay unnecessary conversation context.
-
-The builder must:
-
-1. Read the plan first.
-2. Implement only its approved scope.
-3. Inspect only affected code and nearby dependencies.
-4. Use repository conventions for local mechanics.
-5. Avoid rediscovering architecture or reconsidering approved decisions.
-6. Run plan-required verification plus cheap checks directly implied by the change.
-7. Fix implementation-caused failures and rerun relevant checks.
-8. Report changes, verification, deviations, failures, and risks.
-
-The builder may resolve cheap local implementation details independently.
-
-It must not:
+Do not:
 
 - expand scope;
-- redesign;
+- reconsider approved architecture;
 - weaken requirements;
-- perform unrelated cleanup;
-- modify the spec or plan to justify the implementation.
+- modify the plan or spec to justify the implementation;
+- broadly reinvestigate the repository.
 
-If repository reality materially invalidates the plan, stop and report the conflict.
+Minor mechanical deviations are allowed when repository reality requires them and the approved design remains unchanged.
 
-## Review
+## Verify
 
-After Luna returns, Terra reviews the actual diff and fresh verification evidence.
+Run:
 
-Do not rely on Luna's summary and do not redo broad repository investigation.
+- verification required by the plan;
+- cheap checks directly implied by the changes.
 
-Check:
+Fix implementation-caused failures and rerun relevant checks.
 
-- every plan requirement is implemented;
-- acceptance criteria are established by verification;
-- ownership, lifecycle, invariants, and data flow match the approved design;
-- no required edge or failure path was omitted;
-- no unnecessary scope or complexity was introduced;
-- no architectural drift is hidden behind passing tests.
-
-Inspect surrounding code only when needed to validate a concern.
-
-## Correct
-
-If the plan is sound but the implementation is wrong, send Luna one narrowly scoped correction containing:
-
-- the concrete defect;
-- violated requirement or behavior;
-- relevant location when known;
-- required outcome.
-
-Do not ask Luna to broadly review or reinterpret the plan.
-
-After correction, rerun relevant verification and inspect the resulting diff.
-
-Avoid open-ended correction loops. If substantial new work keeps emerging, treat that as evidence the plan needs revision.
+Verification should establish changed behavior, not merely compilation.
 
 ## Escalate
 
-Classify blockers precisely:
+Stop rather than silently redesign when a material assumption is wrong.
 
-- **build issue** — implementation is wrong; Luna may correct it;
+Classify the problem:
+
+- **build issue** — local implementation is wrong; fix it here;
 - **plan issue** — implementation strategy or decomposition is materially wrong; return to `dev-plan`;
 - **spec issue** — destination, architecture, invariant, or requirement is materially wrong; return to `dev-spec`.
 
-Do not repair plan or spec problems inside `dev-build`.
+Do not solve plan or spec problems inside build.
 
-## Finish
+## Output
+
+Optimize output for user review.
 
 On success, report only:
 
-- what changed;
-- verification and results;
-- material deviations or remaining risks.
+- **Changed** — concise implementation outcome;
+- **Verified** — commands/checks and results;
+- **Notes** — only material deviations or remaining risks.
+
+Omit:
+
+- implementation narration;
+- files touched unless useful;
+- reasoning already captured by the plan;
+- successful intermediate steps;
+- generic summaries.
 
 Do not claim success without fresh verification.
 
