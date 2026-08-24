@@ -5,76 +5,108 @@ description: Turn an approved plans/<project>/spec.md into concrete isolated imp
 
 # Dev Plan
 
-Turn the approved spec into the safest concrete path from the current repository to that destination.
+Turn the approved destination into the safest concrete implementation path.
 
-1. Resolve the project from the invocation and read `plans/<project>/spec.md` first.
+## Resolve
 
-2. Reuse relevant repository and session context already established.
+1. Resolve the project and read `plans/<project>/spec.md` first.
+2. Reuse relevant session and repository context.
+3. Investigate only until the implementation path is decision-complete.
 
-3. Investigate the repository only until the implementation path is decision-complete:
-   - ownership and data flow;
-   - affected files, symbols, and call sites;
-   - dependencies and lifecycle;
-   - existing tests and verification;
-   - constraints and conventions.
+Resolve:
 
-4. Resolve material repository questions through evidence rather than assumptions.
-   Prefer targeted symbol, reference, and call-site investigation over broad repository reading.
+- ownership and data flow;
+- affected files, symbols, and call sites;
+- lifecycle and dependencies;
+- relevant tests and verification;
+- constraints and repository conventions.
 
-5. Clearly distinguish repository facts from proposed implementation choices.
+Prefer targeted symbol, reference, and call-site investigation over broad reading.
 
-6. If the destination is materially insufficient or wrong, return to `dev-spec`
-   rather than changing it here.
+Resolve material repository questions from evidence.
+Do not treat assumptions as facts.
 
-7. Decompose the work into the smallest useful ordered pieces that are independently:
-   - implementable;
-   - verifiable;
-   - reviewable;
-   - preferably committable.
+If the destination itself is insufficient or wrong, stop and return to `dev-spec`.
 
-8. Preserve buildability between pieces when practical and state dependencies otherwise.
+## Decompose
 
-Stop investigating once each piece can be implemented without rediscovering:
+Split the work into the smallest useful ordered pieces that are independently:
 
-- architectural intent;
+- implementable;
+- verifiable;
+- reviewable;
+- preferably committable.
+
+Preserve buildability between pieces when practical.
+State dependencies only when they matter.
+
+Stop investigating when each builder can proceed without reopening:
+
+- architecture;
 - ownership boundaries;
-- affected implementation surfaces;
-- required behavior;
+- implementation strategy;
+- affected surfaces;
 - verification strategy.
 
-Each plan contains only builder-relevant information:
+Cheap local implementation mechanics may remain for the builder.
 
-- Objective
-- Requirements satisfied
-- Repository facts
-- Changes
-- Verification
-- Done when
-- Out of scope
+## Plan files
 
-Be concrete about files, symbols, data flow, and required behavior when supported by repository evidence.
+Each plan should contain only information expensive or risky for the builder to rediscover:
 
-Do not:
+- **Objective**
+- **Changes**
+- **Verification**
+- **Done when**
+- **Out of scope**
 
-- repeat spec context that the builder can read directly;
-- record investigation history;
-- duplicate repository facts across plans unless needed by each builder;
-- prescribe incidental implementation mechanics the builder can determine cheaply.
+Add **Key facts / constraints** only when non-obvious repository evidence materially affects implementation.
 
-Before writing files, present a concise `DRAFT PLAN` decomposition containing:
+Add **Dependencies** only when the plan depends on another piece.
 
-- plan number and name;
-- objective;
-- major implementation surface;
-- dependencies.
+In `Changes`, be concrete about relevant files, symbols, ownership, data flow, lifecycle, and required behavior.
 
-After explicit approval, write the full plans:
+Do not include:
+
+- investigation history;
+- generic repository context;
+- spec requirements already obvious from the objective;
+- repeated facts across plans;
+- rationale for settled architecture;
+- incidental mechanics the builder can determine cheaply.
+
+Reference the spec rather than reproducing it.
+
+## Review output
+
+Optimize conversation output for approving the decomposition, not for reproducing the plan files.
+
+Before writing files, present only a concise `DRAFT PLAN`:
+
+```text
+01 <name> — <one-sentence outcome>
+   Surface: <important modules/symbols>
+   Depends: <only if applicable>
+
+02 <name> — <one-sentence outcome>
+   Surface: <important modules/symbols>
+   Depends: 01
+````
+
+Include an `Important choices` section only when planning introduced implementation decisions that are:
+
+- not already dictated by the spec;
+- consequential;
+- worth explicit user review.
+
+Do not dump repository findings or full plan contents into the conversation.
+
+Ask only for approval or corrections.
+
+After explicit approval, write:
 
 `plans/<project>/01-foo.md`
 `plans/<project>/02-bar.md`
 ...
 
-Done when each piece can be implemented without rediscovering architectural intent or implementation strategy.
-
-Do not turn assumptions into repository facts.
-Do not leave avoidable architectural investigation for the builder.
+Done when build can proceed primarily from the plan and affected code without broad repository investigation or reopening architectural decisions.

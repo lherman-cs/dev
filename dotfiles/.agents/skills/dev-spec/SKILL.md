@@ -5,120 +5,99 @@ description: Define and align on the desired end state for a substantial code ch
 
 # Dev Spec
 
-Reach shared understanding of the destination before planning how to get there.
+Define the destination. Do not plan the implementation.
 
-The spec owns intent. Do not design the implementation plan.
+## Resolve
 
-## 1. Establish context
-
-1. Resolve the project name from the invocation and target `plans/<project>/spec.md`.
-2. Read the task, supplied references, constraints, and explicit rejections.
-3. Inspect the repository only as deeply as necessary to understand:
-   - current behavior;
-   - relevant architecture and terminology;
-   - constraints imposed by existing code;
+1. Resolve the project and target `plans/<project>/spec.md`.
+2. Reuse relevant session context.
+3. Inspect the repository only enough to establish:
+   - current behavior and architecture;
+   - terminology and constraints;
    - decisions already encoded in the system.
-4. Resolve factual questions from repository evidence instead of asking the user.
-5. Reuse relevant facts and decisions already established in the session. Do not make the user repeat them.
+4. Resolve factual questions from repository evidence rather than asking the user.
 
-Separate what is:
-
-- known from evidence;
-- explicitly decided by the user;
-- still unresolved.
-
+Distinguish evidence, user decisions, and unresolved choices.
 Do not turn assumptions into requirements.
 
-## 2. Grill the unresolved design
+## Align
 
-Treat the desired system as a decision tree.
+Work through only consequential unresolved decisions.
 
-A decision is ready to ask only when the decisions it depends on are already settled.
+For each:
 
-Work through the unresolved frontier until no consequential branch remains.
+1. Resolve it from evidence when possible.
+2. Otherwise ask one decision at a time.
+3. Recommend an answer when useful, with the decisive reason.
+4. Mention alternatives only when choosing them would materially change the destination.
+5. Surface conflicts with earlier decisions, requirements, or repository reality.
 
-For each unresolved decision:
+Prefer concise questions:
 
-1. Determine whether repository evidence can resolve it.
-2. If not, ask the user.
-3. State your recommended answer when you have one, with the key reason.
-4. Surface meaningful alternatives or tradeoffs only when they could change the destination.
-5. Incorporate the answer into the working model before advancing to dependent questions.
+> I recommend **X** because **Y**. **Z** is the meaningful alternative and would change **W**. Which do you want?
 
-Ask one consequential decision at a time.
+Do not ask about:
 
-Prefer questions of the form:
+- implementation mechanics;
+- repository facts you can determine yourself;
+- inconsequential preferences;
+- speculative edge cases;
+- decisions whose alternatives produce effectively the same destination.
 
-> I recommend **X** because **Y**. The main alternative is **Z**, which would change **W**. Which behavior do you want?
+Challenge internally inconsistent or unexpectedly costly designs before accepting them.
 
-Do not ask:
+## Stop condition
 
-- implementation questions that belong in planning;
-- questions answerable from the repository;
-- speculative edge cases with no effect on the destination;
-- preference questions where all answers lead to effectively the same spec;
-- broad questionnaires detached from the decisions already established.
+Alignment is complete when the desired end state can be stated without consequential assumptions.
 
-If an answer exposes a new consequential branch, pursue it.
+Before drafting, ensure you know:
 
-If an answer conflicts with repository reality, another requirement, or an earlier decision, surface the conflict rather than silently reconciling it.
+- required behavior;
+- durable invariants;
+- important exclusions;
+- observable success criteria.
 
-If the user's proposed design appears internally inconsistent or creates a significant tradeoff they may not have intended, challenge it before recording it as settled.
+Continue only if two competent engineers could still implement materially different intended products while both believing they satisfied the requirements.
 
-## 3. Determine when alignment is complete
+Do not make the spec exhaustive for its own sake.
 
-Stop investigating and grilling when you can state the desired end state without making consequential assumptions.
+## Review output
 
-Before drafting, explicitly check:
+Optimize conversation output for user review, not documentation.
 
-- What must be true?
-- What must remain true?
-- What must not be built?
-- What observable behavior defines success?
-- Are any terms ambiguous?
-- Are any decisions being inferred rather than agreed or evidenced?
-- Could two competent engineers read the current understanding and build materially different products while both believing they satisfied it?
+During alignment:
 
-If the last answer is yes because the intended behavior is underspecified, continue grilling.
+- ask only the current consequential question;
+- do not narrate repository investigation;
+- do not summarize settled decisions repeatedly.
 
-Do not manufacture decisions merely to make the spec exhaustive.
+When aligned, present one concise `DRAFT SPEC`.
 
-## 4. Draft the spec
+Include only:
 
-Present `DRAFT SPEC` in the conversation before writing the file.
+- **Goal**
+- **Requirements**
+- **Invariants** — only durable constraints not obvious from requirements
+- **Non-goals / rejected designs** — only decisions worth preserving
+- **Acceptance criteria**
 
-Keep it concise and include only sections that carry useful information:
+Omit background, rationale, repository facts, and discussion history unless necessary to understand a decision.
 
-- Goal
-- Requirements
-- Invariants
-- Non-goals / rejected designs
-- Acceptance criteria
+Prefer short declarative statements.
+Do not restate the same decision across sections.
 
-The spec describes the destination, not the route.
+The spec describes what must be true, not how to make it true.
 
 Exclude:
 
-- migration sequencing;
-- implementation phases;
-- file-by-file changes;
-- task breakdowns;
-- incidental implementation mechanics;
+- migration or sequencing;
+- file and symbol changes;
+- implementation decomposition;
+- incidental mechanics;
 - speculative future requirements.
 
-Prefer observable behavior and durable architectural constraints over implementation prescriptions.
+After the draft, ask only for approval or corrections.
 
-Record rejected designs only when remembering the rejection prevents likely future ambiguity or backtracking.
+Write `plans/<project>/spec.md` after explicit approval.
 
-Do not silently expand scope while translating the conversation into the spec.
-
-## 5. Commit the shared understanding
-
-After presenting `DRAFT SPEC`:
-
-1. Ask the user to approve it or identify remaining disagreement.
-2. Treat corrections as evidence that alignment was incomplete; update the working model accordingly.
-3. Re-grill any consequential ambiguity exposed by the corrections.
-4. Write `plans/<project>/spec.md` only after explicit approval.
-
-Done when an engineer can judge whether an implementation reaches the intended destination without being told how to implement it, and neither the engineer nor the LLM needs to invent consequential product or architectural decisions.
+Done when an engineer can judge whether an implementation reaches the intended destination without inventing consequential product or architectural decisions.

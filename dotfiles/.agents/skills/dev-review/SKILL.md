@@ -1,69 +1,148 @@
+```markdown
 ---
 name: dev-review
-description: Independently review the current implementation against its approved plan and project spec. Use only when explicitly invoked, normally with no arguments after dev-build.
+description: Independently review a diff, branch, commit range, or completed plan for material correctness defects, architectural drift, and missing verification. Use explicitly when a fresh review is desired outside the normal dev-build supervision loop.
 ---
 
 # Dev Review
 
-Independently review the implementation against repository evidence, its plan, and its spec.
+Review completed implementation as a senior engineer.
 
-## Resolve scope
+Find material defects. Do not restate the implementation or turn review into planning.
 
-Determine the relevant plan in this order:
+## Resolve
 
-1. explicit plan supplied by the user;
-2. `Plan:` trailer on the relevant implementation commit;
-3. changed files and repository context, but only when they identify exactly one plan.
+Determine the narrowest concrete review target:
 
-If multiple plans remain plausible, stop and report the ambiguity rather than guessing.
+- working-tree or staged diff;
+- commit or commit range;
+- branch;
+- named files;
+- implementation for a named plan.
 
-## Gather context
+Read the relevant plan when one exists.
 
-Start with only:
+Read `spec.md` only when needed to resolve architectural intent, invariants, or requirements not clear from the plan.
 
-- the resolved plan;
-- its sibling `spec.md`;
-- the implementation diff;
-- directly affected repository code.
+Reuse established context. Do not broadly reinvestigate the repository merely to reconstruct it.
 
-Expand repository investigation only when a potential finding or unresolved question requires it.
+## Establish the contract
 
-Do not rely on the builder's summary or explanation as evidence.
+Judge the change against, in order:
 
-## Review
+1. explicit user decisions;
+2. approved spec;
+3. approved plan;
+4. repository invariants and documented behavior;
+5. existing tests and conventions.
 
-Check for material:
+Do not invent requirements.
 
-- correctness defects and regressions;
-- unmet spec requirements;
-- unmet plan requirements;
-- violated invariants;
-- missing or inadequate verification;
-- unintended scope;
-- unnecessary complexity that harms the design.
+Separate:
 
-Run targeted verification when it materially increases confidence.
+- correctness defects;
+- material risks;
+- optional improvements;
+- style preferences.
 
-Ignore cosmetic preferences unless they violate repository conventions or materially affect maintainability.
+Only the first two belong in findings.
 
-If the implementation correctly follows a flawed plan, identify the plan gap.
-If the plan faithfully implements a flawed destination, identify the spec gap.
+## Inspect
+
+Start from the diff.
+
+Inspect surrounding code, call sites, and data flow only as needed to prove or disprove a concern.
+
+Prioritize:
+
+- correctness;
+- ownership and lifecycle;
+- state transitions and ordering;
+- concurrency;
+- error and cleanup paths;
+- API/protocol compatibility;
+- security boundaries;
+- performance-sensitive behavior;
+- changed-behavior test coverage;
+- accidental scope expansion;
+- architectural drift;
+- unnecessary complexity that creates concrete risk.
+
+When a plan exists, verify that the implementation:
+
+- completes every required change;
+- preserves its invariants;
+- satisfies its acceptance criteria;
+- follows required ownership and data flow;
+- does not weaken requirements or substitute an unapproved design.
+
+Passing tests are evidence, not proof of plan completion.
+
+## Validate findings
+
+Report a finding only when you can establish:
+
+1. concrete behavior;
+2. repository evidence;
+3. a plausible triggering scenario;
+4. the violated contract or resulting harm.
+
+Do not report speculative concerns, subjective style, or hypothetical future problems without a concrete failure path.
+
+Prefer a few high-confidence findings over exhaustive commentary.
+
+## Severity
+
+- **Critical** — catastrophic correctness, security, data-loss, or production failure.
+- **High** — material requirement violation or realistic path to significant incorrect behavior.
+- **Medium** — real defect or meaningful robustness issue with limited impact or likelihood.
+- **Low** — concrete minor defect worth fixing.
+
+Do not assign severity to cleanup or preferences.
+
+## Classify
+
+For architectural conflicts, identify the failing layer:
+
+- **implementation issue** — code should change;
+- **plan issue** — implementation strategy or decomposition should change;
+- **spec issue** — destination, architecture, invariant, or requirement should change.
+
+Do not redesign during review unless explicitly asked.
+
+## Verify
+
+Run targeted checks when they materially increase confidence:
+
+- tests covering changed behavior;
+- focused compile/type/lint checks;
+- required simulations or benchmarks.
+
+Avoid expensive unrelated verification.
+
+State uncertainty when evidence is insufficient.
 
 ## Output
 
-Return exactly one of:
+Lead with findings ordered by severity.
 
-`PASS`
+Each finding should contain:
 
-or findings ordered by severity.
+- severity;
+- concise defect;
+- concrete location;
+- why it is wrong;
+- triggering scenario or violated contract;
+- required outcome.
 
-Each finding must include:
+Then state briefly:
 
-- concrete evidence or location;
-- impact;
-- required correction.
+- verification performed;
+- unresolved uncertainty.
 
-Return `PASS` only when no material findings remain and available verification provides sufficient evidence for the plan's `Done when` criteria.
+If there are no material findings, say so directly and mention any meaningful verification gap.
 
-Do not edit code unless explicitly asked.
-Do not accept builder explanations as evidence.
+Do not repeat the plan.
+Do not provide generic praise.
+Do not recommend unrelated cleanup.
+```
