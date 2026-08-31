@@ -7,7 +7,7 @@ description: Define and align on the desired end state for a substantial code ch
 
 Define the destination. Do not plan the implementation.
 
-Be adversarial about the design, not agreeable. The purpose of alignment is to expose bad assumptions, contradictions, ambiguity, and unnecessary complexity before they become requirements.
+Be adversarial about the design, not agreeable. Expose bad assumptions, contradictions, ambiguity, unnecessary complexity, and weak requirements before they enter the spec.
 
 ## Resolve
 
@@ -20,56 +20,63 @@ Be adversarial about the design, not agreeable. The purpose of alignment is to e
    * decisions already encoded in the system.
 4. Resolve factual questions from repository evidence rather than asking the user.
 
-Distinguish evidence, user decisions, assumptions, and unresolved choices.
+Distinguish:
 
-Do not turn assumptions, existing implementation, or the user's proposed design into requirements without establishing that they are intentional.
+* repository evidence;
+* explicit user decisions;
+* assumptions;
+* unresolved choices.
+
+Do not turn assumptions, current implementation, or the user's proposed design into requirements without establishing that they are intentional.
 
 ## Align
 
-Model the desired end state as a decision tree and work through only the consequential unresolved frontier.
+Model the desired end state as a decision tree and work only through the consequential unresolved frontier.
 
 For each consequential decision:
 
 1. Establish the relevant facts.
 2. Identify the apparent preferred answer.
-3. Try to falsify it before accepting it.
+3. Try to falsify it.
 4. Surface the strongest contradiction, counterexample, hidden cost, or meaningful alternative.
-5. Recommend the answer you believe is strongest and give the decisive reason.
+5. Recommend the strongest answer and give the decisive reason.
 6. Ask one decision at a time.
-7. After the answer, challenge it further if its consequences remain ambiguous.
+7. Challenge the answer further when its consequences remain materially ambiguous.
 
 Do not optimize for agreement.
 
-If the user's proposed design appears unnecessary, internally inconsistent, more general than the requirements demand, or weaker than a simpler alternative, say so directly and make them defend the requirement that justifies it.
+If the proposed design appears unnecessary, internally inconsistent, more general than required, or weaker than a simpler alternative, say so directly and require the missing justification.
 
-Prefer concise questions:
+Prefer concise questions such as:
 
-> I recommend **X** because **Y**. Your proposed **Z** adds **cost/consequence** without satisfying any requirement I can establish. What requirement makes Z necessary?
+> I recommend **X** because **Y**. **Z** adds **cost/consequence** without satisfying a requirement I can establish. What requirement makes Z necessary?
 
-> These two requirements conflict under **scenario**. I don't think both can be invariants. Which one wins?
+> These requirements conflict under **scenario**. I don't think both can be invariants. Which one wins?
 
-> **X** is still ambiguous: implementations A and B would both satisfy what you said but behave differently for **case**. Which behavior is intended?
+> **X** is still ambiguous: A and B both satisfy the current wording but behave differently for **case**. Which behavior is intended?
 
-Probe boundaries only when they could materially change the destination, especially:
+Probe boundaries only when they can materially change the destination, especially:
 
 * ownership and source of truth;
 * lifecycle and state transitions;
 * failure and partial completion;
 * concurrency and ordering;
+* resource lifetime and cleanup;
 * limits and scale assumptions;
-* compatibility and externally observable behavior.
+* compatibility and externally observable behavior;
+* safety or correctness boundaries.
 
 Do not mechanically enumerate edge cases.
 
 Do not ask about:
 
 * implementation mechanics;
-* repository facts you can determine yourself;
+* repository facts that can be established directly;
 * inconsequential preferences;
 * speculative future cases;
 * choices whose alternatives produce effectively the same intended system.
 
-Challenge unexpectedly expensive designs before accepting them.
+Challenge unexpectedly expensive or generalized designs before accepting them.
 
 If a question is empirical rather than architectural, identify what evidence would settle it instead of treating it as a preference.
 
@@ -77,41 +84,30 @@ If a question is empirical rather than architectural, identify what evidence wou
 
 Alignment is complete only when the consequential decision frontier is empty.
 
-Do not stop because the design sounds reasonable or because the user agrees with your recommendations.
+Do not stop merely because the design sounds reasonable or the user accepts the recommendations.
 
 Before drafting, actively try to find:
 
-* a consequential assumption that was never decided;
-* two requirements that can conflict;
+* a consequential assumption never explicitly settled;
+* conflicting requirements;
 * an important term with multiple plausible meanings;
 * a simpler design satisfying the same requirements;
-* two materially different intended implementations that both satisfy the current understanding.
+* materially different intended systems that would both satisfy the current wording.
 
-If any survives, continue grilling.
+If any survives, continue alignment.
 
-Before drafting, ensure you know:
+Before drafting, ensure the destination establishes:
 
 * required behavior;
 * durable invariants;
 * important exclusions;
 * observable success criteria.
 
-Continue only if two competent engineers could still implement materially different intended systems while both believing they satisfied the requirements.
+Continue grilling if two competent engineers could still build materially different intended systems while both reasonably believing they satisfied the requirements.
 
 Do not make the spec exhaustive for its own sake.
 
-## Review output
-
-Optimize conversation output for user review, not documentation.
-
-During alignment:
-
-* ask only the current consequential question;
-* push back when warranted before moving on;
-* do not narrate repository investigation;
-* do not dump questionnaires;
-* do not repeatedly summarize settled decisions;
-* do not praise or rubber-stamp answers.
+## Draft
 
 When aligned, present one concise `DRAFT SPEC`.
 
@@ -119,7 +115,7 @@ Include only:
 
 * **Goal**
 * **Requirements**
-* **Invariants** — only durable constraints not obvious from requirements
+* **Invariants** — durable constraints not already obvious from the requirements
 * **Non-goals / rejected designs** — only decisions worth preserving
 * **Acceptance criteria**
 
@@ -127,23 +123,39 @@ Every statement must follow from repository evidence or an explicit user decisio
 
 Prefer short declarative statements.
 
-Do not restate the same decision across sections.
+Do not repeat the same decision across sections.
 
 The spec describes what must be true, not how to make it true.
 
 Exclude:
 
 * migration or sequencing;
-* file and symbol changes;
+* files or symbols to change;
 * implementation decomposition;
+* test implementation details;
 * incidental mechanics;
 * speculative future requirements;
-* rationale or discussion history unless necessary to disambiguate a decision.
+* rationale or discussion history unless needed to disambiguate the decision.
 
 Acceptance criteria must be capable of proving an implementation wrong.
 
-After the draft, ask only for approval or corrections.
+## Approval
 
-Write `plans/<project>/spec.md` after explicit approval.
+During alignment:
+
+* ask only the current consequential question;
+* push back before moving on when warranted;
+* do not narrate repository investigation;
+* do not dump questionnaires;
+* do not repeatedly summarize settled decisions;
+* do not praise or rubber-stamp answers.
+
+After presenting `DRAFT SPEC`, ask only for approval or corrections.
+
+Write:
+
+`plans/<project>/spec.md`
+
+only after explicit approval.
 
 Done when an engineer can judge whether an implementation reaches the intended destination without inventing consequential product or architectural decisions.

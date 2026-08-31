@@ -1,8 +1,0 @@
-interface:
-  display_name: "Dev Build with Supervision"
-  short_description: "Implement and verify one approved plan"
-  default_prompt: "Use $dev-build-supervised to implement one approved project plan with minimal rediscovery."
-
-policy:
-  allow_implicit_invocation: false
-
