@@ -1,7 +1,0 @@
-interface:
-  display_name: "Dev Spec"
-  short_description: "Define an approved engineering destination"
-  default_prompt: "Use $dev-spec to define the desired end state before implementation planning."
-
-policy:
-  allow_implicit_invocation: false

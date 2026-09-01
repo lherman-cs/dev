@@ -1,7 +1,0 @@
-interface:
-  display_name: "Dev Exec"
-  short_description: "Execute one approved plan under strict supervision"
-  default_prompt: "Use $dev-exec to execute one approved implementation plan through completion with supervised Luna builders, independent quality review, strong verification, and a final Conventional Commit."
-
-policy:
-  allow_implicit_invocation: false
