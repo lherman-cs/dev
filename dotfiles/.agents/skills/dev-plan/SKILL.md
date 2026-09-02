@@ -1,75 +1,167 @@
 ---
 name: dev-plan
-description: Define one bounded software project by resolving consequential ambiguity, choosing the minimum complete design, and writing a concise spec plus ordered implementation plans. Never implement production code.
+description: Define one bounded software project through clarification-first alignment, targeted repository evidence, and a minimum-complete design; then write a concise spec and ordered implementation plans. Never implement production code.
 ---
 
 # Dev Plan
 
-Plan one bounded project as a senior software engineer. Do not implement production code, review code, or spawn subagents. Write durable repository artifacts, then stop.
+Plan one bounded project as a senior software engineer. Do not implement production code, review code, or spawn subagents.
 
-## Standards
+Use repository artifacts as durable state. Do not depend on conversation history after planning ends.
 
-- Derive truth from the current request, repository instructions, architecture, code, tests, and real or intended callers.
-- Do not extrapolate consequential requirements. Classify unresolved claims as facts, decisions, assumptions, or risks.
-- Treat correctness, data integrity, and explicit security or privacy requirements as mandatory.
-- Among compliant designs, prefer: **Robustness → Simplicity → Scalability → Performance → Security**.
-- Prefer, in order: no change; existing behavior; the canonical owner; standard, native, or already-adopted mechanisms; an existing dependency; the least custom machinery that completely satisfies the requirement.
-- Require every new abstraction, layer, state, dependency, option, compatibility path, or extension point to satisfy a current requirement or enforce a proven boundary.
-- Keep one canonical owner and source of truth. Prefer small, deep, conventional interfaces.
-- Minimize context and tool use: inspect narrowly, batch related reads and searches, avoid repeated evidence, and record settled decisions in repository files.
-- Do not rely on compaction. Keep planning bounded enough to finish in one fresh session.
+## Engineering standard
 
-## 1. Establish the facts
+- Derive intended behavior from the user.
+- Derive current behavior and constraints from the repository.
+- Do not infer consequential requirements.
+- Correctness, data integrity, and explicit security or privacy requirements are mandatory.
+- Among otherwise valid designs, prioritize:
+  1. Robustness
+  2. Simplicity
+  3. Scalability
+  4. Performance
+  5. Security
+- Prefer, in order:
+  1. no change;
+  2. reuse existing behavior;
+  3. extend the canonical owner;
+  4. use standard, native, or already-adopted mechanisms;
+  5. reuse an existing dependency;
+  6. add the least custom machinery that completely satisfies the requirement.
+- Every new abstraction, layer, state, dependency, option, compatibility path, or extension point must satisfy a current requirement or enforce a proven boundary.
+- Keep one canonical owner and source of truth.
+- Prefer small, deep, conventional interfaces.
+- Preserve required validation, errors, lifecycle handling, cleanup, compatibility, maintainability, and operational evidence.
+- Minimize context and tool use. Planning should normally finish without compaction.
 
-Inspect only enough repository state to determine:
+## Decision filter
 
-- desired outcome and current behavior;
-- real callers or users;
-- ownership and affected boundaries;
-- constraints and explicit non-goals;
-- lifecycle and failure behavior;
-- compatibility requirements;
+Before asking a question or using a tool, determine whether its answer could change:
+
+- outcome;
+- scope or non-goals;
+- ownership;
+- public behavior or interface;
+- lifecycle or failure semantics;
+- compatibility or migration;
 - acceptance evidence;
-- assumptions capable of invalidating substantial work.
+- risk;
+- plan boundaries or order.
 
-Read relevant repository instructions and architecture before proposing ownership. Do not run broad or expensive validation unless it is the cheapest way to resolve an invalidating uncertainty.
+If not, do not ask or investigate it.
 
-## 2. Resolve consequential decisions
+## 1. Align before investigating
 
-Maintain a decision ledger covering outcome, non-goals, ownership, behavior, failure semantics, compatibility, acceptance, and accepted risks.
+The first response must be an alignment round unless the user explicitly asks to skip clarification.
 
-Until no consequential unknown remains:
+Before that response:
 
-- investigate the repository before asking questions it can answer;
-- ask independent unresolved decisions together in one numbered round;
-- defer questions that depend on unresolved answers;
-- give one recommended answer and the material tradeoff for each question;
-- do not repeat decisions already settled by the request or repository;
-- resolve routine implementation choices yourself;
-- do not invent future scale, compatibility, abstraction, configuration, or features;
-- after the user's answers, update the ledger and ask the next required round;
-- when the user corrects a premise, re-evaluate every dependent decision and plan.
+- do not broadly search the repository;
+- do not inspect unrelated files;
+- do not run tests or repository inventories;
+- use only the request, supplied repository instructions, and files explicitly referenced by the user.
 
-Do not finalize while a consequential requirement is merely inferred. When no consequential unknown remains, proceed without manufacturing more questions.
+State the current understanding briefly, then ask every independent unresolved consequential question in one numbered round.
 
-## 3. Choose the minimum complete design
+For each question:
 
-Design only what the accepted outcome requires.
+- explain what decision it controls;
+- recommend one answer when evidence or engineering judgment supports one;
+- state only the material tradeoff.
 
-- Reuse or extend the canonical implementation before creating a parallel mechanism.
+Rules:
+
+- Prefer 2–5 high-impact questions per round.
+- Defer questions that depend on unresolved answers.
+- Do not ask questions already answered by the request.
+- Do not ask routine implementation questions.
+- Do not replace product or architecture decisions with assumptions.
+- Do not manufacture questions when the contract is already complete.
+- A complete request still requires a concise proposed-contract confirmation.
+
+Extensive grilling means covering every consequential decision, not maximizing questions or turns.
+
+## 2. Investigate only decision-changing facts
+
+After the user establishes direction, identify the exact repository facts needed to validate it.
+
+Investigate in this order:
+
+1. files, symbols, or documents explicitly referenced by the user;
+2. applicable repository instructions and architecture;
+3. the canonical implementation and direct callers;
+4. focused tests describing current behavior;
+5. broader searches only when the narrow path is insufficient.
+
+Every investigation batch must answer a named open question and have a stop condition.
+
+Do not perform:
+
+- broad repository inventories;
+- unrestricted searches;
+- generated-tree inspection;
+- dependency exploration;
+- Git-history archaeology;
+- broad test suites;
+
+unless one is necessary to resolve a consequential uncertainty.
+
+Batch related searches and reads. Stop when sufficient evidence is found. Do not gather more evidence for an already-settled decision.
+
+Report only findings that change or constrain the proposed contract.
+
+## 3. Resolve the contract
+
+Maintain a decision ledger containing:
+
+- outcome;
+- users or callers;
+- required behavior;
+- ownership;
+- lifecycle and failure semantics;
+- compatibility or migration;
+- non-goals;
+- acceptance evidence;
+- assumptions and accepted risks.
+
+Classify each consequential claim as:
+
+- user decision;
+- repository fact;
+- engineering judgment;
+- verified assumption;
+- accepted risk.
+
+Ask another clarification round only when investigation exposes a new consequential decision.
+
+When the user corrects a premise, invalidate and re-evaluate every dependent conclusion and plan.
+
+Before writing files, present a concise proposed contract and ask the user to approve or correct it.
+
+Do not write plans while consequential requirements remain inferred.
+
+## 4. Choose the minimum-complete design
+
+Design only what the approved contract requires.
+
+- Extend the canonical implementation before creating a parallel mechanism.
 - Store policy and mutable state once; derive views instead of synchronizing copies.
-- Avoid speculative generality and migration machinery without a required migration.
-- Preserve required validation, errors, cleanup, security, concurrency correctness, compatibility, performance evidence, and maintainability.
+- Avoid speculative generality, configurability, compatibility, and future-proofing.
+- Fix root causes rather than designing around symptoms.
+- Require each new mechanism to justify why it must exist now.
 - For a risky new boundary or integration, make the earliest practical milestone the smallest end-to-end slice that can disprove it.
-- Match evidence to the real contract; internal tests cannot alone prove an external boundary.
+- Match verification to the real contract. Internal tests cannot alone prove an external boundary.
+- Prefer fewer concepts and failure modes, not fewer characters.
 
-## 4. Bound the work
+## 5. Bound the project
 
-One project has one primary outcome and one final acceptance boundary. Split outcomes that remain independently useful or independently acceptable.
+One project has one primary outcome and one final acceptance boundary.
+
+Split outcomes that are independently useful, shippable, or acceptable.
 
 Each numbered plan must produce:
 
-- one coherent, usable result;
+- one coherent and usable result;
 - one focused build session;
 - one coherent commit;
 - one independent review;
@@ -77,7 +169,7 @@ Each numbered plan must produce:
 
 Keep later plans coarse. Specify outcomes, consequential constraints, dependencies, and verification—not speculative files, helpers, types, or abstractions.
 
-## 5. Write the project
+## 6. Write the project
 
 Create `plans/<project>/spec.md` with only applicable sections:
 
@@ -88,26 +180,33 @@ Create `plans/<project>/spec.md` with only applicable sections:
 - **Acceptance**
 - **Accepted risks**
 
-Create ordered plans at `plans/<project>/<NN>-<outcome>.md` using:
+Create ordered plans at:
 
-```markdown
+`plans/<project>/<NN>-<outcome>.md`
+
+using:
+
 # <Milestone>
 
 ## Outcome
+
 <one coherent result>
 
 ## Scope
+
 <required behavior and affected boundaries>
 
 ## Constraints
+
 <only consequential constraints>
 
 ## Verification
+
 <evidence that proves the result>
 
 ## Dependencies
+
 <only when required>
-```
 
 Every plan must be executable from repository state and durable documents without this conversation.
 
@@ -116,10 +215,18 @@ Every plan must be executable from repository state and durable documents withou
 Before finishing:
 
 - remove unnecessary scope and speculative machinery;
-- confirm ownership and sources of truth are explicit;
+- confirm every consequential decision is explicit or repository-proven;
+- confirm ownership and sources of truth are clear;
 - confirm invalidating assumptions are resolved, proved early, or accepted risks;
-- confirm each plan has one acceptance boundary and fits one build session;
-- confirm the plans collectively deliver the project outcome;
+- confirm each plan has one acceptance boundary and fits one focused build session;
+- confirm the plans collectively deliver the approved outcome;
 - confirm no production implementation was performed.
 
-Report the outcome, consequential decisions, files written, and exact first plan path. Then stop.
+Report only:
+
+- approved outcome;
+- consequential decisions and accepted risks;
+- files written;
+- exact first plan path.
+
+Then stop.
