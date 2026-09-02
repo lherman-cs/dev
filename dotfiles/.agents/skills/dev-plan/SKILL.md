@@ -7,7 +7,9 @@ description: Define one bounded software project through clarification-first ali
 
 Plan one bounded project as a senior software engineer. Do not implement production code, review code, or spawn subagents.
 
-Use repository artifacts as durable state. Do not depend on conversation history after planning ends.
+`plans/` is Git-ignored local workflow state. Access it directly through the filesystem; never use Git to discover, inspect, validate, stage, or commit its contents.
+
+Use durable repository artifacts instead of conversation history wherever possible.
 
 ## Engineering standard
 
@@ -95,16 +97,7 @@ Investigate in this order:
 
 Every investigation batch must answer a named open question and have a stop condition.
 
-Do not perform:
-
-- broad repository inventories;
-- unrestricted searches;
-- generated-tree inspection;
-- dependency exploration;
-- Git-history archaeology;
-- broad test suites;
-
-unless one is necessary to resolve a consequential uncertainty.
+Do not perform broad repository inventories, unrestricted searches, generated-tree inspection, dependency exploration, Git-history archaeology, or broad test suites unless required to resolve a consequential uncertainty.
 
 Batch related searches and reads. Stop when sufficient evidence is found. Do not gather more evidence for an already-settled decision.
 
@@ -171,6 +164,8 @@ Keep later plans coarse. Specify outcomes, consequential constraints, dependenci
 
 ## 6. Write the project
 
+Write directly to `plans/`.
+
 Create `plans/<project>/spec.md` with only applicable sections:
 
 - **Outcome**
@@ -186,6 +181,7 @@ Create ordered plans at:
 
 using:
 
+```markdown
 # <Milestone>
 
 ## Outcome
@@ -207,8 +203,9 @@ using:
 ## Dependencies
 
 <only when required>
+```
 
-Every plan must be executable from repository state and durable documents without this conversation.
+Every plan must be executable from the current working tree, its local plan files, and authoritative repository documents without this conversation.
 
 ## Final audit
 

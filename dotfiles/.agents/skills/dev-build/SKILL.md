@@ -7,16 +7,30 @@ description: Implement exactly one approved numbered plan quickly, robustly, and
 
 Implement exactly one numbered plan as a senior software engineer. Do not redesign the project, review another commit, continue into another plan, or spawn subagents.
 
-## Standards
+`plans/` is Git-ignored local workflow state. Access it directly through the filesystem; never use Git to discover, inspect, validate, stage, or commit its contents.
+
+## Engineering standard
 
 - Derive truth from the exact plan, its spec, the current request, repository instructions, architecture, code, tests, and real or intended callers.
 - Treat correctness, data integrity, and explicit security or privacy requirements as mandatory.
-- Among compliant implementations, prefer: **Robustness → Simplicity → Scalability → Performance → Security**.
-- Prefer, in order: no change; existing behavior; the canonical owner; standard, native, or already-adopted mechanisms; an existing dependency; the least custom machinery that completely satisfies the requirement.
-- Require every new abstraction, layer, state, dependency, option, compatibility path, or extension point to satisfy a current requirement or enforce a proven boundary.
-- Keep one canonical owner and source of truth. Prefer direct data flow, small deep interfaces, conventional names, and obvious control flow.
+- Among otherwise valid implementations, prioritize:
+  1. Robustness
+  2. Simplicity
+  3. Scalability
+  4. Performance
+  5. Security
+- Prefer, in order:
+  1. no change;
+  2. reuse existing behavior;
+  3. extend the canonical owner;
+  4. use standard, native, or already-adopted mechanisms;
+  5. reuse an existing dependency;
+  6. add the least custom machinery that completely satisfies the requirement.
+- Every new abstraction, layer, state, dependency, option, compatibility path, or extension point must satisfy a current requirement or enforce a proven boundary.
+- Keep one canonical owner and source of truth.
+- Prefer direct data flow, small deep interfaces, conventional names, and obvious control flow.
 - Fix root causes, not symptoms.
-- Minimize context and tool use: batch related work, avoid repeated reads and commands, keep diagnostics concise, and stay within one plan.
+- Minimize context and tool use. Batch related work, avoid repeated evidence, and keep diagnostics concise.
 - Do not rely on compaction. If the work no longer fits one bounded outcome, stop and return to planning.
 
 ## 1. Establish the contract
@@ -25,11 +39,13 @@ Require one exact `plans/<project>/<NN>-*.md` path. Reject an omitted path, dire
 
 Before editing:
 
-1. Read the exact plan and sibling `spec.md`.
+1. Read the exact plan and sibling `spec.md` directly from `plans/`.
 2. Read only relevant repository instructions and architecture.
-3. Inspect version-control state and preserve unrelated work.
+3. Inspect version-control state and preserve unrelated production work.
 4. Trace the relevant callers, canonical owner, data flow, lifecycle, failure paths, cleanup, and existing evidence.
 5. Derive a private acceptance checklist.
+
+If the plan path does not exist, stop and report it.
 
 If repository reality or a new user correction materially contradicts the plan or requires a consequential new decision, stop and return to `dev-plan`. Do not silently redesign during implementation.
 
@@ -78,7 +94,9 @@ While iterating:
 5. Do not rerun a successful expensive check on an unchanged relevant tree.
 6. Run required final validation once on the unchanged final tree.
 
-Never weaken tests, invariants, thresholds, or requirements merely to get green. Treat a failure as pre-existing only when the starting state or durable evidence proves it.
+Never weaken tests, invariants, thresholds, or requirements merely to get green.
+
+Treat a failure as pre-existing only when the starting state or durable evidence proves it.
 
 ## 5. Audit the result
 
@@ -90,19 +108,38 @@ Never weaken tests, invariants, thresholds, or requirements merely to get green.
 
 ### Simplicity and readability
 
-Read every human-written changed line. Remove unnecessary abstractions, wrappers, indirection, duplicated or derivable state, dependencies, configuration, compatibility paths, public surface, comments compensating for unclear code, and dead or displaced paths.
+Read every human-written changed line.
 
-Confirm every remaining mechanism satisfies a current requirement or proven boundary. Keep the code obvious, robust, conventional, and maintainable.
+Remove unnecessary:
 
-Inspect the complete scoped diff and run `git diff --check` or the repository equivalent.
+- abstractions;
+- wrappers;
+- indirection;
+- duplicated or derivable state;
+- dependencies;
+- configuration;
+- compatibility paths;
+- public surface;
+- comments compensating for unclear code;
+- dead or displaced paths.
+
+Confirm every remaining mechanism satisfies a current requirement or proven boundary.
+
+Keep the code obvious, robust, conventional, and maintainable.
+
+Inspect the complete scoped production diff and run `git diff --check` or the repository equivalent.
 
 ## 6. Commit and stop
 
-If code changed, create one coherent Conventional Commit containing only this plan. Include:
+If production code changed, create one coherent Conventional Commit containing only this plan's implementation.
+
+Include:
 
 `Dev-Plan: plans/<project>/<NN>-<outcome>.md`
 
-Inspect the final commit and worktree. Report only:
+Inspect the final commit and worktree.
+
+Report only:
 
 - **Changed**
 - **Verified**
