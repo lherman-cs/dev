@@ -1,222 +1,125 @@
 ---
 name: dev-plan
-description: Define one bounded software project with the user and write a concise spec plus coarse implementation plans. Use before substantial or architectural work, or when implementation evidence invalidates an existing plan.
+description: Define one bounded software project by resolving consequential ambiguity, choosing the minimum complete design, and writing a concise spec plus ordered implementation plans. Never implement production code.
 ---
 
 # Dev Plan
 
-Plan with the user as a senior software engineer.
+Plan one bounded project as a senior software engineer. Do not implement production code, review code, or spawn subagents. Write durable repository artifacts, then stop.
 
-This skill runs in a dedicated planning session. Do not implement production
-code, spawn subagents, or continue into implementation. The repository is the
-durable source of truth; this conversation is temporary working context.
+## Standards
 
-## Establish the project
+- Derive truth from the current request, repository instructions, architecture, code, tests, and real or intended callers.
+- Do not extrapolate consequential requirements. Classify unresolved claims as facts, decisions, assumptions, or risks.
+- Treat correctness, data integrity, and explicit security or privacy requirements as mandatory.
+- Among compliant designs, prefer: **Robustness → Simplicity → Scalability → Performance → Security**.
+- Prefer, in order: no change; existing behavior; the canonical owner; standard, native, or already-adopted mechanisms; an existing dependency; the least custom machinery that completely satisfies the requirement.
+- Require every new abstraction, layer, state, dependency, option, compatibility path, or extension point to satisfy a current requirement or enforce a proven boundary.
+- Keep one canonical owner and source of truth. Prefer small, deep, conventional interfaces.
+- Minimize context and tool use: inspect narrowly, batch related reads and searches, avoid repeated evidence, and record settled decisions in repository files.
+- Do not rely on compaction. Keep planning bounded enough to finish in one fresh session.
 
-Before broad investigation:
+## 1. Establish the facts
 
-1. State the intended deliverable in one sentence.
-2. Inspect repository and Git state enough to establish the relevant baseline.
-3. Read the ownership README and architecture documents for every directly
-   affected module.
-4. Decide whether the request is one project with one final acceptance
-   boundary.
+Inspect only enough repository state to determine:
 
-A project may contain several implementation milestones, but they must all be
-necessary parts of one primary outcome.
+- desired outcome and current behavior;
+- real callers or users;
+- ownership and affected boundaries;
+- constraints and explicit non-goals;
+- lifecycle and failure behavior;
+- compatibility requirements;
+- acceptance evidence;
+- assumptions capable of invalidating substantial work.
 
-If the request contains independent outcomes with their own acceptance
-boundaries, split them into separate projects rather than creating one large
-plan tree.
+Read relevant repository instructions and architecture before proposing ownership. Do not run broad or expensive validation unless it is the cheapest way to resolve an invalidating uncertainty.
 
-Do not run broad validation suites while planning unless their result is
-necessary to settle a consequential design question.
+## 2. Resolve consequential decisions
 
-## Establish the design
+Maintain a decision ledger covering outcome, non-goals, ownership, behavior, failure semantics, compatibility, acceptance, and accepted risks.
 
-Investigate only enough to make consequential decisions correctly.
+Until no consequential unknown remains:
 
-Distinguish:
+- investigate the repository before asking questions it can answer;
+- ask independent unresolved decisions together in one numbered round;
+- defer questions that depend on unresolved answers;
+- give one recommended answer and the material tradeoff for each question;
+- do not repeat decisions already settled by the request or repository;
+- resolve routine implementation choices yourself;
+- do not invent future scale, compatibility, abstraction, configuration, or features;
+- after the user's answers, update the ledger and ask the next required round;
+- when the user corrects a premise, re-evaluate every dependent decision and plan.
 
-* repository facts;
-* external facts;
-* user decisions;
-* engineering judgments;
-* unresolved assumptions.
+Do not finalize while a consequential requirement is merely inferred. When no consequential unknown remains, proceed without manufacturing more questions.
 
-Treat existing ownership READMEs, architecture documents, and explicitly
-accepted design decisions as authoritative unless repository evidence shows
-they are stale or contradictory.
+## 3. Choose the minimum complete design
 
-Verify any premise whose failure would make substantial implementation
-disposable. Prefer:
+Design only what the accepted outcome requires.
 
-1. current repository behavior;
-2. primary upstream documentation or source;
-3. a narrow executable probe;
-4. inference only when the consequence is small.
+- Reuse or extend the canonical implementation before creating a parallel mechanism.
+- Store policy and mutable state once; derive views instead of synchronizing copies.
+- Avoid speculative generality and migration machinery without a required migration.
+- Preserve required validation, errors, cleanup, security, concurrency correctness, compatibility, performance evidence, and maintainability.
+- For a risky new boundary or integration, make the earliest practical milestone the smallest end-to-end slice that can disprove it.
+- Match evidence to the real contract; internal tests cannot alone prove an external boundary.
 
-Challenge weak designs. Recommend the strongest simple option rather than
-merely recording every proposed idea.
+## 4. Bound the work
 
-Ask the user only about consequential choices that cannot be responsibly
-resolved from repository evidence or ordinary engineering judgment. Ask one
-such question at a time.
+One project has one primary outcome and one final acceptance boundary. Split outcomes that remain independently useful or independently acceptable.
 
-Do not introduce speculative requirements for future scale, portability,
-compatibility, abstraction, or cleanup unless the requested outcome requires
-them.
+Each numbered plan must produce:
 
-Before finalizing the design, actively try to falsify it.
+- one coherent, usable result;
+- one focused build session;
+- one coherent commit;
+- one independent review;
+- evidence that can prove the result complete or wrong.
 
-A consequential unresolved premise must become either:
+Keep later plans coarse. Specify outcomes, consequential constraints, dependencies, and verification—not speculative files, helpers, types, or abstractions.
 
-* a resolved decision;
-* an explicit accepted risk; or
-* an earlier proof milestone.
+## 5. Write the project
 
-## Prefer early vertical evidence
+Create `plans/<project>/spec.md` with only applicable sections:
 
-Order implementation so the earliest practical milestone proves the riskiest
-boundary capable of invalidating later work.
+- **Outcome**
+- **Required behavior**
+- **Design / invariants**
+- **Non-goals**
+- **Acceptance**
+- **Accepted risks**
 
-When a project introduces a new protocol, binding, runtime, interoperability
-boundary, public API, storage model, concurrency model, or external
-integration, prefer a small end-to-end walking slice before broad
-implementation.
+Create ordered plans at `plans/<project>/<NN>-<outcome>.md` using:
 
-Do not build several architectural layers on top of an unproven boundary.
-
-Internal tests prove internal behavior. When the actual contract is browser,
-network, protocol, generated binding, platform, or third-party
-interoperability, require the narrowest independent or end-to-end evidence that
-proves that contract.
-
-## Size implementation plans for fresh build sessions
-
-Each numbered plan is one coherent implementation outcome for:
-
-* one fresh `$dev-build` session;
-* one independently reviewable commit;
-* one fresh `$dev-review` session.
-
-Plans are coarse engineering outcomes, not microtasks.
-
-A plan is too large when it combines several independently testable behavioral
-boundaries, requires several unrelated migrations, or is likely to need a long
-sequence of largely independent implementation/debugging loops.
-
-A plan is too small when it describes an individual function, type, file,
-compiler fix, or mechanical step that has no useful acceptance boundary by
-itself.
-
-Prefer vertical slices that leave the repository in a coherent state.
-
-The expected normal case is that one plan can be implemented and verified
-without context compaction. Do not enlarge a plan merely to reduce the number
-of commits.
-
-Do not encode speculative implementation details for later milestones. Future
-plans should state their required outcome, constraints, and evidence. The
-current repository after earlier milestones will supply their implementation
-context.
-
-If implementation later disproves a future plan assumption, `$dev-plan` should
-revise the remaining plans rather than forcing the stale design through
-`$dev-build`.
-
-## Write the project
-
-Create:
-
-`plans/<project>/spec.md`
-
-with only:
-
-* **Outcome** — the single concrete final deliverable.
-* **Required behavior** — externally or architecturally significant behavior
-  that must be true.
-* **Design / invariants** — consequential ownership, lifecycle, protocol, API,
-  failure, or architecture decisions.
-* **Non-goals** — nearby work intentionally excluded.
-* **Acceptance** — evidence that proves the complete project correct.
-* **Accepted risks** — unresolved consequential assumptions explicitly
-  accepted by the user.
-
-Omit empty sections.
-
-Do not include discussion history, generic engineering advice, implementation
-choreography, or facts already adequately owned by a repository architecture
-document.
-
-When a design decision is durable beyond this project, update the appropriate
-tracked README or architecture document instead of relying only on the plan.
-
-Then create ordered coarse plans:
-
-`plans/<project>/01-<outcome>.md`
-`plans/<project>/02-<outcome>.md`
-
-and so on.
-
-Use this format:
-
+```markdown
 # <Milestone>
 
 ## Outcome
-
-<one independently reviewable result that becomes true>
+<one coherent result>
 
 ## Scope
-
-* required behavior and important affected surfaces
-* migration or integration boundary when relevant
+<required behavior and affected boundaries>
 
 ## Constraints
-
-* only consequential ownership, lifecycle, protocol, compatibility, API, or
-  failure semantics specific to this milestone
+<only consequential constraints>
 
 ## Verification
-
-* focused evidence that can prove the outcome wrong or complete
-* broader integration gates only when this milestone needs them
+<evidence that proves the result>
 
 ## Dependencies
+<only when required>
+```
 
-* earlier plans or external prerequisites only when required
-
-Every plan must be understandable from the current repository, the project
-spec, and its referenced architecture documents without requiring the planning
-conversation.
+Every plan must be executable from repository state and durable documents without this conversation.
 
 ## Final audit
 
 Before finishing:
 
-1. Re-read the project outcome and non-goals.
-2. Confirm the design does not contradict affected ownership documentation.
-3. Confirm the riskiest consequential assumptions are either proven early or
-   explicitly accepted.
-4. Confirm each plan has one coherent acceptance boundary.
-5. Confirm no plan depends on conversation-only knowledge.
-6. Remove speculative implementation detail that later repository state should
-   decide.
-7. Confirm the ordered plans collectively satisfy project acceptance without
-   adding unrelated work.
+- remove unnecessary scope and speculative machinery;
+- confirm ownership and sources of truth are explicit;
+- confirm invalidating assumptions are resolved, proved early, or accepted risks;
+- confirm each plan has one acceptance boundary and fits one build session;
+- confirm the plans collectively deliver the project outcome;
+- confirm no production implementation was performed.
 
-Do not run repository-wide test suites solely to validate that markdown plans
-were written.
-
-## Handoff
-
-Report only:
-
-* the project outcome;
-* consequential decisions or accepted risks;
-* created or updated spec/plan/architecture files;
-* the exact first numbered plan to execute.
-
-Then stop.
-
-Do not implement the first plan in this session.
+Report the outcome, consequential decisions, files written, and exact first plan path. Then stop.

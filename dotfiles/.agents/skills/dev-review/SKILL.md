@@ -1,230 +1,104 @@
 ---
 name: dev-review
-description: Independently review one completed plan and commit in a fresh session, fix confirmed material findings, verify the result, and leave one reviewed commit. Use after dev-build
+description: Independently review one completed plan and revision for contract completeness, correctness, robustness, ownership, simplicity, readability, and evidence. Fix only narrow in-scope issues, then stop.
 ---
 
 # Dev Review
 
-Review one completed implementation as an independent senior engineer.
+Review one completed implementation independently as a senior software engineer. Judge the contract, repository, diff, and evidence—not the builder's reasoning. Do not begin new work or spawn subagents.
 
-This skill runs in a fresh dedicated review session. Do not inherit or
-reconstruct the builder's reasoning. Judge the committed result from the
-repository, contract, evidence, and diff.
+## Standards
 
-Do not spawn subagents. Do not begin the next numbered plan.
+- Derive truth from the exact plan, its spec, the current request, repository instructions, architecture, code, tests, and real or intended callers.
+- Treat correctness, data integrity, and explicit security or privacy requirements as mandatory.
+- Among compliant implementations, prefer: **Robustness → Simplicity → Scalability → Performance → Security**.
+- Require every abstraction, layer, state, dependency, option, compatibility path, or extension point to satisfy a current requirement or enforce a proven boundary.
+- Keep one canonical owner and source of truth.
+- Review correctness before simplification.
+- Minimize context and tool use: start from the diff, inspect unchanged code only for concrete questions, batch related searches, and keep diagnostics concise.
 
-## Establish the review target
+## 1. Establish the contract
 
 Resolve:
 
-1. the commit to review, normally `HEAD`;
-2. the numbered plan implemented by that commit;
-3. the sibling project `spec.md`;
-4. ownership README and architecture documentation for directly affected
-   modules.
+1. the revision, normally `HEAD`;
+2. its exact plan from the `Dev-Plan:` trailer or an explicit path;
+3. the sibling spec;
+4. relevant repository instructions and architecture.
 
-Inspect `git status` before making changes.
+Do not guess the plan. Inspect version-control state and preserve unrelated work.
 
-Preserve unrelated user work.
+Begin with the complete human-written diff. Inspect generated output only for contract or reproducibility questions. Inspect unchanged surrounding code only when required to evaluate a specific risk. If the revision is too broad to review reliably as one acceptance boundary, report a blocker and require it to be split.
 
-Begin with the committed diff rather than broad repository exploration.
+## 2. Review in order
 
-The goal is not to reproduce the implementation process. The goal is to decide
-whether the resulting artifact is correct, complete, simple, and faithful to
-its contract.
+### Contract completeness
 
-## Review independently
+Confirm every outcome, constraint, and verification requirement is delivered. Identify partial migrations, missing callers, and claims unsupported by evidence.
 
-Assume neither that the implementation is correct nor that it is wrong.
+### Correctness and robustness
 
-Try to falsify it.
+Inspect relevant success and failure behavior, validation boundaries, lifecycle and cleanup, cancellation, retries, idempotency, stale or reordered operations, concurrency, resource ownership, compatibility, data integrity, security, and measured scalability or performance requirements.
 
-Review in this priority order.
+### Ownership and architecture
 
-### 1. Contract completeness
+Reject responsibility in the wrong owner, duplicated policy or state, hidden coupling, parallel implementations, unnecessary public surface, and violations of authoritative repository constraints. If the approved plan itself requires avoidable or contradictory architecture, report a blocker and return it to planning.
 
-Compare the final tree directly against:
+### Minimum complete design
 
-* the numbered plan outcome;
-* required scope;
-* constraints;
-* verification requirements;
-* applicable project-spec behavior and invariants.
+Challenge every added abstraction, wrapper, adapter, state value, cache, dependency, option, compatibility path, and extension point. Prefer deletion, reuse, derivation, inlining, or moving behavior to its canonical owner.
 
-Look for work that was claimed but not actually implemented.
+Do not optimize for fewer characters. Never remove required robustness or clarity.
 
-Passing tests are not sufficient evidence of completeness.
+### Readability and usability
 
-### 2. Architecture and ownership
+Confirm APIs, names, control flow, errors, comments, and module structure are conventional, locally understandable, and difficult to misuse.
 
-Check that the implementation follows authoritative repository boundaries.
+### Evidence quality
 
-Look for:
+Confirm tests and validation would fail if the claimed behavior broke, prove the real contract, use the real external boundary when required, and avoid unnecessary fixtures, mocks, sleeps, and implementation coupling.
 
-* responsibility in the wrong module;
-* duplicated policy;
-* hidden shared state;
-* platform logic leaking across boundaries;
-* generated-vs-handwritten ownership violations;
-* lifecycle or resource ownership mistakes;
-* stale paths left active after migration;
-* public API expansion not required by the contract.
+## 3. Classify findings
 
-Do not reopen a settled architectural decision merely because another design
-is aesthetically preferable.
+| Severity | Meaning |
+|---|---|
+| `BLOCKER` | The result cannot be accepted without changing the approved contract, architecture, acceptance boundary, or a fundamental correctness, security, or data-integrity decision. |
+| `ISSUE` | A concrete in-scope defect or unnecessary complexity must be fixed before acceptance. |
+| `NOTE` | A useful non-blocking observation. It does not require a code change in this review. |
 
-Raise architecture findings only when the implementation violates the accepted
-contract, creates a concrete correctness/maintenance problem, or repository
-evidence shows the contract itself is wrong.
+Do not create findings from personal taste, speculative improvements, or unrelated cleanup.
 
-### 3. Correctness and failure semantics
+Fix only clear `ISSUE` findings whose correction stays within the approved plan. Return `BLOCKER` findings to `dev-plan`. Amend the target only when it is safe and unshared; otherwise follow repository policy or create a separate correction commit. Preserve the `Dev-Plan:` trailer.
 
-Inspect behavior on both success and failure paths.
+## 4. Verify
 
-Pay particular attention where relevant to:
+After any fixes:
 
-* stale or duplicate events;
-* ordering;
-* cancellation;
-* retries;
-* partial failure;
-* cleanup;
-* resource lifetime;
-* idempotency;
-* boundary validation;
-* concurrency;
-* unsafe code;
-* protocol state;
-* malformed external input;
-* error propagation.
+- re-check every acceptance item;
+- inspect the complete final diff;
+- confirm every remaining mechanism is necessary;
+- run focused checks and required final validation once;
+- confirm no `BLOCKER` or `ISSUE` remains.
 
-Trace only the call sites needed to evaluate a concrete risk.
+## 5. Report and stop
 
-### 4. Simplicity
+Begin with a plain-language summary and one verdict:
 
-Look for unnecessary implementation surface:
+- `ACCEPTED`
+- `CORRECTED AND ACCEPTED`
+- `REQUIRES REPLANNING`
 
-* abstractions with only speculative value;
-* duplicated state;
-* redundant compatibility layers;
-* handwritten glue that should be generated;
-* unnecessary dependencies;
-* dead displaced implementation;
-* complexity not required by the plan.
+Then report findings as:
 
-Prefer removing unnecessary machinery over adding another layer around it.
+| Severity | Location | Finding | Impact | Required action |
+|---|---|---|---|---|
 
-Do not turn review into an unrelated cleanup project.
+Include blockers and issues. Include notes only when they materially help the user understand the change; notes never block acceptance. If there are no blockers or issues, state `No material findings.`
 
-### 5. Evidence quality
+Follow with:
 
-Evaluate whether the tests and validation actually prove the claimed behavior.
-
-Ask:
-
-* does the test exercise the real boundary?
-* would the test fail if the important behavior were broken?
-* is an internal mock being used where independent interoperability is the
-  actual contract?
-* are failure and cleanup paths meaningfully covered?
-* was an oracle weakened to accommodate the implementation?
-
-Do not demand exhaustive testing when narrow evidence convincingly proves the
-plan.
-
-## Keep review targeted
-
-Start from:
-
-`git show --stat`
-`git show`
-
-or repository equivalents, then inspect surrounding code only where the diff
-creates a concrete question.
-
-Prefer several focused searches or reads over broad repository dumps.
-
-Keep command output concise.
-
-Do not rerun the builder's entire investigation.
-
-Do not spend tokens proving obvious unchanged code correct.
-
-Do not investigate future plans or unrelated existing defects except when they
-directly affect the validity of this commit.
-
-## Classify findings
-
-Only material findings should block acceptance.
-
-A material finding is one that affects:
-
-* correctness;
-* required behavior;
-* architecture or ownership;
-* reliability;
-* security;
-* interoperability;
-* significant unnecessary complexity;
-* the validity of acceptance evidence.
-
-Do not churn code for naming taste, stylistic preference, speculative
-generalization, or unrelated cleanup when repository conventions already
-accept the implementation.
-
-For each suspected material issue, verify it against concrete repository
-evidence before changing code.
-
-## Fix confirmed findings
-
-When a material finding has a clear correct fix within the reviewed plan's
-scope, fix it in this review session.
-
-Keep corrections tightly scoped to the reviewed plan.
-
-Add or update regression evidence when needed.
-
-If fixing a finding requires a consequential architecture decision outside the
-approved plan, do not invent that decision. Report the contradiction and
-return the project to `$dev-plan`.
-
-Do not begin adjacent improvements while fixing review findings.
-
-## Verify the reviewed result
-
-After all confirmed material findings are fixed:
-
-1. Re-read the plan and relevant project invariants.
-2. Re-inspect the final scoped diff.
-3. Run the narrowest tests needed for review fixes.
-4. Run the plan's required final validation on the unchanged tree.
-5. Run broader repository gates once when required.
-6. Confirm no material review finding remains.
-7. Confirm unrelated user changes were preserved.
-
-Do not repeatedly run successful gates without a concrete reason.
-
-## Finalize the commit
-
-If review made changes, amend the reviewed commit when it is safe and
-consistent with the requested workflow.
-
-Do not create a second feature commit merely to record review corrections to
-the same plan unless repository policy requires it.
-
-If no material changes are needed, leave the commit unchanged.
-
-## Handoff
-
-Report only:
-
-* **Result** — accepted, corrected and accepted, or requires replanning.
-* **Findings** — material findings only.
-* **Verified** — final evidence.
-* **Commit** — final hash and subject.
-* **Notes** — only material remaining risks or known external baseline
-  failures.
+- **Verified**
+- **Commit**
+- **Notes**, only when material
 
 Then stop.
-
-Do not begin the next numbered plan.

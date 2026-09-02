@@ -1,7 +1,7 @@
 interface:
   display_name: "Dev Plan"
-  short_description: "Design a bounded project and implementation plans"
-  default_prompt: "Use $dev-plan to define this project, resolve consequential design decisions, and write the spec and numbered plans."
+  short_description: "Define one bounded project and its implementation plans"
+  default_prompt: "Use $dev-plan to resolve consequential ambiguity, define one bounded project, write its spec and ordered plans, then stop."
 
 policy:
   allow_implicit_invocation: false

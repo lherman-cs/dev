@@ -1,7 +1,7 @@
 interface:
   display_name: "Dev Review"
-  short_description: "Independently review and verify one completed plan"
-  default_prompt: "Use $dev-review to independently review the specified commit against its plan and project contract, fix material findings, verify it, and stop."
+  short_description: "Independently review one plan and commit"
+  default_prompt: "Use $dev-review to independently review one commit against its exact plan, fix only in-scope material findings, verify it, then stop."
 
 policy:
   allow_implicit_invocation: false
