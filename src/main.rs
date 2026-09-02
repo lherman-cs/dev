@@ -1971,7 +1971,6 @@ fn match_json_path(value: &Value, path: &str, pattern: &Regex) -> bool {
     }
 }
 
-
 fn load_agent_config() -> Result<AgentConfig> {
     toml::from_str::<AgentConfig>(AGENT_CONFIG_TOML).context("Failed to parse embedded agent.toml")
 }
@@ -2017,10 +2016,12 @@ fn agent_profile<'a>(
     config: &'a AgentConfig,
     profile: AgentProfileName,
 ) -> Result<&'a AgentProfileConfig> {
-    config
-        .profiles
-        .get(profile.as_str())
-        .ok_or_else(|| anyhow!("Embedded agent config is missing profile '{}'", profile.as_str()))
+    config.profiles.get(profile.as_str()).ok_or_else(|| {
+        anyhow!(
+            "Embedded agent config is missing profile '{}'",
+            profile.as_str()
+        )
+    })
 }
 
 fn agent_codex_overrides(
@@ -2287,11 +2288,19 @@ fn read_rollout_identity(path: &Path) -> Result<RolloutIdentity> {
 
     for (line_number, line) in reader.lines().take(64).enumerate() {
         let line = line.with_context(|| {
-            format!("Failed reading {} at line {}", path.display(), line_number + 1)
+            format!(
+                "Failed reading {} at line {}",
+                path.display(),
+                line_number + 1
+            )
         })?;
         let line = line.trim_start_matches('\u{feff}');
         let value: Value = serde_json::from_str(line).with_context(|| {
-            format!("Invalid JSON in {} at line {}", path.display(), line_number + 1)
+            format!(
+                "Invalid JSON in {} at line {}",
+                path.display(),
+                line_number + 1
+            )
         })?;
         if value.get("type").and_then(Value::as_str) != Some("session_meta") {
             continue;
@@ -2405,7 +2414,10 @@ fn rollout_index() -> Result<HashMap<String, RolloutIdentity>> {
                     index.insert(identity.thread_id.clone(), identity);
                 }
             }
-            Err(error) => warn!("Skipping unreadable Codex rollout {}: {error:#}", path.display()),
+            Err(error) => warn!(
+                "Skipping unreadable Codex rollout {}: {error:#}",
+                path.display()
+            ),
         }
     }
 
@@ -2568,7 +2580,10 @@ fn truncate_one_line(value: &str, max_chars: usize) -> String {
     if normalized.chars().count() <= max_chars {
         return normalized;
     }
-    let mut out = normalized.chars().take(max_chars.saturating_sub(1)).collect::<String>();
+    let mut out = normalized
+        .chars()
+        .take(max_chars.saturating_sub(1))
+        .collect::<String>();
     out.push('…');
     out
 }
@@ -2601,7 +2616,11 @@ fn extract_user_text(payload: &Value) -> Option<String> {
             }
         }
     }
-    if parts.is_empty() { None } else { Some(parts.join(" ")) }
+    if parts.is_empty() {
+        None
+    } else {
+        Some(parts.join(" "))
+    }
 }
 
 fn extract_skill_names(value: &Value, output: &mut HashSet<String>) {
@@ -2613,9 +2632,15 @@ fn extract_skill_names(value: &Value, output: &mut HashSet<String>) {
                         output.insert(name.to_owned());
                     }
                 }
-                for child in map.values() { walk(child, output); }
+                for child in map.values() {
+                    walk(child, output);
+                }
             }
-            Value::Array(items) => for child in items { walk(child, output); },
+            Value::Array(items) => {
+                for child in items {
+                    walk(child, output);
+                }
+            }
             _ => {}
         }
     }
@@ -2624,7 +2649,9 @@ fn extract_skill_names(value: &Value, output: &mut HashSet<String>) {
 
 fn extract_plan_paths(text: &str, output: &mut HashSet<String>) {
     if let Ok(re) = Regex::new(r"plans/[A-Za-z0-9._/-]+\.md") {
-        for m in re.find_iter(text) { output.insert(m.as_str().to_owned()); }
+        for m in re.find_iter(text) {
+            output.insert(m.as_str().to_owned());
+        }
     }
 }
 
@@ -2638,13 +2665,18 @@ fn command_family_from_payload(payload: &Value) -> Option<String> {
 }
 
 fn command_families_from_execution(value: &Value) -> Vec<String> {
-    let item = value.get("payload").and_then(|p| p.get("item")).unwrap_or(&Value::Null);
+    let item = value
+        .get("payload")
+        .and_then(|p| p.get("item"))
+        .unwrap_or(&Value::Null);
     let mut out = Vec::new();
 
     if let Some(parsed) = item.get("parsed_cmd").and_then(Value::as_array) {
         for entry in parsed {
             if let Some(cmd) = entry.get("cmd").and_then(Value::as_str) {
-                if let Some(name) = shell_command_family(cmd) { out.push(name); }
+                if let Some(name) = shell_command_family(cmd) {
+                    out.push(name);
+                }
             }
         }
     }
@@ -2652,12 +2684,17 @@ fn command_families_from_execution(value: &Value) -> Vec<String> {
     if out.is_empty() {
         if let Some(command) = item.get("command").and_then(Value::as_array) {
             let args = command.iter().filter_map(Value::as_str).collect::<Vec<_>>();
-            let cmd = if args.len() >= 3 && matches!(args[0], "/bin/bash" | "bash" | "/bin/sh" | "sh") && args[1] == "-lc" {
+            let cmd = if args.len() >= 3
+                && matches!(args[0], "/bin/bash" | "bash" | "/bin/sh" | "sh")
+                && args[1] == "-lc"
+            {
                 args[2]
             } else {
                 args.first().copied().unwrap_or("")
             };
-            if let Some(name) = shell_command_family(cmd) { out.push(name); }
+            if let Some(name) = shell_command_family(cmd) {
+                out.push(name);
+            }
         }
     }
 
@@ -2671,7 +2708,10 @@ fn shell_command_family(cmd: &str) -> Option<String> {
         first = words.next()?;
     }
     let base = Path::new(first).file_name()?.to_str()?;
-    Some(base.trim_matches(|c: char| c == '\'' || c == '"').to_owned())
+    Some(
+        base.trim_matches(|c: char| c == '\'' || c == '"')
+            .to_owned(),
+    )
 }
 
 fn observed_commit_from_output(text: &str) -> Option<ObservedCommit> {
@@ -2679,7 +2719,10 @@ fn observed_commit_from_output(text: &str) -> Option<ObservedCommit> {
     let caps = header.captures(text)?;
     let hash = caps.get(1)?.as_str().to_owned();
     let subject = caps.get(2)?.as_str().lines().next()?.trim().to_owned();
-    let stats = Regex::new(r"(?m)(\d+) files? changed(?:, (\d+) insertions?\(\+\))?(?:, (\d+) deletions?\(-\))?").ok();
+    let stats = Regex::new(
+        r"(?m)(\d+) files? changed(?:, (\d+) insertions?\(\+\))?(?:, (\d+) deletions?\(-\))?",
+    )
+    .ok();
     let (files_changed, insertions, deletions) = stats
         .and_then(|re| re.captures(text))
         .map(|c| {
@@ -2687,7 +2730,13 @@ fn observed_commit_from_output(text: &str) -> Option<ObservedCommit> {
             (n(1), n(2), n(3))
         })
         .unwrap_or((None, None, None));
-    Some(ObservedCommit { hash, subject, files_changed, insertions, deletions })
+    Some(ObservedCommit {
+        hash,
+        subject,
+        files_changed,
+        insertions,
+        deletions,
+    })
 }
 
 fn analyze_rollout(identity: &RolloutIdentity) -> Result<(AgentThreadStats, Vec<u64>)> {
@@ -2734,11 +2783,19 @@ fn analyze_rollout(identity: &RolloutIdentity) -> Result<(AgentThreadStats, Vec<
 
     for (line_number, line) in reader.lines().enumerate() {
         let line = line.with_context(|| {
-            format!("Failed reading {} at line {}", path.display(), line_number + 1)
+            format!(
+                "Failed reading {} at line {}",
+                path.display(),
+                line_number + 1
+            )
         })?;
         let line = line.trim_start_matches('\u{feff}');
         let value: Value = serde_json::from_str(line).with_context(|| {
-            format!("Invalid JSON in {} at line {}", path.display(), line_number + 1)
+            format!(
+                "Invalid JSON in {} at line {}",
+                path.display(),
+                line_number + 1
+            )
         })?;
 
         let top_type = value.get("type").and_then(Value::as_str);
@@ -2891,7 +2948,10 @@ fn analyze_rollout(identity: &RolloutIdentity) -> Result<(AgentThreadStats, Vec<
                         }
                         if let Some(stdout) = json_str(&value, &["payload", "item", "stdout"]) {
                             if let Some(commit) = observed_commit_from_output(&stdout) {
-                                if !commits.iter().any(|existing: &ObservedCommit| existing.hash == commit.hash) {
+                                if !commits
+                                    .iter()
+                                    .any(|existing: &ObservedCommit| existing.hash == commit.hash)
+                                {
                                     commits.push(commit);
                                 }
                             }
@@ -2915,9 +2975,10 @@ fn analyze_rollout(identity: &RolloutIdentity) -> Result<(AgentThreadStats, Vec<
                 } else if payload_type.as_deref() == Some("token_count") {
                     // Rate limits are account-wide observations, not usage attributable
                     // to this workflow. Keep them only as first/last observations.
-                    if let Some(percent) =
-                        json_f64(&value, &["payload", "rate_limits", "primary", "used_percent"])
-                    {
+                    if let Some(percent) = json_f64(
+                        &value,
+                        &["payload", "rate_limits", "primary", "used_percent"],
+                    ) {
                         account_quota_first.get_or_insert(percent);
                         account_quota_last = Some(percent);
                     }
@@ -2987,8 +3048,16 @@ fn analyze_rollout(identity: &RolloutIdentity) -> Result<(AgentThreadStats, Vec<
             git_branch: identity.git_branch.clone(),
             git_commit_start: identity.git_commit.clone(),
             first_user_request,
-            skills: { let mut v: Vec<_> = skills.into_iter().collect(); v.sort(); v },
-            referenced_plans: { let mut v: Vec<_> = referenced_plans.into_iter().collect(); v.sort(); v },
+            skills: {
+                let mut v: Vec<_> = skills.into_iter().collect();
+                v.sort();
+                v
+            },
+            referenced_plans: {
+                let mut v: Vec<_> = referenced_plans.into_iter().collect();
+                v.sort();
+                v
+            },
             command_families,
             commits,
             task_completions,
@@ -3000,9 +3069,7 @@ fn analyze_rollout(identity: &RolloutIdentity) -> Result<(AgentThreadStats, Vec<
             input_tokens: usage.input_tokens,
             cached_input_tokens: usage.cached_input_tokens,
             cache_write_input_tokens: usage.cache_write_input_tokens,
-            uncached_input_tokens: usage
-                .input_tokens
-                .saturating_sub(usage.cached_input_tokens),
+            uncached_input_tokens: usage.input_tokens.saturating_sub(usage.cached_input_tokens),
             output_tokens: usage.output_tokens,
             reasoning_output_tokens: usage.reasoning_output_tokens,
             model_calls,
@@ -3142,13 +3209,19 @@ fn analyze_workflow(
         for warning in &thread.warnings {
             warnings.push(format!("{}: {warning}", thread.thread_id));
         }
-        for skill in &thread.skills { skills.insert(skill.clone()); }
-        for plan in &thread.referenced_plans { referenced_plans.insert(plan.clone()); }
+        for skill in &thread.skills {
+            skills.insert(skill.clone());
+        }
+        for plan in &thread.referenced_plans {
+            referenced_plans.insert(plan.clone());
+        }
         for (family, count) in &thread.command_families {
             *command_families.entry(family.clone()).or_insert(0) += count;
         }
         for commit in &thread.commits {
-            if !commits.iter().any(|existing| existing.hash == commit.hash) { commits.push(commit.clone()); }
+            if !commits.iter().any(|existing| existing.hash == commit.hash) {
+                commits.push(commit.clone());
+            }
         }
         task_completions = task_completions.saturating_add(thread.task_completions);
 
@@ -3210,7 +3283,11 @@ fn analyze_workflow(
     let calls_over_100k = all_inputs.iter().filter(|&&v| v >= 100_000).count() as u64;
     let calls_over_120k = all_inputs.iter().filter(|&&v| v >= 120_000).count() as u64;
     let calls_over_200k = all_inputs.iter().filter(|&&v| v >= 200_000).count() as u64;
-    let cached_input_percent = if input_tokens == 0 { 0.0 } else { cached_input_tokens as f64 * 100.0 / input_tokens as f64 };
+    let cached_input_percent = if input_tokens == 0 {
+        0.0
+    } else {
+        cached_input_tokens as f64 * 100.0 / input_tokens as f64
+    };
     let uncached = input_tokens.saturating_sub(cached_input_tokens);
     let replay_amplification = (uncached > 0).then(|| input_tokens as f64 / uncached as f64);
     let assessment = build_assessment(model_calls, peak, compactions, policy);
@@ -3224,8 +3301,16 @@ fn analyze_workflow(
         git_branch: root.git_branch.clone(),
         git_commit_start: root.git_commit_start.clone(),
         first_user_request: root.first_user_request.clone(),
-        skills: { let mut v: Vec<_> = skills.into_iter().collect(); v.sort(); v },
-        referenced_plans: { let mut v: Vec<_> = referenced_plans.into_iter().collect(); v.sort(); v },
+        skills: {
+            let mut v: Vec<_> = skills.into_iter().collect();
+            v.sort();
+            v
+        },
+        referenced_plans: {
+            let mut v: Vec<_> = referenced_plans.into_iter().collect();
+            v.sort();
+            v
+        },
         command_families,
         commits,
         task_completions,
@@ -3276,79 +3361,176 @@ fn format_tokens(value: u64) -> String {
 }
 
 fn percent(count: u64, total: u64) -> f64 {
-    if total == 0 { 0.0 } else { count as f64 * 100.0 / total as f64 }
+    if total == 0 {
+        0.0
+    } else {
+        count as f64 * 100.0 / total as f64
+    }
 }
 
 fn print_agent_stats(stats: &AgentWorkflowStats) {
     println!("Codex session");
     println!("────────────────────────────────────────────────────────");
-    if let Some(cwd) = &stats.cwd { println!("Workspace          {cwd}"); }
+    if let Some(cwd) = &stats.cwd {
+        println!("Workspace          {cwd}");
+    }
     if let Some(branch) = &stats.git_branch {
         let commit = stats.git_commit_start.as_deref().unwrap_or("unknown");
-        println!("Git start          {branch} @ {}", truncate_one_line(commit, 12));
+        println!(
+            "Git start          {branch} @ {}",
+            truncate_one_line(commit, 12)
+        );
     }
-    if let Some(repo) = &stats.repository_url { println!("Repository         {repo}"); }
-    if let Some(request) = &stats.first_user_request { println!("Request            {request}"); }
-    if !stats.skills.is_empty() { println!("Skills             {}", stats.skills.join(", ")); }
-    for plan in stats.referenced_plans.iter().take(5) { println!("Plan reference     {plan}"); }
-    if stats.referenced_plans.len() > 5 { println!("Plan references    +{} more", stats.referenced_plans.len() - 5); }
-    println!("Model              {}{}", stats.model.as_deref().unwrap_or("unknown"), stats.reasoning_effort.as_deref().map(|e| format!(" / {e}")).unwrap_or_default());
+    if let Some(repo) = &stats.repository_url {
+        println!("Repository         {repo}");
+    }
+    if let Some(request) = &stats.first_user_request {
+        println!("Request            {request}");
+    }
+    if !stats.skills.is_empty() {
+        println!("Skills             {}", stats.skills.join(", "));
+    }
+    for plan in stats.referenced_plans.iter().take(5) {
+        println!("Plan reference     {plan}");
+    }
+    if stats.referenced_plans.len() > 5 {
+        println!(
+            "Plan references    +{} more",
+            stats.referenced_plans.len() - 5
+        );
+    }
+    println!(
+        "Model              {}{}",
+        stats.model.as_deref().unwrap_or("unknown"),
+        stats
+            .reasoning_effort
+            .as_deref()
+            .map(|e| format!(" / {e}"))
+            .unwrap_or_default()
+    );
     println!("Source             {}", stats.root_source);
-    if let Some(started) = &stats.started_at { println!("Started            {started}"); }
-    if let Some(ended) = &stats.ended_at { println!("Ended              {ended}"); }
-    println!("Threads            {} ({} spawned)", stats.threads, stats.spawned_threads);
+    if let Some(started) = &stats.started_at {
+        println!("Started            {started}");
+    }
+    if let Some(ended) = &stats.ended_at {
+        println!("Ended              {ended}");
+    }
+    println!(
+        "Threads            {} ({} spawned)",
+        stats.threads, stats.spawned_threads
+    );
     println!("Completed turns    {}", stats.task_completions);
-    if let Some(result) = &stats.final_result { println!("Last result        {result}"); }
+    if let Some(result) = &stats.final_result {
+        println!("Last result        {result}");
+    }
 
     if !stats.commits.is_empty() {
         println!();
         println!("Observed output");
         for commit in &stats.commits {
             let mut suffix = String::new();
-            if let Some(files) = commit.files_changed { suffix.push_str(&format!(" · {files} files")); }
+            if let Some(files) = commit.files_changed {
+                suffix.push_str(&format!(" · {files} files"));
+            }
             match (commit.insertions, commit.deletions) {
                 (Some(ins), Some(del)) => suffix.push_str(&format!(" · +{ins}/-{del}")),
                 (Some(ins), None) => suffix.push_str(&format!(" · +{ins}")),
                 (None, Some(del)) => suffix.push_str(&format!(" · -{del}")),
                 _ => {}
             }
-            println!("Commit             {} {}{}", commit.hash, commit.subject, suffix);
+            println!(
+                "Commit             {} {}{}",
+                commit.hash, commit.subject, suffix
+            );
         }
     }
 
     println!();
     println!("Cost shape");
     println!("Processed input    {}", format_tokens(stats.input_tokens));
-    println!("  cached/replayed  {} ({:.1}%)", format_tokens(stats.cached_input_tokens), stats.cached_input_percent);
-    println!("  uncached/fresh   {} ({:.1}%)", format_tokens(stats.uncached_input_tokens), 100.0 - stats.cached_input_percent);
-    if let Some(amp) = stats.replay_amplification { println!("Replay amplify     {:.1}× processed/fresh", amp); }
+    println!(
+        "  cached/replayed  {} ({:.1}%)",
+        format_tokens(stats.cached_input_tokens),
+        stats.cached_input_percent
+    );
+    println!(
+        "  uncached/fresh   {} ({:.1}%)",
+        format_tokens(stats.uncached_input_tokens),
+        100.0 - stats.cached_input_percent
+    );
+    if let Some(amp) = stats.replay_amplification {
+        println!("Replay amplify     {:.1}× processed/fresh", amp);
+    }
     println!("Output             {}", format_tokens(stats.output_tokens));
-    println!("Reasoning          {}", format_tokens(stats.reasoning_output_tokens));
+    println!(
+        "Reasoning          {}",
+        format_tokens(stats.reasoning_output_tokens)
+    );
 
     println!();
     println!("Agent activity");
     println!("Model calls        {}", stats.model_calls);
-    println!("Tool calls         {} ({:.2} / model call)", stats.tool_calls, if stats.model_calls == 0 { 0.0 } else { stats.tool_calls as f64 / stats.model_calls as f64 });
+    println!(
+        "Tool calls         {} ({:.2} / model call)",
+        stats.tool_calls,
+        if stats.model_calls == 0 {
+            0.0
+        } else {
+            stats.tool_calls as f64 / stats.model_calls as f64
+        }
+    );
     println!("Compactions        {}", stats.compactions);
     if stats.task_completions > 0 {
-        println!("Input / turn       {}", format_tokens(stats.input_tokens / stats.task_completions));
-        println!("Calls / turn       {:.1}", stats.model_calls as f64 / stats.task_completions as f64);
+        println!(
+            "Input / turn       {}",
+            format_tokens(stats.input_tokens / stats.task_completions)
+        );
+        println!(
+            "Calls / turn       {:.1}",
+            stats.model_calls as f64 / stats.task_completions as f64
+        );
     }
     if !stats.command_families.is_empty() {
         let mut commands: Vec<_> = stats.command_families.iter().collect();
         commands.sort_by_key(|(_, count)| std::cmp::Reverse(**count));
-        let top = commands.into_iter().take(8).map(|(name,count)| format!("{name} {count}")).collect::<Vec<_>>().join(" · ");
+        let top = commands
+            .into_iter()
+            .take(8)
+            .map(|(name, count)| format!("{name} {count}"))
+            .collect::<Vec<_>>()
+            .join(" · ");
         println!("Top commands       {top}");
     }
 
     println!();
     println!("Context health");
-    println!("Median / call      {}", format_tokens(stats.median_input_tokens_per_call));
-    println!("P90 / call         {}", format_tokens(stats.p90_input_tokens_per_call));
-    println!("Peak / call        {}", format_tokens(stats.peak_input_tokens_per_call));
-    println!("Calls ≥100K        {} ({:.1}%)", stats.calls_over_100k, percent(stats.calls_over_100k, stats.model_calls));
-    println!("Calls ≥120K        {} ({:.1}%)", stats.calls_over_120k, percent(stats.calls_over_120k, stats.model_calls));
-    println!("Calls ≥200K        {} ({:.1}%)", stats.calls_over_200k, percent(stats.calls_over_200k, stats.model_calls));
+    println!(
+        "Median / call      {}",
+        format_tokens(stats.median_input_tokens_per_call)
+    );
+    println!(
+        "P90 / call         {}",
+        format_tokens(stats.p90_input_tokens_per_call)
+    );
+    println!(
+        "Peak / call        {}",
+        format_tokens(stats.peak_input_tokens_per_call)
+    );
+    println!(
+        "Calls ≥100K        {} ({:.1}%)",
+        stats.calls_over_100k,
+        percent(stats.calls_over_100k, stats.model_calls)
+    );
+    println!(
+        "Calls ≥120K        {} ({:.1}%)",
+        stats.calls_over_120k,
+        percent(stats.calls_over_120k, stats.model_calls)
+    );
+    println!(
+        "Calls ≥200K        {} ({:.1}%)",
+        stats.calls_over_200k,
+        percent(stats.calls_over_200k, stats.model_calls)
+    );
 
     if !stats.by_model.is_empty() {
         println!();
@@ -3356,22 +3538,47 @@ fn print_agent_stats(stats: &AgentWorkflowStats) {
         let mut models: Vec<_> = stats.by_model.iter().collect();
         models.sort_by_key(|(_, usage)| std::cmp::Reverse(usage.input_tokens));
         for (model, usage) in models {
-            println!("  {:20} {:>9} input · {:>4} calls · {:>2} threads", model, format_tokens(usage.input_tokens), usage.model_calls, usage.threads);
+            println!(
+                "  {:20} {:>9} input · {:>4} calls · {:>2} threads",
+                model,
+                format_tokens(usage.input_tokens),
+                usage.model_calls,
+                usage.threads
+            );
         }
     }
 
-    if let (Some(first), Some(last)) = (stats.account_weekly_used_percent_first, stats.account_weekly_used_percent_last) {
+    if let (Some(first), Some(last)) = (
+        stats.account_weekly_used_percent_first,
+        stats.account_weekly_used_percent_last,
+    ) {
         println!();
         println!("Account weekly");
         println!("Used               {first:.1}% → {last:.1}%");
-        println!("Remaining          {:.1}% → {:.1}%", 100.0 - first, 100.0 - last);
+        println!(
+            "Remaining          {:.1}% → {:.1}%",
+            100.0 - first,
+            100.0 - last
+        );
         println!("Attribution        account-wide snapshots; delta is not session cost");
     }
 
     println!();
     println!("Diagnosis");
-    let context = if stats.compactions >= 2 || stats.p90_input_tokens_per_call >= 120_000 { "RUNAWAY" } else if stats.compactions == 1 || stats.p90_input_tokens_per_call >= 100_000 { "PRESSURED" } else { "HEALTHY" };
-    let looping = if stats.model_calls > 120 { "HIGH" } else if stats.model_calls > 80 { "ELEVATED" } else { "NORMAL" };
+    let context = if stats.compactions >= 2 || stats.p90_input_tokens_per_call >= 120_000 {
+        "RUNAWAY"
+    } else if stats.compactions == 1 || stats.p90_input_tokens_per_call >= 100_000 {
+        "PRESSURED"
+    } else {
+        "HEALTHY"
+    };
+    let looping = if stats.model_calls > 120 {
+        "HIGH"
+    } else if stats.model_calls > 80 {
+        "ELEVATED"
+    } else {
+        "NORMAL"
+    };
     println!("Context            {context}");
     println!("Loop volume        {looping}");
     if stats.cached_input_percent >= 95.0 && stats.p90_input_tokens_per_call >= 120_000 {
@@ -3383,12 +3590,16 @@ fn print_agent_stats(stats: &AgentWorkflowStats) {
     } else {
         println!("Primary driver     no dominant pathology detected");
     }
-    for item in &stats.assessment { println!("  {item}"); }
+    for item in &stats.assessment {
+        println!("  {item}");
+    }
 
     if !stats.warnings.is_empty() {
         println!();
         println!("Scanner warnings");
-        for warning in &stats.warnings { println!("  WARN: {warning}"); }
+        for warning in &stats.warnings {
+            println!("  WARN: {warning}");
+        }
     }
 }
 

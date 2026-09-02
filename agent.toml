@@ -1,56 +1,34 @@
-# Toolbox-owned Codex overlay, embedded with include_str!.
-#
-# The toolbox flattens only [codex] and nested [codex.*] tables into
-# `codex --config key=value` runtime overrides. [profiles], [workflows], and
-# [stats] are toolbox-owned and must not be forwarded directly to Codex.
+# Toolbox-owned Codex overlay.
 
 [codex]
-# Keep user-visible responses and reasoning summaries compact. The skills define
-# the required content and structure for each phase.
 model_verbosity = "low"
 model_reasoning_summary = "concise"
-
-# Interactive workspace safety with automatic review of eligible approval
-# requests. Auto-review changes the reviewer, not the sandbox boundary.
 approval_policy = "on-request"
 approvals_reviewer = "auto_review"
 sandbox_mode = "workspace-write"
 
-# Prevent plan/build/review sessions from spawning general-purpose subagents.
 [codex.agents]
 enabled = false
 
-# Ordinary `dev agent` default.
 [profiles.default]
 model = "gpt-5.6-terra"
 model_reasoning_effort = "medium"
 
-# Architecture, alignment, and project decomposition.
 [profiles.plan]
 model = "gpt-5.6-sol"
 model_reasoning_effort = "high"
+skill = "dev-plan"
 
-# Bounded implementation from an approved plan.
 [profiles.build]
 model = "gpt-5.6-terra"
 model_reasoning_effort = "medium"
+skill = "dev-build"
 
-# Independent correctness, design, and simplicity review.
 [profiles.review]
 model = "gpt-5.6-sol"
 model_reasoning_effort = "high"
-
-[workflows.plan]
-skill = "dev-plan"
-
-[workflows.build]
-skill = "dev-build"
-
-[workflows.review]
 skill = "dev-review"
 
-# Toolbox diagnostics only. These values never alter or terminate Codex.
-# They are initial health thresholds derived from observed local sessions.
 [stats]
 warn_model_calls = 80
 bad_model_calls = 120
