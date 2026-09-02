@@ -1,7 +1,7 @@
 interface:
   display_name: "Dev Plan"
-  short_description: "Plan one bounded project into coarse milestones"
-  default_prompt: "Use $dev-plan to work with me as a senior engineer: bound one project, settle consequential design choices, and produce several coarse implementation plans."
+  short_description: "Design a bounded project and implementation plans"
+  default_prompt: "Use $dev-plan to define this project, resolve consequential design decisions, and write the spec and numbered plans."
 
 policy:
   allow_implicit_invocation: false

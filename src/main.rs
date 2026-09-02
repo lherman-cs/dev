@@ -1,5 +1,5 @@
 use anyhow::{Context, Result, anyhow, bail};
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::mpsc;
 use std::thread;
-use std::time::Instant;
+use std::time::{Instant, SystemTime};
 use tracing::{Level, error, info, warn};
 use tracing_subscriber::FmtSubscriber;
 
@@ -20,8 +20,8 @@ const DEFAULT_RESOLVER: &str = "fd -H '^.git$' * | xargs -I{} dirname {}";
 const MAKE_FILENAME: &str = "workspace.mk";
 
 #[derive(Parser)]
-#[command(name = "workspace")]
-#[command(about = "A robust workspace management tool", version, long_about = None)]
+#[command(name = "toolbox")]
+#[command(about = "Personal developer toolbox", version, long_about = None)]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -159,8 +159,152 @@ enum Commands {
     /// Runs a tui to play a lofi radio
     Radio,
 
+    /// Launch Codex with deterministic development workflow profiles
+    Agent {
+        #[command(subcommand)]
+        action: Option<AgentAction>,
+    },
+
     /// Show workspace statistics
     Stats,
+}
+
+const AGENT_CONFIG_TOML: &str = include_str!("./agent.toml");
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum AgentProfileName {
+    Default,
+    Plan,
+    Build,
+    Review,
+}
+
+impl AgentProfileName {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Default => "default",
+            Self::Plan => "plan",
+            Self::Build => "build",
+            Self::Review => "review",
+        }
+    }
+}
+
+#[derive(Subcommand)]
+enum AgentAction {
+    /// Start a fresh Sol/high planning session using $dev-plan
+    Plan {
+        /// Project request passed to $dev-plan
+        prompt: Vec<String>,
+    },
+
+    /// Start a fresh Terra/medium build session for exactly one numbered plan
+    Build {
+        /// Exact plans/<project>/<NN>-*.md path
+        plan: PathBuf,
+
+        /// Optional extra instructions for this build only
+        prompt: Vec<String>,
+    },
+
+    /// Start a fresh Sol/high independent review session
+    Review {
+        /// Commit to review
+        #[arg(default_value = "HEAD")]
+        commit: String,
+    },
+
+    /// Show Codex usage statistics from local rollout JSONL files
+    Stats {
+        /// Number of most recent sessions to show
+        #[arg(long, default_value_t = 1, conflicts_with = "file")]
+        last: usize,
+
+        /// Analyze one explicit rollout JSONL file
+        #[arg(long)]
+        file: Option<PathBuf>,
+
+        /// Emit machine-readable JSON
+        #[arg(long)]
+        json: bool,
+    },
+
+    /// Show the embedded overlay and effective Codex runtime overrides
+    Config {
+        /// Workflow profile to inspect
+        #[arg(long, value_enum, default_value_t = AgentProfileName::Default)]
+        profile: AgentProfileName,
+
+        /// Print only the generated Codex arguments
+        #[arg(long)]
+        args: bool,
+    },
+}
+
+#[derive(Debug, Deserialize, Default)]
+struct AgentConfig {
+    #[serde(default)]
+    codex: toml::Table,
+    #[serde(default)]
+    profiles: HashMap<String, AgentProfileConfig>,
+    #[serde(default)]
+    stats: AgentStatsPolicy,
+}
+
+#[derive(Debug, Deserialize)]
+struct AgentProfileConfig {
+    model: String,
+    model_reasoning_effort: String,
+    #[serde(default)]
+    skill: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(default)]
+struct AgentStatsPolicy {
+    warn_model_calls: u64,
+    bad_model_calls: u64,
+    warn_peak_input_tokens: u64,
+    bad_peak_input_tokens: u64,
+    warn_compactions: u64,
+    bad_compactions: u64,
+}
+
+impl Default for AgentStatsPolicy {
+    fn default() -> Self {
+        Self {
+            warn_model_calls: 80,
+            bad_model_calls: 120,
+            warn_peak_input_tokens: 100_000,
+            bad_peak_input_tokens: 120_000,
+            warn_compactions: 1,
+            bad_compactions: 2,
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct AgentSessionStats {
+    file: String,
+    model: Option<String>,
+    reasoning_effort: Option<String>,
+    started_at: Option<String>,
+    ended_at: Option<String>,
+    input_tokens: u64,
+    cached_input_tokens: u64,
+    uncached_input_tokens: u64,
+    output_tokens: u64,
+    reasoning_output_tokens: u64,
+    model_calls: u64,
+    tool_calls: u64,
+    compactions: u64,
+    median_input_tokens_per_call: u64,
+    p90_input_tokens_per_call: u64,
+    peak_input_tokens_per_call: u64,
+    weekly_used_percent_start: Option<f64>,
+    weekly_used_percent_end: Option<f64>,
+    weekly_used_percent_delta: Option<f64>,
+    assessment: Vec<String>,
 }
 
 #[derive(Subcommand)]
@@ -1621,6 +1765,601 @@ fn match_json_path(value: &Value, path: &str, pattern: &Regex) -> bool {
     }
 }
 
+fn load_agent_config() -> Result<AgentConfig> {
+    toml::from_str::<AgentConfig>(AGENT_CONFIG_TOML).context("Failed to parse embedded agent.toml")
+}
+
+fn toml_scalar(value: &toml::Value) -> Result<String> {
+    match value {
+        toml::Value::String(value) => Ok(format!("{:?}", value)),
+        toml::Value::Integer(value) => Ok(value.to_string()),
+        toml::Value::Float(value) => Ok(value.to_string()),
+        toml::Value::Boolean(value) => Ok(value.to_string()),
+        toml::Value::Datetime(value) => Ok(format!("{:?}", value.to_string())),
+        toml::Value::Array(_) | toml::Value::Table(_) => {
+            bail!("Codex overlay leaves must be scalar TOML values")
+        }
+    }
+}
+
+fn flatten_codex_table(
+    prefix: &str,
+    table: &toml::Table,
+    output: &mut Vec<(String, String)>,
+) -> Result<()> {
+    let mut entries: Vec<_> = table.iter().collect();
+    entries.sort_by_key(|(key, _)| *key);
+
+    for (key, value) in entries {
+        let path = if prefix.is_empty() {
+            key.clone()
+        } else {
+            format!("{}.{}", prefix, key)
+        };
+
+        match value {
+            toml::Value::Table(child) => flatten_codex_table(&path, child, output)?,
+            value => output.push((path, toml_scalar(value)?)),
+        }
+    }
+
+    Ok(())
+}
+
+fn agent_profile<'a>(
+    config: &'a AgentConfig,
+    profile: AgentProfileName,
+) -> Result<&'a AgentProfileConfig> {
+    config.profiles.get(profile.as_str()).ok_or_else(|| {
+        anyhow!(
+            "Embedded agent config is missing profile '{}'",
+            profile.as_str()
+        )
+    })
+}
+
+fn agent_codex_overrides(
+    config: &AgentConfig,
+    profile: AgentProfileName,
+) -> Result<Vec<(String, String)>> {
+    let mut overrides = Vec::new();
+    flatten_codex_table("", &config.codex, &mut overrides)?;
+
+    let profile = agent_profile(config, profile)?;
+    overrides.push(("model".to_string(), format!("{:?}", profile.model)));
+    overrides.push((
+        "model_reasoning_effort".to_string(),
+        format!("{:?}", profile.model_reasoning_effort),
+    ));
+
+    Ok(overrides)
+}
+
+fn agent_codex_args(config: &AgentConfig, profile: AgentProfileName) -> Result<Vec<String>> {
+    let mut args = Vec::new();
+    for (key, value) in agent_codex_overrides(config, profile)? {
+        args.push("-c".to_string());
+        args.push(format!("{key}={value}"));
+    }
+    Ok(args)
+}
+
+fn agent_workflow_prompt(
+    config: &AgentConfig,
+    profile: AgentProfileName,
+    body: &str,
+) -> Result<String> {
+    let profile_config = agent_profile(config, profile)?;
+    let skill = profile_config.skill.as_deref().ok_or_else(|| {
+        anyhow!(
+            "Embedded agent profile '{}' does not define a skill",
+            profile.as_str()
+        )
+    })?;
+
+    if body.trim().is_empty() {
+        Ok(format!("${skill}"))
+    } else {
+        Ok(format!("${skill} {}", body.trim()))
+    }
+}
+
+fn validate_build_plan(plan: &Path) -> Result<PathBuf> {
+    if plan.extension().and_then(|ext| ext.to_str()) != Some("md") {
+        bail!("Build plan must be a markdown file: {}", plan.display());
+    }
+    if !plan.is_file() {
+        bail!("Build plan does not exist: {}", plan.display());
+    }
+
+    let components: Vec<_> = plan.components().collect();
+    if !components
+        .iter()
+        .any(|component| component.as_os_str() == "plans")
+    {
+        bail!(
+            "Build requires an exact plans/<project>/<NN>-*.md path: {}",
+            plan.display()
+        );
+    }
+
+    let file_name = plan
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| anyhow!("Build plan filename is not valid UTF-8"))?;
+    let bytes = file_name.as_bytes();
+    if bytes.len() < 4
+        || !bytes[0].is_ascii_digit()
+        || !bytes[1].is_ascii_digit()
+        || bytes[2] != b'-'
+    {
+        bail!(
+            "Build plan filename must start with a two-digit plan number, e.g. 01-foo.md: {}",
+            file_name
+        );
+    }
+
+    Ok(plan.to_path_buf())
+}
+
+fn exec_codex(profile: AgentProfileName, prompt: Option<String>) -> Result<()> {
+    let config = load_agent_config()?;
+    let args = agent_codex_args(&config, profile)?;
+
+    let mut command = Command::new("codex");
+    command.args(&args);
+    if let Some(prompt) = prompt {
+        command.arg(prompt);
+    }
+
+    info!(
+        "Starting fresh Codex session with '{}' profile",
+        profile.as_str()
+    );
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        let error = command.exec();
+        Err(error).context("Failed to exec codex")
+    }
+
+    #[cfg(not(unix))]
+    {
+        let status = command.status().context("Failed to launch codex")?;
+        if !status.success() {
+            bail!("codex exited with status {status}");
+        }
+        Ok(())
+    }
+}
+
+fn cmd_agent(action: Option<AgentAction>) -> Result<()> {
+    match action {
+        None => exec_codex(AgentProfileName::Default, None),
+        Some(AgentAction::Plan { prompt }) => {
+            let config = load_agent_config()?;
+            let body = prompt.join(" ");
+            let prompt = agent_workflow_prompt(&config, AgentProfileName::Plan, &body)?;
+            exec_codex(AgentProfileName::Plan, Some(prompt))
+        }
+        Some(AgentAction::Build { plan, prompt }) => {
+            let plan = validate_build_plan(&plan)?;
+            let config = load_agent_config()?;
+            let mut body = plan.display().to_string();
+            if !prompt.is_empty() {
+                body.push(' ');
+                body.push_str(&prompt.join(" "));
+            }
+            let prompt = agent_workflow_prompt(&config, AgentProfileName::Build, &body)?;
+            exec_codex(AgentProfileName::Build, Some(prompt))
+        }
+        Some(AgentAction::Review { commit }) => {
+            let config = load_agent_config()?;
+            let prompt = agent_workflow_prompt(&config, AgentProfileName::Review, &commit)?;
+            exec_codex(AgentProfileName::Review, Some(prompt))
+        }
+        Some(AgentAction::Stats { last, file, json }) => cmd_agent_stats(last, file, json),
+        Some(AgentAction::Config { profile, args }) => cmd_agent_config(profile, args),
+    }
+}
+
+fn cmd_agent_config(profile: AgentProfileName, args_only: bool) -> Result<()> {
+    let config = load_agent_config()?;
+    let args = agent_codex_args(&config, profile)?;
+
+    if args_only {
+        println!("{}", args.join(" "));
+        return Ok(());
+    }
+
+    println!("Embedded agent overlay:\n");
+    println!("{AGENT_CONFIG_TOML}");
+    println!("Effective workflow profile: {}\n", profile.as_str());
+    println!("Codex runtime overrides:");
+    for pair in args.chunks_exact(2) {
+        println!("  {} {}", pair[0], pair[1]);
+    }
+    Ok(())
+}
+
+fn codex_home() -> Result<PathBuf> {
+    if let Some(path) = std::env::var_os("CODEX_HOME") {
+        return Ok(PathBuf::from(path));
+    }
+    dirs::home_dir()
+        .map(|home| home.join(".codex"))
+        .ok_or_else(|| anyhow!("Could not determine CODEX_HOME or home directory"))
+}
+
+fn collect_rollout_files(dir: &Path, output: &mut Vec<PathBuf>) -> Result<()> {
+    if !dir.exists() {
+        return Ok(());
+    }
+
+    for entry in fs::read_dir(dir)
+        .with_context(|| format!("Failed to read Codex sessions directory: {}", dir.display()))?
+    {
+        let entry = entry?;
+        let path = entry.path();
+        let file_type = entry.file_type()?;
+        if file_type.is_dir() {
+            collect_rollout_files(&path, output)?;
+        } else if file_type.is_file()
+            && path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name.starts_with("rollout-") && name.ends_with(".jsonl"))
+        {
+            output.push(path);
+        }
+    }
+    Ok(())
+}
+
+fn modified_time(path: &Path) -> SystemTime {
+    fs::metadata(path)
+        .and_then(|metadata| metadata.modified())
+        .unwrap_or(SystemTime::UNIX_EPOCH)
+}
+
+fn recent_rollout_files(last: usize) -> Result<Vec<PathBuf>> {
+    if last == 0 {
+        bail!("--last must be at least 1");
+    }
+
+    let sessions = codex_home()?.join("sessions");
+    let mut files = Vec::new();
+    collect_rollout_files(&sessions, &mut files)?;
+    files.sort_by_key(|path| std::cmp::Reverse(modified_time(path)));
+    files.truncate(last);
+
+    if files.is_empty() {
+        bail!(
+            "No Codex rollout JSONL files found under {}",
+            sessions.display()
+        );
+    }
+    Ok(files)
+}
+
+fn json_u64(value: &Value, path: &[&str]) -> Option<u64> {
+    let mut current = value;
+    for key in path {
+        current = current.get(*key)?;
+    }
+    current.as_u64()
+}
+
+fn json_f64(value: &Value, path: &[&str]) -> Option<f64> {
+    let mut current = value;
+    for key in path {
+        current = current.get(*key)?;
+    }
+    current.as_f64()
+}
+
+fn json_str(value: &Value, path: &[&str]) -> Option<String> {
+    let mut current = value;
+    for key in path {
+        current = current.get(*key)?;
+    }
+    current.as_str().map(ToOwned::to_owned)
+}
+
+fn percentile(sorted: &[u64], numerator: usize, denominator: usize) -> u64 {
+    if sorted.is_empty() {
+        return 0;
+    }
+    let index = ((sorted.len() - 1) * numerator + denominator - 1) / denominator;
+    sorted[index.min(sorted.len() - 1)]
+}
+
+fn analyze_rollout(path: &Path, policy: &AgentStatsPolicy) -> Result<AgentSessionStats> {
+    let file = File::open(path)
+        .with_context(|| format!("Failed to open Codex rollout: {}", path.display()))?;
+    let reader = BufReader::new(file);
+
+    let mut model = None;
+    let mut reasoning_effort = None;
+    let mut started_at = None;
+    let mut ended_at = None;
+    let mut totals = (0_u64, 0_u64, 0_u64, 0_u64);
+    let mut model_calls = 0_u64;
+    let mut tool_calls = 0_u64;
+    let mut compactions = 0_u64;
+    let mut call_inputs = Vec::new();
+    let mut quota_start = None;
+    let mut quota_end = None;
+
+    for (line_number, line) in reader.lines().enumerate() {
+        let line = line.with_context(|| {
+            format!(
+                "Failed reading {} at line {}",
+                path.display(),
+                line_number + 1
+            )
+        })?;
+        let value: Value = serde_json::from_str(&line).with_context(|| {
+            format!(
+                "Invalid JSON in {} at line {}",
+                path.display(),
+                line_number + 1
+            )
+        })?;
+
+        if started_at.is_none() {
+            started_at = json_str(&value, &["timestamp"]);
+        }
+        if let Some(timestamp) = json_str(&value, &["timestamp"]) {
+            ended_at = Some(timestamp);
+        }
+
+        match value.get("type").and_then(Value::as_str) {
+            Some("session_meta") => {
+                model = model.or_else(|| {
+                    json_str(
+                        &value,
+                        &["payload", "base_instructions", "provenance", "model"],
+                    )
+                });
+            }
+            Some("turn_context") => {
+                model = json_str(&value, &["payload", "model"]).or(model);
+                reasoning_effort = json_str(&value, &["payload", "effort"]).or(reasoning_effort);
+            }
+            Some("compacted") => compactions += 1,
+            Some("response_item") => {
+                if json_str(&value, &["payload", "type"]).as_deref() == Some("custom_tool_call") {
+                    tool_calls += 1;
+                }
+            }
+            Some("event_msg") => {
+                if json_str(&value, &["payload", "type"]).as_deref() == Some("token_count") {
+                    model_calls += 1;
+                    if let Some(input) = json_u64(
+                        &value,
+                        &["payload", "info", "last_token_usage", "input_tokens"],
+                    ) {
+                        call_inputs.push(input);
+                    }
+
+                    let total = &["payload", "info", "total_token_usage"];
+                    totals.0 = json_u64(&value, &[total[0], total[1], total[2], "input_tokens"])
+                        .unwrap_or(totals.0);
+                    totals.1 = json_u64(
+                        &value,
+                        &[total[0], total[1], total[2], "cached_input_tokens"],
+                    )
+                    .unwrap_or(totals.1);
+                    totals.2 = json_u64(&value, &[total[0], total[1], total[2], "output_tokens"])
+                        .unwrap_or(totals.2);
+                    totals.3 = json_u64(
+                        &value,
+                        &[total[0], total[1], total[2], "reasoning_output_tokens"],
+                    )
+                    .unwrap_or(totals.3);
+
+                    if let Some(percent) = json_f64(
+                        &value,
+                        &["payload", "rate_limits", "primary", "used_percent"],
+                    ) {
+                        quota_start.get_or_insert(percent);
+                        quota_end = Some(percent);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    call_inputs.sort_unstable();
+    let median = percentile(&call_inputs, 1, 2);
+    let p90 = percentile(&call_inputs, 9, 10);
+    let peak = call_inputs.last().copied().unwrap_or(0);
+    let uncached = totals.0.saturating_sub(totals.1);
+    let quota_delta = quota_start.zip(quota_end).map(|(start, end)| end - start);
+
+    let mut assessment = Vec::new();
+    if model_calls > policy.bad_model_calls {
+        assessment.push(format!(
+            "BAD: {model_calls} model calls > {}",
+            policy.bad_model_calls
+        ));
+    } else if model_calls > policy.warn_model_calls {
+        assessment.push(format!(
+            "WARN: {model_calls} model calls > {}",
+            policy.warn_model_calls
+        ));
+    } else {
+        assessment.push(format!("OK: {model_calls} model calls"));
+    }
+
+    if peak >= policy.bad_peak_input_tokens {
+        assessment.push(format!(
+            "BAD: peak input {peak} >= {} tokens",
+            policy.bad_peak_input_tokens
+        ));
+    } else if peak >= policy.warn_peak_input_tokens {
+        assessment.push(format!(
+            "WARN: peak input {peak} >= {} tokens",
+            policy.warn_peak_input_tokens
+        ));
+    } else {
+        assessment.push(format!("OK: peak input {peak} tokens"));
+    }
+
+    if compactions >= policy.bad_compactions {
+        assessment.push(format!(
+            "BAD: {compactions} compactions >= {}",
+            policy.bad_compactions
+        ));
+    } else if compactions >= policy.warn_compactions {
+        assessment.push(format!(
+            "WARN: {compactions} compactions >= {}",
+            policy.warn_compactions
+        ));
+    } else {
+        assessment.push(format!("OK: {compactions} compactions"));
+    }
+
+    Ok(AgentSessionStats {
+        file: path.display().to_string(),
+        model,
+        reasoning_effort,
+        started_at,
+        ended_at,
+        input_tokens: totals.0,
+        cached_input_tokens: totals.1,
+        uncached_input_tokens: uncached,
+        output_tokens: totals.2,
+        reasoning_output_tokens: totals.3,
+        model_calls,
+        tool_calls,
+        compactions,
+        median_input_tokens_per_call: median,
+        p90_input_tokens_per_call: p90,
+        peak_input_tokens_per_call: peak,
+        weekly_used_percent_start: quota_start,
+        weekly_used_percent_end: quota_end,
+        weekly_used_percent_delta: quota_delta,
+        assessment,
+    })
+}
+
+fn format_tokens(value: u64) -> String {
+    if value >= 1_000_000 {
+        format!("{:.2}M", value as f64 / 1_000_000.0)
+    } else if value >= 1_000 {
+        format!("{:.1}K", value as f64 / 1_000.0)
+    } else {
+        value.to_string()
+    }
+}
+
+fn print_agent_stats(stats: &AgentSessionStats) {
+    println!("Codex session");
+    println!("────────────────────────────────────────");
+    println!(
+        "Model              {}{}",
+        stats.model.as_deref().unwrap_or("unknown"),
+        stats
+            .reasoning_effort
+            .as_deref()
+            .map(|effort| format!(" / {effort}"))
+            .unwrap_or_default()
+    );
+    println!("File               {}", stats.file);
+    if let Some(started) = &stats.started_at {
+        println!("Started            {started}");
+    }
+    if let Some(ended) = &stats.ended_at {
+        println!("Ended              {ended}");
+    }
+    println!();
+    println!("Usage");
+    println!("Input              {}", format_tokens(stats.input_tokens));
+    println!(
+        "  cached           {}",
+        format_tokens(stats.cached_input_tokens)
+    );
+    println!(
+        "  uncached         {}",
+        format_tokens(stats.uncached_input_tokens)
+    );
+    println!("Output             {}", format_tokens(stats.output_tokens));
+    println!(
+        "Reasoning          {}",
+        format_tokens(stats.reasoning_output_tokens)
+    );
+    println!();
+    println!("Agent loop");
+    println!("Model calls        {}", stats.model_calls);
+    println!("Tool calls         {}", stats.tool_calls);
+    println!("Compactions        {}", stats.compactions);
+    println!();
+    println!("Input / model call");
+    println!(
+        "Median             {}",
+        format_tokens(stats.median_input_tokens_per_call)
+    );
+    println!(
+        "P90                {}",
+        format_tokens(stats.p90_input_tokens_per_call)
+    );
+    println!(
+        "Peak               {}",
+        format_tokens(stats.peak_input_tokens_per_call)
+    );
+
+    if let (Some(start), Some(end)) = (
+        stats.weekly_used_percent_start,
+        stats.weekly_used_percent_end,
+    ) {
+        println!();
+        println!("Weekly quota       {start:.1}% → {end:.1}%");
+        if let Some(delta) = stats.weekly_used_percent_delta {
+            println!("Delta              {delta:+.1}%");
+        }
+    }
+
+    println!();
+    println!("Assessment");
+    for item in &stats.assessment {
+        println!("  {item}");
+    }
+}
+
+fn cmd_agent_stats(last: usize, file: Option<PathBuf>, json: bool) -> Result<()> {
+    let config = load_agent_config()?;
+    let files = if let Some(file) = file {
+        if !file.is_file() {
+            bail!("Rollout file does not exist: {}", file.display());
+        }
+        vec![file]
+    } else {
+        recent_rollout_files(last)?
+    };
+
+    let stats = files
+        .iter()
+        .map(|path| analyze_rollout(path, &config.stats))
+        .collect::<Result<Vec<_>>>()?;
+
+    if json {
+        println!("{}", serde_json::to_string_pretty(&stats)?);
+        return Ok(());
+    }
+
+    for (index, session) in stats.iter().enumerate() {
+        if index > 0 {
+            println!("\n");
+        }
+        print_agent_stats(session);
+    }
+    Ok(())
+}
+
 fn run_shell(program: &str) -> Result<()> {
     Command::new(program)
         .status()
@@ -1670,6 +2409,7 @@ fn main() {
             members,
         } => cmd_exec(command, args, parallel, members),
         Commands::Radio => run_shell("cliamp"),
+        Commands::Agent { action } => cmd_agent(action),
         Commands::Stats => cmd_stats(),
     };
 

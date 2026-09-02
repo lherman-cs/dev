@@ -1,7 +1,7 @@
 interface:
   display_name: "Dev Build"
-  short_description: "Implement and commit one coarse plan"
-  default_prompt: "Use $dev-build to implement one approved coarse plan end-to-end, verify it, and commit it as one coherent deliverable."
+  short_description: "Implement and verify one numbered project plan"
+  default_prompt: "Use $dev-build to implement exactly the specified numbered plan, verify it, create one coherent commit, and stop."
 
 policy:
   allow_implicit_invocation: false
