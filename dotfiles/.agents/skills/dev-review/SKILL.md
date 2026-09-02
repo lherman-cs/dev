@@ -5,13 +5,17 @@ description: Independently review one completed plan and revision for contract c
 
 # Dev Review
 
-Review one completed implementation independently as a senior software engineer. Judge the contract, repository, diff, and evidence—not the builder's reasoning. Do not begin new work or spawn subagents.
+Review one completed implementation independently as a senior software engineer. Judge the contract, repository, diff, and evidence—not the builder’s reasoning. Do not begin new work or spawn subagents.
 
 `plans/` is Git-ignored local workflow state. Access it directly through the filesystem; never use Git to discover, inspect, validate, stage, or commit its contents.
 
+Use the numbered plan’s `Implementation handoff` and matching `.build.md` file as navigation. Independently verify their claims against the repository, revision, diff, and evidence.
+
+Do not read sibling numbered plans unless the exact plan names one as a dependency and a concrete review question requires it.
+
 ## Engineering standard
 
-- Derive truth from the exact plan, its spec, the current request, repository instructions, architecture, code, tests, and real or intended callers.
+- Derive truth from the exact plan, its relevant spec sections, the current request, repository instructions, architecture, code, tests, and real or intended callers.
 - Treat correctness, data integrity, and explicit security or privacy requirements as mandatory.
 - Among otherwise valid implementations, prioritize:
   1. Robustness
@@ -22,6 +26,7 @@ Review one completed implementation independently as a senior software engineer.
 - Every abstraction, layer, state, dependency, option, compatibility path, or extension point must satisfy a current requirement or enforce a proven boundary.
 - Keep one canonical owner and source of truth.
 - Review correctness before simplification.
+- Reuse the plan’s repository coordinates and the build evidence to avoid repeating broad discovery, while independently judging every conclusion that affects acceptance.
 - Minimize context and tool use. Start from the diff, inspect unchanged code only for concrete questions, batch related searches, and keep diagnostics concise.
 
 ## 1. Establish the contract
@@ -30,16 +35,41 @@ Resolve:
 
 1. the revision, normally `HEAD`;
 2. its exact plan path from the `Dev-Plan:` trailer or an explicit path;
-3. the sibling spec;
-4. relevant repository instructions and architecture.
+3. the matching build-evidence path by replacing the plan’s `.md` suffix with `.build.md`;
+4. the relevant sibling spec sections named by the plan’s `Implementation handoff`;
+5. relevant repository instructions and architecture named by the plan.
 
 Do not guess the plan.
 
 Resolve the plan path relative to the repository root and read it directly from `plans/`. If the file is absent, request its exact path or contents.
 
+Read only the spec sections named in the plan’s implementation handoff. Read additional spec sections only when required to answer a concrete contract question raised by the diff or repository evidence.
+
+If the plan predates the `Implementation handoff` section, read the sibling spec once. Do not compensate by reading every sibling plan or broadly surveying the repository.
+
+Read the matching `.build.md` file when present.
+
+Accept build evidence as matching only when:
+
+- its `Plan` is the exact reviewed plan; and
+- its `Commit` identifies the reviewed revision, or correctly records a no-change result against that revision.
+
+If the build evidence is absent, incomplete, or stale, continue the review without it and note the limitation only when material. Do not infer missing validation or changed paths.
+
+Use build evidence only to identify:
+
+- paths the builder claims changed;
+- commands or evidence the builder claims were verified;
+- declared deviations;
+- the claimed final revision.
+
+Do not treat the builder’s status or successful command claims as the review verdict.
+
 Inspect version-control state and preserve unrelated production work.
 
 Begin with the complete human-written diff. Inspect generated output only for contract or reproducibility questions. Inspect unchanged surrounding code only when required to evaluate a specific risk.
+
+Use the plan’s named canonical owner, starting points, direct callers, relevant tests, and completeness searches before broadening repository inspection.
 
 If the revision is too broad to review reliably as one acceptance boundary, report a blocker and require it to be split.
 
@@ -50,6 +80,8 @@ If the revision is too broad to review reliably as one acceptance boundary, repo
 Confirm every outcome, constraint, and verification requirement is delivered.
 
 Identify partial migrations, missing callers, and claims unsupported by evidence.
+
+Use the plan’s named direct callers, relevant tests, and completeness searches to check the intended boundary without repeating broad repository discovery.
 
 ### Correctness and robustness
 
@@ -104,10 +136,13 @@ Confirm APIs, names, control flow, errors, comments, and module structure are co
 
 Confirm tests and validation:
 
+- apply to the exact reviewed revision;
 - would fail if the claimed behavior broke;
 - prove the real contract;
 - use the real external boundary when required;
 - avoid unnecessary fixtures, mocks, sleeps, and implementation coupling.
+
+Use the build evidence to locate prior validation, but independently determine whether that evidence is sufficient and relevant.
 
 ## 3. Classify findings
 
@@ -129,13 +164,26 @@ Preserve the `Dev-Plan:` trailer.
 
 ## 4. Verify
 
+When no review fix was required:
+
+- re-check every acceptance item;
+- inspect the complete final production diff;
+- confirm every remaining mechanism is necessary;
+- confirm the build evidence maps to the exact revision and actual contract;
+- run focused checks needed to resolve concrete review questions;
+- do not automatically rerun a successful expensive command from matching build evidence on an unchanged tree when no finding challenges it;
+- rerun an expensive command when its evidence is missing, stale, ambiguous, contradicted, required by repository policy, or necessary to establish the verdict.
+
 After any fixes:
 
 - re-check every acceptance item;
 - inspect the complete final production diff;
 - confirm every remaining mechanism is necessary;
-- run focused checks and required final validation once;
+- run affected focused checks;
+- run required final validation once on the final unchanged tree;
 - confirm no `BLOCKER` or `ISSUE` remains.
+
+Never accept a result merely because the build evidence reports passing validation.
 
 ## 5. Report and stop
 

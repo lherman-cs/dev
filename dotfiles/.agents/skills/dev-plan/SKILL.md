@@ -11,6 +11,8 @@ Plan one bounded project as a senior software engineer. Do not implement product
 
 Use durable repository artifacts instead of conversation history wherever possible.
 
+Each numbered plan is also a handoff to fresh build and review agents. Record the exact repository paths, symbols, tests, searches, and spec sections they need so they do not have to rediscover settled repository facts.
+
 ## Engineering standard
 
 - Derive intended behavior from the user.
@@ -35,6 +37,7 @@ Use durable repository artifacts instead of conversation history wherever possib
 - Prefer small, deep, conventional interfaces.
 - Preserve required validation, errors, lifecycle handling, cleanup, compatibility, maintainability, and operational evidence.
 - Minimize context and tool use. Planning should normally finish without compaction.
+- Record reusable repository evidence once in each numbered plan’s implementation handoff so later agents do not repeat the same investigation.
 
 ## Decision filter
 
@@ -101,6 +104,18 @@ Do not perform broad repository inventories, unrestricted searches, generated-tr
 
 Batch related searches and reads. Stop when sufficient evidence is found. Do not gather more evidence for an already-settled decision.
 
+While investigating, retain a compact implementation handoff for each likely numbered plan:
+
+- applicable spec sections;
+- applicable repository instruction files;
+- canonical owner;
+- exact starting paths and symbols;
+- direct callers or consumers that are in scope;
+- focused tests that express current behavior;
+- exact completeness searches that can prove a migration complete.
+
+Record only concise facts and navigation coordinates. Do not copy large source excerpts, command output, or speculative implementation details into the handoff.
+
 Report only findings that change or constrain the proposed contract.
 
 ## 3. Resolve the contract
@@ -160,7 +175,13 @@ Each numbered plan must produce:
 - one independent review;
 - evidence that can prove the result complete or wrong.
 
+Split a numbered plan when it combines multiple independently testable primary mechanisms or ownership transitions that can be implemented and accepted separately.
+
+Supporting tests, direct-caller adaptations, cleanup of displaced in-scope code, and validation may remain with the primary mechanism they prove. They do not justify combining separate architectural milestones.
+
 Keep later plans coarse. Specify outcomes, consequential constraints, dependencies, and verification—not speculative files, helpers, types, or abstractions.
+
+A numbered plan’s implementation handoff must be specific enough that a fresh builder can start from named repository evidence rather than broadly rediscovering the architecture.
 
 ## 6. Write the project
 
@@ -196,14 +217,36 @@ using:
 
 <only consequential constraints>
 
+## Implementation handoff
+
+- **Relevant spec sections:** `<exact heading or headings from spec.md>`
+- **Repository instructions:** `<exact applicable path, or None>`
+- **Canonical owner:** `<path>::<symbol>` — <current responsibility and required destination>
+- **Starting points:**
+  - `<path>::<symbol>` — <concise repository fact or edit point>
+- **Direct callers / consumers:**
+  - `<path>::<symbol>` — <why it is in scope>
+- **Relevant tests:**
+  - `<path>::<test or test module>` — <behavior it currently proves>
+- **Completeness searches:**
+  - `<exact symbol, type, method, or scoped pattern>` — <what the result must prove>
+
 ## Verification
 
 <evidence that proves the result>
 
 ## Dependencies
 
-<only when required>
+<only when required; use exact plan paths>
 ```
+
+Use exact paths and symbols when known. Scope search patterns to the smallest useful directory or file set.
+
+The implementation handoff is repository navigation, not a speculative implementation prescription. It must not dictate private helper names, internal decomposition, or line-by-line edits unless required by an approved external contract.
+
+Use `None` when a handoff category does not apply.
+
+Do not duplicate large portions of `spec.md`, repository documentation, source files, or test output in a numbered plan. Reference the exact relevant sections and evidence instead.
 
 Every plan must be executable from the current working tree, its local plan files, and authoritative repository documents without this conversation.
 
@@ -216,6 +259,9 @@ Before finishing:
 - confirm ownership and sources of truth are clear;
 - confirm invalidating assumptions are resolved, proved early, or accepted risks;
 - confirm each plan has one acceptance boundary and fits one focused build session;
+- confirm independently testable primary mechanisms or ownership transitions are split when appropriate;
+- confirm each plan records precise implementation handoff coordinates discovered during planning;
+- confirm the handoff does not duplicate broad source or specification context;
 - confirm the plans collectively deliver the approved outcome;
 - confirm no production implementation was performed.
 
