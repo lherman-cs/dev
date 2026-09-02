@@ -156,6 +156,8 @@ enum Commands {
         #[arg(short, long)]
         members: Vec<String>,
     },
+    /// Runs a tui to play a lofi radio
+    Radio,
 
     /// Show workspace statistics
     Stats,
@@ -1420,8 +1422,9 @@ fn create_symlink(source: &Path, target: &Path, is_dir: bool) -> Result<()> {
     #[cfg(windows)]
     {
         if is_dir {
-            std::os::windows::fs::symlink_dir(source, target)
-                .with_context(|| format!("Failed to create directory symlink: {}", target.display()))?;
+            std::os::windows::fs::symlink_dir(source, target).with_context(|| {
+                format!("Failed to create directory symlink: {}", target.display())
+            })?;
         } else {
             std::os::windows::fs::symlink_file(source, target)
                 .with_context(|| format!("Failed to create file symlink: {}", target.display()))?;
@@ -1454,7 +1457,10 @@ fn link_path(source: &Path, target: &Path, apply: bool, force: bool) -> Result<(
                         format!("Failed to create directory: {}", target.display())
                     })?;
                 } else {
-                    info!("[DRY-RUN] Would replace {} with a directory", target.display());
+                    info!(
+                        "[DRY-RUN] Would replace {} with a directory",
+                        target.display()
+                    );
                 }
             }
         } else if apply {
@@ -1477,12 +1483,19 @@ fn link_path(source: &Path, target: &Path, apply: bool, force: bool) -> Result<(
 
     if path_exists(target) {
         if symlink_points_to(target, source) {
-            info!("Already linked {} -> {}", source.display(), target.display());
+            info!(
+                "Already linked {} -> {}",
+                source.display(),
+                target.display()
+            );
             return Ok(());
         }
 
         if !force {
-            bail!("{} already exists. Use --force to override", target.display());
+            bail!(
+                "{} already exists. Use --force to override",
+                target.display()
+            );
         }
 
         if apply {
@@ -1500,7 +1513,11 @@ fn link_path(source: &Path, target: &Path, apply: bool, force: bool) -> Result<(
         create_symlink(source, target, source_metadata.is_dir())?;
         info!("Linked {} -> {}", source.display(), target.display());
     } else {
-        info!("[DRY-RUN] Would link {} -> {}", source.display(), target.display());
+        info!(
+            "[DRY-RUN] Would link {} -> {}",
+            source.display(),
+            target.display()
+        );
     }
 
     Ok(())
@@ -1604,6 +1621,13 @@ fn match_json_path(value: &Value, path: &str, pattern: &Regex) -> bool {
     }
 }
 
+fn run_shell(program: &str) -> Result<()> {
+    Command::new(program)
+        .status()
+        .map(|_| ())
+        .context("run_shell failed")
+}
+
 fn main() {
     let subscriber = FmtSubscriber::builder()
         .with_max_level(Level::INFO)
@@ -1645,6 +1669,7 @@ fn main() {
             parallel,
             members,
         } => cmd_exec(command, args, parallel, members),
+        Commands::Radio => run_shell("cliamp"),
         Commands::Stats => cmd_stats(),
     };
 
