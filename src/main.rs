@@ -159,7 +159,8 @@ enum Commands {
     /// Runs a tui to play a lofi radio
     Radio,
 
-    /// Launch Codex with deterministic development workflow profiles
+    /// Launch Codex with toolbox-owned model profiles
+    #[command(alias = "a")]
     Agent {
         #[command(subcommand)]
         action: Option<AgentAction>,
@@ -192,26 +193,25 @@ impl AgentProfileName {
 
 #[derive(Subcommand)]
 enum AgentAction {
-    /// Start a fresh Sol/high planning session using $dev-plan
+    /// Start a fresh Sol/high planning session
+    #[command(alias = "p")]
     Plan {
-        /// Project request passed to $dev-plan
+        /// Optional initial Codex prompt
         prompt: Vec<String>,
     },
 
-    /// Start a fresh Terra/medium build session for exactly one numbered plan
+    /// Start a fresh Terra/medium build session
+    #[command(alias = "b")]
     Build {
-        /// Exact plans/<project>/<NN>-*.md path
-        plan: PathBuf,
-
-        /// Optional extra instructions for this build only
+        /// Optional initial Codex prompt
         prompt: Vec<String>,
     },
 
-    /// Start a fresh Sol/high independent review session
+    /// Start a fresh Sol/high review session
+    #[command(alias = "r")]
     Review {
-        /// Commit to review
-        #[arg(default_value = "HEAD")]
-        commit: String,
+        /// Optional initial Codex prompt
+        prompt: Vec<String>,
     },
 
     /// Show Codex usage statistics from local rollout JSONL files
@@ -231,7 +231,7 @@ enum AgentAction {
 
     /// Show the embedded overlay and effective Codex runtime overrides
     Config {
-        /// Workflow profile to inspect
+        /// Profile to inspect
         #[arg(long, value_enum, default_value_t = AgentProfileName::Default)]
         profile: AgentProfileName,
 
@@ -255,8 +255,6 @@ struct AgentConfig {
 struct AgentProfileConfig {
     model: String,
     model_reasoning_effort: String,
-    #[serde(default)]
-    skill: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -2050,72 +2048,14 @@ fn agent_codex_args(config: &AgentConfig, profile: AgentProfileName) -> Result<V
     Ok(args)
 }
 
-fn agent_workflow_prompt(
-    config: &AgentConfig,
-    profile: AgentProfileName,
-    body: &str,
-) -> Result<String> {
-    let profile_config = agent_profile(config, profile)?;
-    let skill = profile_config.skill.as_deref().ok_or_else(|| {
-        anyhow!(
-            "Embedded agent profile '{}' does not define a skill",
-            profile.as_str()
-        )
-    })?;
-
-    if body.trim().is_empty() {
-        Ok(format!("${skill}"))
-    } else {
-        Ok(format!("${skill} {}", body.trim()))
-    }
-}
-
-fn validate_build_plan(plan: &Path) -> Result<PathBuf> {
-    if plan.extension().and_then(|ext| ext.to_str()) != Some("md") {
-        bail!("Build plan must be a markdown file: {}", plan.display());
-    }
-    if !plan.is_file() {
-        bail!("Build plan does not exist: {}", plan.display());
-    }
-
-    let components: Vec<_> = plan.components().collect();
-    if !components
-        .iter()
-        .any(|component| component.as_os_str() == "plans")
-    {
-        bail!(
-            "Build requires an exact plans/<project>/<NN>-*.md path: {}",
-            plan.display()
-        );
-    }
-
-    let file_name = plan
-        .file_name()
-        .and_then(|name| name.to_str())
-        .ok_or_else(|| anyhow!("Build plan filename is not valid UTF-8"))?;
-    let bytes = file_name.as_bytes();
-    if bytes.len() < 4
-        || !bytes[0].is_ascii_digit()
-        || !bytes[1].is_ascii_digit()
-        || bytes[2] != b'-'
-    {
-        bail!(
-            "Build plan filename must start with a two-digit plan number, e.g. 01-foo.md: {}",
-            file_name
-        );
-    }
-
-    Ok(plan.to_path_buf())
-}
-
-fn exec_codex(profile: AgentProfileName, prompt: Option<String>) -> Result<()> {
+fn exec_codex(profile: AgentProfileName, prompt: Vec<String>) -> Result<()> {
     let config = load_agent_config()?;
     let args = agent_codex_args(&config, profile)?;
 
     let mut command = Command::new("codex");
     command.args(&args);
-    if let Some(prompt) = prompt {
-        command.arg(prompt);
+    if !prompt.is_empty() {
+        command.arg(prompt.join(" "));
     }
 
     info!(
@@ -2142,29 +2082,10 @@ fn exec_codex(profile: AgentProfileName, prompt: Option<String>) -> Result<()> {
 
 fn cmd_agent(action: Option<AgentAction>) -> Result<()> {
     match action {
-        None => exec_codex(AgentProfileName::Default, None),
-        Some(AgentAction::Plan { prompt }) => {
-            let config = load_agent_config()?;
-            let body = prompt.join(" ");
-            let prompt = agent_workflow_prompt(&config, AgentProfileName::Plan, &body)?;
-            exec_codex(AgentProfileName::Plan, Some(prompt))
-        }
-        Some(AgentAction::Build { plan, prompt }) => {
-            let plan = validate_build_plan(&plan)?;
-            let config = load_agent_config()?;
-            let mut body = plan.display().to_string();
-            if !prompt.is_empty() {
-                body.push(' ');
-                body.push_str(&prompt.join(" "));
-            }
-            let prompt = agent_workflow_prompt(&config, AgentProfileName::Build, &body)?;
-            exec_codex(AgentProfileName::Build, Some(prompt))
-        }
-        Some(AgentAction::Review { commit }) => {
-            let config = load_agent_config()?;
-            let prompt = agent_workflow_prompt(&config, AgentProfileName::Review, &commit)?;
-            exec_codex(AgentProfileName::Review, Some(prompt))
-        }
+        None => exec_codex(AgentProfileName::Default, Vec::new()),
+        Some(AgentAction::Plan { prompt }) => exec_codex(AgentProfileName::Plan, prompt),
+        Some(AgentAction::Build { prompt }) => exec_codex(AgentProfileName::Build, prompt),
+        Some(AgentAction::Review { prompt }) => exec_codex(AgentProfileName::Review, prompt),
         Some(AgentAction::Stats { last, file, json }) => cmd_agent_stats(last, file, json),
         Some(AgentAction::Config { profile, args }) => cmd_agent_config(profile, args),
     }
@@ -2181,7 +2102,7 @@ fn cmd_agent_config(profile: AgentProfileName, args_only: bool) -> Result<()> {
 
     println!("Embedded agent overlay:\n");
     println!("{AGENT_CONFIG_TOML}");
-    println!("Effective workflow profile: {}\n", profile.as_str());
+    println!("Effective profile: {}\n", profile.as_str());
     println!("Codex runtime overrides:");
     for pair in args.chunks_exact(2) {
         println!("  {} {}", pair[0], pair[1]);
