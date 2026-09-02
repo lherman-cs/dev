@@ -3,7 +3,7 @@ use clap::{Parser, Subcommand, ValueEnum};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs::{self, File};
 use std::io::{self, BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
@@ -169,7 +169,7 @@ enum Commands {
     Stats,
 }
 
-const AGENT_CONFIG_TOML: &str = include_str!("./agent.toml");
+const AGENT_CONFIG_TOML: &str = include_str!("../agent.toml");
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
 enum AgentProfileName {
@@ -283,27 +283,233 @@ impl Default for AgentStatsPolicy {
     }
 }
 
-#[derive(Debug, Serialize)]
-struct AgentSessionStats {
+#[derive(Debug, Clone)]
+struct RolloutIdentity {
+    file: PathBuf,
+    thread_id: String,
+    parent_thread_id: Option<String>,
+    forked_from_id: Option<String>,
+    source_kind: String,
+    started_at: Option<String>,
+    cwd: Option<String>,
+    repository_url: Option<String>,
+    git_branch: Option<String>,
+    git_commit: Option<String>,
+    subagent_history_start_ordinal: Option<u64>,
+    modified: SystemTime,
+}
+
+#[derive(Debug, Clone, Copy, Default, Serialize)]
+struct TokenUsage {
+    input_tokens: u64,
+    cached_input_tokens: u64,
+    cache_write_input_tokens: u64,
+    output_tokens: u64,
+    reasoning_output_tokens: u64,
+    total_tokens: u64,
+}
+
+impl TokenUsage {
+    fn from_json(value: &Value) -> Self {
+        let get = |key: &str| value.get(key).and_then(Value::as_u64).unwrap_or(0);
+        Self {
+            input_tokens: get("input_tokens"),
+            cached_input_tokens: get("cached_input_tokens"),
+            cache_write_input_tokens: get("cache_write_input_tokens"),
+            output_tokens: get("output_tokens"),
+            reasoning_output_tokens: get("reasoning_output_tokens"),
+            total_tokens: get("total_tokens"),
+        }
+    }
+
+    fn delta_from(self, previous: Option<Self>) -> Self {
+        let Some(previous) = previous else {
+            return self;
+        };
+
+        // Codex total_token_usage is cumulative for a thread. Repeated token_count
+        // events may carry the same cumulative snapshot; those must contribute zero.
+        if self.total_tokens == previous.total_tokens
+            && self.input_tokens == previous.input_tokens
+            && self.output_tokens == previous.output_tokens
+        {
+            return Self::default();
+        }
+
+        // A lower cumulative total means the counter reset. Treat the new snapshot
+        // as a fresh counter rather than subtracting across the reset.
+        if self.total_tokens < previous.total_tokens
+            || self.input_tokens < previous.input_tokens
+            || self.output_tokens < previous.output_tokens
+        {
+            return self;
+        }
+
+        Self {
+            input_tokens: self.input_tokens.saturating_sub(previous.input_tokens),
+            cached_input_tokens: self
+                .cached_input_tokens
+                .saturating_sub(previous.cached_input_tokens),
+            cache_write_input_tokens: self
+                .cache_write_input_tokens
+                .saturating_sub(previous.cache_write_input_tokens),
+            output_tokens: self.output_tokens.saturating_sub(previous.output_tokens),
+            reasoning_output_tokens: self
+                .reasoning_output_tokens
+                .saturating_sub(previous.reasoning_output_tokens),
+            total_tokens: self.total_tokens.saturating_sub(previous.total_tokens),
+        }
+    }
+
+    fn is_zero(self) -> bool {
+        self.total_tokens == 0
+            && self.input_tokens == 0
+            && self.output_tokens == 0
+            && self.cached_input_tokens == 0
+            && self.cache_write_input_tokens == 0
+            && self.reasoning_output_tokens == 0
+    }
+
+    fn add_assign(&mut self, other: Self) {
+        self.input_tokens = self.input_tokens.saturating_add(other.input_tokens);
+        self.cached_input_tokens = self
+            .cached_input_tokens
+            .saturating_add(other.cached_input_tokens);
+        self.cache_write_input_tokens = self
+            .cache_write_input_tokens
+            .saturating_add(other.cache_write_input_tokens);
+        self.output_tokens = self.output_tokens.saturating_add(other.output_tokens);
+        self.reasoning_output_tokens = self
+            .reasoning_output_tokens
+            .saturating_add(other.reasoning_output_tokens);
+        self.total_tokens = self.total_tokens.saturating_add(other.total_tokens);
+    }
+}
+
+#[derive(Debug, Serialize, Default, Clone)]
+struct AgentModelStats {
+    threads: u64,
+    input_tokens: u64,
+    cached_input_tokens: u64,
+    cache_write_input_tokens: u64,
+    output_tokens: u64,
+    reasoning_output_tokens: u64,
+    model_calls: u64,
+    tool_calls: u64,
+}
+
+impl AgentModelStats {
+    fn add_usage(&mut self, usage: TokenUsage) {
+        self.input_tokens = self.input_tokens.saturating_add(usage.input_tokens);
+        self.cached_input_tokens = self
+            .cached_input_tokens
+            .saturating_add(usage.cached_input_tokens);
+        self.cache_write_input_tokens = self
+            .cache_write_input_tokens
+            .saturating_add(usage.cache_write_input_tokens);
+        self.output_tokens = self.output_tokens.saturating_add(usage.output_tokens);
+        self.reasoning_output_tokens = self
+            .reasoning_output_tokens
+            .saturating_add(usage.reasoning_output_tokens);
+    }
+}
+
+#[derive(Debug, Serialize, Clone)]
+struct ObservedCommit {
+    hash: String,
+    subject: String,
+    files_changed: Option<u64>,
+    insertions: Option<u64>,
+    deletions: Option<u64>,
+}
+
+#[derive(Debug, Serialize, Clone)]
+struct AgentThreadStats {
+    thread_id: String,
+    parent_thread_id: Option<String>,
+    source_kind: String,
     file: String,
+    cwd: Option<String>,
+    repository_url: Option<String>,
+    git_branch: Option<String>,
+    git_commit_start: Option<String>,
+    first_user_request: Option<String>,
+    skills: Vec<String>,
+    referenced_plans: Vec<String>,
+    command_families: HashMap<String, u64>,
+    commits: Vec<ObservedCommit>,
+    task_completions: u64,
+    final_result: Option<String>,
     model: Option<String>,
     reasoning_effort: Option<String>,
     started_at: Option<String>,
     ended_at: Option<String>,
     input_tokens: u64,
     cached_input_tokens: u64,
+    cache_write_input_tokens: u64,
     uncached_input_tokens: u64,
     output_tokens: u64,
     reasoning_output_tokens: u64,
     model_calls: u64,
     tool_calls: u64,
     compactions: u64,
+    inherited_records_skipped: u64,
     median_input_tokens_per_call: u64,
     p90_input_tokens_per_call: u64,
     peak_input_tokens_per_call: u64,
-    weekly_used_percent_start: Option<f64>,
-    weekly_used_percent_end: Option<f64>,
-    weekly_used_percent_delta: Option<f64>,
+    account_weekly_used_percent_first: Option<f64>,
+    account_weekly_used_percent_last: Option<f64>,
+    by_model: HashMap<String, AgentModelStats>,
+    warnings: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct AgentWorkflowStats {
+    root_thread_id: String,
+    root_file: String,
+    root_source: String,
+    cwd: Option<String>,
+    repository_url: Option<String>,
+    git_branch: Option<String>,
+    git_commit_start: Option<String>,
+    first_user_request: Option<String>,
+    skills: Vec<String>,
+    referenced_plans: Vec<String>,
+    command_families: HashMap<String, u64>,
+    commits: Vec<ObservedCommit>,
+    task_completions: u64,
+    final_result: Option<String>,
+    model: Option<String>,
+    reasoning_effort: Option<String>,
+    started_at: Option<String>,
+    ended_at: Option<String>,
+    threads: usize,
+    spawned_threads: usize,
+    review_threads: usize,
+    compact_threads: usize,
+    input_tokens: u64,
+    cached_input_tokens: u64,
+    cache_write_input_tokens: u64,
+    uncached_input_tokens: u64,
+    output_tokens: u64,
+    reasoning_output_tokens: u64,
+    model_calls: u64,
+    tool_calls: u64,
+    compactions: u64,
+    inherited_records_skipped: u64,
+    median_input_tokens_per_call: u64,
+    p90_input_tokens_per_call: u64,
+    peak_input_tokens_per_call: u64,
+    calls_over_100k: u64,
+    calls_over_120k: u64,
+    calls_over_200k: u64,
+    cached_input_percent: f64,
+    replay_amplification: Option<f64>,
+    account_weekly_used_percent_first: Option<f64>,
+    account_weekly_used_percent_last: Option<f64>,
+    by_model: HashMap<String, AgentModelStats>,
+    thread_details: Vec<AgentThreadStats>,
+    warnings: Vec<String>,
     assessment: Vec<String>,
 }
 
@@ -1765,6 +1971,7 @@ fn match_json_path(value: &Value, path: &str, pattern: &Regex) -> bool {
     }
 }
 
+
 fn load_agent_config() -> Result<AgentConfig> {
     toml::from_str::<AgentConfig>(AGENT_CONFIG_TOML).context("Failed to parse embedded agent.toml")
 }
@@ -1810,12 +2017,10 @@ fn agent_profile<'a>(
     config: &'a AgentConfig,
     profile: AgentProfileName,
 ) -> Result<&'a AgentProfileConfig> {
-    config.profiles.get(profile.as_str()).ok_or_else(|| {
-        anyhow!(
-            "Embedded agent config is missing profile '{}'",
-            profile.as_str()
-        )
-    })
+    config
+        .profiles
+        .get(profile.as_str())
+        .ok_or_else(|| anyhow!("Embedded agent config is missing profile '{}'", profile.as_str()))
 }
 
 fn agent_codex_overrides(
@@ -1998,7 +2203,7 @@ fn collect_rollout_files(dir: &Path, output: &mut Vec<PathBuf>) -> Result<()> {
     }
 
     for entry in fs::read_dir(dir)
-        .with_context(|| format!("Failed to read Codex sessions directory: {}", dir.display()))?
+        .with_context(|| format!("Failed to read Codex rollout directory: {}", dir.display()))?
     {
         let entry = entry?;
         let path = entry.path();
@@ -2023,40 +2228,271 @@ fn modified_time(path: &Path) -> SystemTime {
         .unwrap_or(SystemTime::UNIX_EPOCH)
 }
 
-fn recent_rollout_files(last: usize) -> Result<Vec<PathBuf>> {
+fn session_meta_object(payload: &Value) -> &Value {
+    payload.get("meta").unwrap_or(payload)
+}
+
+fn source_kind(meta: &Value) -> String {
+    let Some(source) = meta.get("source") else {
+        return "unknown".to_string();
+    };
+
+    if let Some(source) = source.as_str() {
+        return source.to_string();
+    }
+
+    let Some(subagent) = source
+        .get("subAgent")
+        .or_else(|| source.get("sub_agent"))
+        .or_else(|| source.get("subagent"))
+    else {
+        if let Some(custom) = source.get("custom").and_then(Value::as_str) {
+            return format!("custom:{custom}");
+        }
+        return "unknown".to_string();
+    };
+
+    if let Some(kind) = subagent.as_str() {
+        return format!("subagent:{kind}");
+    }
+    if subagent.get("thread_spawn").is_some() || subagent.get("threadSpawn").is_some() {
+        return "subagent:thread_spawn".to_string();
+    }
+    if let Some(other) = subagent.get("other").and_then(Value::as_str) {
+        return format!("subagent:{other}");
+    }
+    "subagent:unknown".to_string()
+}
+
+fn subagent_parent_from_source(meta: &Value) -> Option<String> {
+    let source = meta.get("source")?;
+    let subagent = source
+        .get("subAgent")
+        .or_else(|| source.get("sub_agent"))
+        .or_else(|| source.get("subagent"))?;
+    let spawn = subagent
+        .get("thread_spawn")
+        .or_else(|| subagent.get("threadSpawn"))?;
+    spawn
+        .get("parent_thread_id")
+        .or_else(|| spawn.get("parentThreadId"))
+        .and_then(Value::as_str)
+        .map(ToOwned::to_owned)
+}
+
+fn read_rollout_identity(path: &Path) -> Result<RolloutIdentity> {
+    let file = File::open(path)
+        .with_context(|| format!("Failed to open Codex rollout: {}", path.display()))?;
+    let reader = BufReader::new(file);
+
+    for (line_number, line) in reader.lines().take(64).enumerate() {
+        let line = line.with_context(|| {
+            format!("Failed reading {} at line {}", path.display(), line_number + 1)
+        })?;
+        let line = line.trim_start_matches('\u{feff}');
+        let value: Value = serde_json::from_str(line).with_context(|| {
+            format!("Invalid JSON in {} at line {}", path.display(), line_number + 1)
+        })?;
+        if value.get("type").and_then(Value::as_str) != Some("session_meta") {
+            continue;
+        }
+
+        let payload = value
+            .get("payload")
+            .ok_or_else(|| anyhow!("session_meta has no payload in {}", path.display()))?;
+        let meta = session_meta_object(payload);
+        let thread_id = meta
+            .get("session_id")
+            .or_else(|| meta.get("id"))
+            .or_else(|| meta.get("thread_id"))
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned)
+            .ok_or_else(|| anyhow!("session_meta has no thread id in {}", path.display()))?;
+
+        let kind = source_kind(meta);
+        let direct_parent = meta
+            .get("parent_thread_id")
+            .or_else(|| meta.get("parentThreadId"))
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned);
+        let forked_from_id = meta
+            .get("forked_from_id")
+            .or_else(|| meta.get("forkedFromId"))
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned);
+
+        let parent_thread_id = direct_parent
+            .or_else(|| subagent_parent_from_source(meta))
+            .or_else(|| {
+                // Legacy subagent rollouts can identify only the fork parent.
+                kind.starts_with("subagent:")
+                    .then(|| forked_from_id.clone())
+                    .flatten()
+            })
+            .filter(|parent| parent != &thread_id);
+
+        let started_at = meta
+            .get("timestamp")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned)
+            .or_else(|| {
+                value
+                    .get("timestamp")
+                    .and_then(Value::as_str)
+                    .map(ToOwned::to_owned)
+            });
+
+        let cwd = meta
+            .get("cwd")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned);
+
+        let git = meta.get("git");
+        let repository_url = git
+            .and_then(|git| git.get("repository_url"))
+            .or_else(|| git.and_then(|git| git.get("repositoryUrl")))
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned);
+        let git_branch = git
+            .and_then(|git| git.get("branch"))
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned);
+        let git_commit = git
+            .and_then(|git| git.get("commit_hash"))
+            .or_else(|| git.and_then(|git| git.get("commitHash")))
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned);
+
+        let subagent_history_start_ordinal = meta
+            .get("subagent_history_start_ordinal")
+            .or_else(|| meta.get("subagentHistoryStartOrdinal"))
+            .and_then(Value::as_u64);
+
+        return Ok(RolloutIdentity {
+            file: path.to_path_buf(),
+            thread_id,
+            parent_thread_id,
+            forked_from_id,
+            source_kind: kind,
+            started_at,
+            cwd,
+            repository_url,
+            git_branch,
+            git_commit,
+            subagent_history_start_ordinal,
+            modified: modified_time(path),
+        });
+    }
+
+    bail!("No session_meta found near start of {}", path.display())
+}
+
+fn rollout_index() -> Result<HashMap<String, RolloutIdentity>> {
+    let home = codex_home()?;
+    let mut files = Vec::new();
+    collect_rollout_files(&home.join("sessions"), &mut files)?;
+    collect_rollout_files(&home.join("archived_sessions"), &mut files)?;
+
+    let mut index = HashMap::new();
+    for path in files {
+        match read_rollout_identity(&path) {
+            Ok(identity) => {
+                let replace = index
+                    .get(&identity.thread_id)
+                    .map(|old: &RolloutIdentity| identity.modified > old.modified)
+                    .unwrap_or(true);
+                if replace {
+                    index.insert(identity.thread_id.clone(), identity);
+                }
+            }
+            Err(error) => warn!("Skipping unreadable Codex rollout {}: {error:#}", path.display()),
+        }
+    }
+
+    if index.is_empty() {
+        bail!(
+            "No readable Codex rollout JSONL files found under {}",
+            home.display()
+        );
+    }
+    Ok(index)
+}
+
+fn root_thread_id(index: &HashMap<String, RolloutIdentity>, thread_id: &str) -> String {
+    let mut current = thread_id.to_owned();
+    let mut seen = HashSet::new();
+
+    while seen.insert(current.clone()) {
+        let Some(identity) = index.get(&current) else {
+            break;
+        };
+        let Some(parent) = identity.parent_thread_id.as_deref() else {
+            break;
+        };
+        if !index.contains_key(parent) {
+            break;
+        }
+        current = parent.to_owned();
+    }
+    current
+}
+
+fn workflow_thread_ids(index: &HashMap<String, RolloutIdentity>, root: &str) -> Vec<String> {
+    let mut result = Vec::new();
+    let mut queue = vec![root.to_owned()];
+    let mut seen = HashSet::new();
+
+    while let Some(thread_id) = queue.pop() {
+        if !seen.insert(thread_id.clone()) {
+            continue;
+        }
+        result.push(thread_id.clone());
+
+        for identity in index.values() {
+            if identity.parent_thread_id.as_deref() == Some(thread_id.as_str()) {
+                queue.push(identity.thread_id.clone());
+            }
+        }
+    }
+
+    result
+}
+
+fn recent_root_thread_ids(
+    index: &HashMap<String, RolloutIdentity>,
+    last: usize,
+) -> Result<Vec<String>> {
     if last == 0 {
         bail!("--last must be at least 1");
     }
 
-    let sessions = codex_home()?.join("sessions");
-    let mut files = Vec::new();
-    collect_rollout_files(&sessions, &mut files)?;
-    files.sort_by_key(|path| std::cmp::Reverse(modified_time(path)));
-    files.truncate(last);
+    let mut roots: Vec<_> = index
+        .values()
+        .filter(|identity| {
+            identity
+                .parent_thread_id
+                .as_deref()
+                .is_none_or(|parent| !index.contains_key(parent))
+        })
+        .collect();
 
-    if files.is_empty() {
-        bail!(
-            "No Codex rollout JSONL files found under {}",
-            sessions.display()
-        );
-    }
-    Ok(files)
-}
+    // "Last" means most recently created root workflows, not whichever old
+    // workflow happened to receive a late file write.
+    roots.sort_by(|a, b| {
+        b.started_at
+            .cmp(&a.started_at)
+            .then_with(|| b.modified.cmp(&a.modified))
+    });
+    roots.truncate(last);
 
-fn json_u64(value: &Value, path: &[&str]) -> Option<u64> {
-    let mut current = value;
-    for key in path {
-        current = current.get(*key)?;
+    if roots.is_empty() {
+        bail!("No root Codex workflows found");
     }
-    current.as_u64()
-}
 
-fn json_f64(value: &Value, path: &[&str]) -> Option<f64> {
-    let mut current = value;
-    for key in path {
-        current = current.get(*key)?;
-    }
-    current.as_f64()
+    Ok(roots
+        .into_iter()
+        .map(|identity| identity.thread_id.clone())
+        .collect())
 }
 
 fn json_str(value: &Value, path: &[&str]) -> Option<String> {
@@ -2067,109 +2503,467 @@ fn json_str(value: &Value, path: &[&str]) -> Option<String> {
     current.as_str().map(ToOwned::to_owned)
 }
 
+fn json_f64(value: &Value, path: &[&str]) -> Option<f64> {
+    let mut current = value;
+    for key in path {
+        current = current.get(*key)?;
+    }
+    current.as_f64()
+}
+
 fn percentile(sorted: &[u64], numerator: usize, denominator: usize) -> u64 {
     if sorted.is_empty() {
         return 0;
     }
-    let index = ((sorted.len() - 1) * numerator + denominator - 1) / denominator;
-    sorted[index.min(sorted.len() - 1)]
+    let rank = (sorted.len() * numerator).div_ceil(denominator);
+    sorted[rank.saturating_sub(1).min(sorted.len() - 1)]
 }
 
-fn analyze_rollout(path: &Path, policy: &AgentStatsPolicy) -> Result<AgentSessionStats> {
+fn is_auxiliary_model(model: &str) -> bool {
+    model.starts_with("codex-auto-review")
+        || model.contains("auto-review")
+        || model.contains("auto_review")
+}
+
+fn set_main_model(target: &mut Option<String>, candidate: Option<String>) {
+    let Some(candidate) = candidate else {
+        return;
+    };
+    if is_auxiliary_model(&candidate) {
+        return;
+    }
+    if target.is_none() {
+        *target = Some(candidate);
+    }
+}
+
+fn looks_like_tool_call(payload: &Value) -> bool {
+    let Some(kind) = payload.get("type").and_then(Value::as_str) else {
+        return false;
+    };
+    matches!(
+        kind,
+        "custom_tool_call"
+            | "function_call"
+            | "local_shell_call"
+            | "web_search_call"
+            | "computer_call"
+            | "mcp_tool_call"
+            | "tool_call"
+    ) || (kind.ends_with("_call") && !kind.contains("output"))
+}
+
+fn rollout_line_is_inherited(identity: &RolloutIdentity, value: &Value) -> bool {
+    let Some(boundary) = identity.subagent_history_start_ordinal else {
+        return false;
+    };
+    let Some(ordinal) = value.get("ordinal").and_then(Value::as_u64) else {
+        return false;
+    };
+    ordinal < boundary
+}
+
+fn truncate_one_line(value: &str, max_chars: usize) -> String {
+    let normalized = value.split_whitespace().collect::<Vec<_>>().join(" ");
+    if normalized.chars().count() <= max_chars {
+        return normalized;
+    }
+    let mut out = normalized.chars().take(max_chars.saturating_sub(1)).collect::<String>();
+    out.push('…');
+    out
+}
+
+fn extract_user_text(payload: &Value) -> Option<String> {
+    if payload.get("role").and_then(Value::as_str) != Some("user") {
+        return None;
+    }
+
+    // Codex represents injected AGENTS/environment/skill material as user-role
+    // messages too. Prefer records explicitly marked as real user text.
+    if let Some(kinds) = payload
+        .get("internal_chat_message_metadata_passthrough")
+        .and_then(|m| m.get("content_item_kinds"))
+        .and_then(Value::as_array)
+    {
+        let is_real_user = kinds.iter().any(|v| v.as_str() == Some("user.text"));
+        if !is_real_user {
+            return None;
+        }
+    }
+
+    let content = payload.get("content")?.as_array()?;
+    let mut parts = Vec::new();
+    for item in content {
+        let kind = item.get("type").and_then(Value::as_str).unwrap_or("");
+        if matches!(kind, "input_text" | "text") {
+            if let Some(text) = item.get("text").and_then(Value::as_str) {
+                parts.push(text);
+            }
+        }
+    }
+    if parts.is_empty() { None } else { Some(parts.join(" ")) }
+}
+
+fn extract_skill_names(value: &Value, output: &mut HashSet<String>) {
+    fn walk(value: &Value, output: &mut HashSet<String>) {
+        match value {
+            Value::Object(map) => {
+                if map.get("type").and_then(Value::as_str) == Some("skill") {
+                    if let Some(name) = map.get("name").and_then(Value::as_str) {
+                        output.insert(name.to_owned());
+                    }
+                }
+                for child in map.values() { walk(child, output); }
+            }
+            Value::Array(items) => for child in items { walk(child, output); },
+            _ => {}
+        }
+    }
+    walk(value, output);
+}
+
+fn extract_plan_paths(text: &str, output: &mut HashSet<String>) {
+    if let Ok(re) = Regex::new(r"plans/[A-Za-z0-9._/-]+\.md") {
+        for m in re.find_iter(text) { output.insert(m.as_str().to_owned()); }
+    }
+}
+
+fn command_family_from_payload(payload: &Value) -> Option<String> {
+    let raw = payload.get("input").and_then(Value::as_str)?;
+    let parsed: Value = serde_json::from_str(raw).ok()?;
+    let cmd = parsed.get("cmd")?.as_str()?.trim();
+    let command = cmd.split_whitespace().next()?;
+    let base = Path::new(command).file_name()?.to_str()?;
+    Some(base.to_owned())
+}
+
+fn command_families_from_execution(value: &Value) -> Vec<String> {
+    let item = value.get("payload").and_then(|p| p.get("item")).unwrap_or(&Value::Null);
+    let mut out = Vec::new();
+
+    if let Some(parsed) = item.get("parsed_cmd").and_then(Value::as_array) {
+        for entry in parsed {
+            if let Some(cmd) = entry.get("cmd").and_then(Value::as_str) {
+                if let Some(name) = shell_command_family(cmd) { out.push(name); }
+            }
+        }
+    }
+
+    if out.is_empty() {
+        if let Some(command) = item.get("command").and_then(Value::as_array) {
+            let args = command.iter().filter_map(Value::as_str).collect::<Vec<_>>();
+            let cmd = if args.len() >= 3 && matches!(args[0], "/bin/bash" | "bash" | "/bin/sh" | "sh") && args[1] == "-lc" {
+                args[2]
+            } else {
+                args.first().copied().unwrap_or("")
+            };
+            if let Some(name) = shell_command_family(cmd) { out.push(name); }
+        }
+    }
+
+    out
+}
+
+fn shell_command_family(cmd: &str) -> Option<String> {
+    let mut words = cmd.split_whitespace();
+    let mut first = words.next()?;
+    while first.contains('=') && !first.starts_with('/') {
+        first = words.next()?;
+    }
+    let base = Path::new(first).file_name()?.to_str()?;
+    Some(base.trim_matches(|c: char| c == '\'' || c == '"').to_owned())
+}
+
+fn observed_commit_from_output(text: &str) -> Option<ObservedCommit> {
+    let header = Regex::new(r"\[[^\]]+\s+([0-9a-f]{7,40})\]\s+(.+)").ok()?;
+    let caps = header.captures(text)?;
+    let hash = caps.get(1)?.as_str().to_owned();
+    let subject = caps.get(2)?.as_str().lines().next()?.trim().to_owned();
+    let stats = Regex::new(r"(?m)(\d+) files? changed(?:, (\d+) insertions?\(\+\))?(?:, (\d+) deletions?\(-\))?").ok();
+    let (files_changed, insertions, deletions) = stats
+        .and_then(|re| re.captures(text))
+        .map(|c| {
+            let n = |i| c.get(i).and_then(|m| m.as_str().parse::<u64>().ok());
+            (n(1), n(2), n(3))
+        })
+        .unwrap_or((None, None, None));
+    Some(ObservedCommit { hash, subject, files_changed, insertions, deletions })
+}
+
+fn analyze_rollout(identity: &RolloutIdentity) -> Result<(AgentThreadStats, Vec<u64>)> {
+    let path = &identity.file;
     let file = File::open(path)
         .with_context(|| format!("Failed to open Codex rollout: {}", path.display()))?;
     let reader = BufReader::new(file);
 
-    let mut model = None;
+    let mut main_model = None;
+    let mut active_model = None;
     let mut reasoning_effort = None;
-    let mut started_at = None;
+    let mut started_at = identity.started_at.clone();
     let mut ended_at = None;
-    let mut totals = (0_u64, 0_u64, 0_u64, 0_u64);
+    let mut usage = TokenUsage::default();
+    let mut previous_total: Option<TokenUsage> = None;
     let mut model_calls = 0_u64;
     let mut tool_calls = 0_u64;
+    let mut tool_call_ids = HashSet::new();
     let mut compactions = 0_u64;
+    let mut inherited_records_skipped = 0_u64;
     let mut call_inputs = Vec::new();
-    let mut quota_start = None;
-    let mut quota_end = None;
+    let mut account_quota_first = None;
+    let mut account_quota_last = None;
+    let mut by_model: HashMap<String, AgentModelStats> = HashMap::new();
+    let mut models_seen = HashSet::new();
+    let mut warnings = Vec::new();
+    let mut first_user_request = None;
+    let mut skills = HashSet::new();
+    let mut referenced_plans = HashSet::new();
+    let mut command_families: HashMap<String, u64> = HashMap::new();
+    let mut commits = Vec::new();
+    let mut task_completions = 0_u64;
+    let mut final_result = None;
+
+    if identity.parent_thread_id.is_some()
+        && identity.forked_from_id.is_some()
+        && identity.subagent_history_start_ordinal.is_none()
+    {
+        warnings.push(
+            "subagent rollout has fork metadata but no subagent history boundary; inherited non-usage records cannot be distinguished"
+                .to_string(),
+        );
+    }
 
     for (line_number, line) in reader.lines().enumerate() {
         let line = line.with_context(|| {
-            format!(
-                "Failed reading {} at line {}",
-                path.display(),
-                line_number + 1
-            )
+            format!("Failed reading {} at line {}", path.display(), line_number + 1)
         })?;
-        let value: Value = serde_json::from_str(&line).with_context(|| {
-            format!(
-                "Invalid JSON in {} at line {}",
-                path.display(),
-                line_number + 1
-            )
+        let line = line.trim_start_matches('\u{feff}');
+        let value: Value = serde_json::from_str(line).with_context(|| {
+            format!("Invalid JSON in {} at line {}", path.display(), line_number + 1)
         })?;
+
+        let top_type = value.get("type").and_then(Value::as_str);
+        let timestamp = value
+            .get("timestamp")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned);
 
         if started_at.is_none() {
-            started_at = json_str(&value, &["timestamp"]);
+            started_at = timestamp.clone();
         }
-        if let Some(timestamp) = json_str(&value, &["timestamp"]) {
-            ended_at = Some(timestamp);
+        if timestamp.is_some() {
+            ended_at = timestamp;
         }
 
-        match value.get("type").and_then(Value::as_str) {
+        if top_type != Some("session_meta") && rollout_line_is_inherited(identity, &value) {
+            inherited_records_skipped += 1;
+
+            // In copied-history subagent rollouts, seed the cumulative usage
+            // baseline from inherited token snapshots without charging them to
+            // the child. Otherwise the first child-local cumulative snapshot
+            // would incorrectly re-count the parent's lifetime usage.
+            if top_type == Some("event_msg")
+                && json_str(&value, &["payload", "type"]).as_deref() == Some("token_count")
+            {
+                if let Some(total_value) = value
+                    .get("payload")
+                    .and_then(|payload| payload.get("info"))
+                    .and_then(|info| info.get("total_token_usage"))
+                {
+                    previous_total = Some(TokenUsage::from_json(total_value));
+                }
+            }
+
+            // Preserve the inherited active model only as context for assigning
+            // the first child-local usage delta. No inherited tokens/tools are
+            // counted.
+            if top_type == Some("turn_context") {
+                if let Some(candidate) = json_str(&value, &["payload", "model"]) {
+                    active_model = Some(candidate.clone());
+                    set_main_model(&mut main_model, Some(candidate));
+                }
+            }
+            continue;
+        }
+
+        extract_plan_paths(line, &mut referenced_plans);
+
+        match top_type {
             Some("session_meta") => {
-                model = model.or_else(|| {
-                    json_str(
-                        &value,
-                        &["payload", "base_instructions", "provenance", "model"],
-                    )
-                });
+                let payload = value.get("payload").unwrap_or(&Value::Null);
+                let meta = session_meta_object(payload);
+                let candidate = meta
+                    .get("base_instructions")
+                    .and_then(|base| base.get("provenance"))
+                    .and_then(|prov| prov.get("model"))
+                    .and_then(Value::as_str)
+                    .map(ToOwned::to_owned);
+                set_main_model(&mut main_model, candidate.clone());
+                if active_model.is_none() {
+                    active_model = candidate;
+                }
             }
             Some("turn_context") => {
-                model = json_str(&value, &["payload", "model"]).or(model);
-                reasoning_effort = json_str(&value, &["payload", "effort"]).or(reasoning_effort);
+                let candidate = json_str(&value, &["payload", "model"]);
+                if let Some(candidate) = candidate {
+                    active_model = Some(candidate.clone());
+                    set_main_model(&mut main_model, Some(candidate.clone()));
+                    if !is_auxiliary_model(&candidate) && reasoning_effort.is_none() {
+                        reasoning_effort = json_str(&value, &["payload", "effort"]).or_else(|| {
+                            json_str(
+                                &value,
+                                &[
+                                    "payload",
+                                    "collaboration_mode",
+                                    "settings",
+                                    "reasoning_effort",
+                                ],
+                            )
+                        });
+                    }
+                }
+            }
+            Some("world_state") => {
+                let candidate = json_str(&value, &["payload", "state", "model"]);
+                if active_model.is_none() {
+                    active_model = candidate.clone();
+                }
+                set_main_model(&mut main_model, candidate);
+                if reasoning_effort.is_none() {
+                    reasoning_effort = json_str(
+                        &value,
+                        &[
+                            "payload",
+                            "state",
+                            "collaboration_mode",
+                            "settings",
+                            "reasoning_effort",
+                        ],
+                    );
+                }
             }
             Some("compacted") => compactions += 1,
             Some("response_item") => {
-                if json_str(&value, &["payload", "type"]).as_deref() == Some("custom_tool_call") {
-                    tool_calls += 1;
+                let payload = value.get("payload").unwrap_or(&Value::Null);
+                if let Some(text) = extract_user_text(payload) {
+                    if first_user_request.is_none() {
+                        first_user_request = Some(truncate_one_line(&text, 180));
+                    }
+                    extract_plan_paths(&text, &mut referenced_plans);
+                }
+                extract_skill_names(payload, &mut skills);
+                if looks_like_tool_call(payload) {
+                    if let Some(family) = command_family_from_payload(payload) {
+                        *command_families.entry(family).or_insert(0) += 1;
+                    }
+                    let is_new = if let Some(call_id) = payload
+                        .get("call_id")
+                        .or_else(|| payload.get("id"))
+                        .and_then(Value::as_str)
+                    {
+                        tool_call_ids.insert(call_id.to_owned())
+                    } else {
+                        true
+                    };
+                    if is_new {
+                        tool_calls += 1;
+                        let model_name = active_model
+                            .as_deref()
+                            .or(main_model.as_deref())
+                            .unwrap_or("unknown")
+                            .to_owned();
+                        by_model.entry(model_name).or_default().tool_calls += 1;
+                    }
                 }
             }
             Some("event_msg") => {
-                if json_str(&value, &["payload", "type"]).as_deref() == Some("token_count") {
-                    model_calls += 1;
-                    if let Some(input) = json_u64(
-                        &value,
-                        &["payload", "info", "last_token_usage", "input_tokens"],
-                    ) {
-                        call_inputs.push(input);
+                let payload_type = json_str(&value, &["payload", "type"]);
+                extract_skill_names(&value, &mut skills);
+                if payload_type.as_deref() == Some("task_complete") {
+                    task_completions += 1;
+                    if let Some(message) = json_str(&value, &["payload", "last_agent_message"]) {
+                        final_result = Some(truncate_one_line(&message, 220));
+                    }
+                }
+                if let Some(item_type) = json_str(&value, &["payload", "item", "type"]) {
+                    if item_type == "CommandExecution" {
+                        for family in command_families_from_execution(&value) {
+                            *command_families.entry(family).or_insert(0) += 1;
+                        }
+                        if let Some(stdout) = json_str(&value, &["payload", "item", "stdout"]) {
+                            if let Some(commit) = observed_commit_from_output(&stdout) {
+                                if !commits.iter().any(|existing: &ObservedCommit| existing.hash == commit.hash) {
+                                    commits.push(commit);
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if payload_type.as_deref() == Some("thread_settings_applied") {
+                    if let Some(candidate) =
+                        json_str(&value, &["payload", "thread_settings", "model"])
+                    {
+                        active_model = Some(candidate.clone());
+                        set_main_model(&mut main_model, Some(candidate.clone()));
+                        if !is_auxiliary_model(&candidate) && reasoning_effort.is_none() {
+                            reasoning_effort = json_str(
+                                &value,
+                                &["payload", "thread_settings", "reasoning_effort"],
+                            );
+                        }
+                    }
+                } else if payload_type.as_deref() == Some("token_count") {
+                    // Rate limits are account-wide observations, not usage attributable
+                    // to this workflow. Keep them only as first/last observations.
+                    if let Some(percent) =
+                        json_f64(&value, &["payload", "rate_limits", "primary", "used_percent"])
+                    {
+                        account_quota_first.get_or_insert(percent);
+                        account_quota_last = Some(percent);
                     }
 
-                    let total = &["payload", "info", "total_token_usage"];
-                    totals.0 = json_u64(&value, &[total[0], total[1], total[2], "input_tokens"])
-                        .unwrap_or(totals.0);
-                    totals.1 = json_u64(
-                        &value,
-                        &[total[0], total[1], total[2], "cached_input_tokens"],
-                    )
-                    .unwrap_or(totals.1);
-                    totals.2 = json_u64(&value, &[total[0], total[1], total[2], "output_tokens"])
-                        .unwrap_or(totals.2);
-                    totals.3 = json_u64(
-                        &value,
-                        &[total[0], total[1], total[2], "reasoning_output_tokens"],
-                    )
-                    .unwrap_or(totals.3);
+                    let total_value = value
+                        .get("payload")
+                        .and_then(|payload| payload.get("info"))
+                        .and_then(|info| info.get("total_token_usage"));
 
-                    if let Some(percent) = json_f64(
-                        &value,
-                        &["payload", "rate_limits", "primary", "used_percent"],
-                    ) {
-                        quota_start.get_or_insert(percent);
-                        quota_end = Some(percent);
+                    if let Some(total_value) = total_value {
+                        let total = TokenUsage::from_json(total_value);
+                        let delta = total.delta_from(previous_total);
+                        previous_total = Some(total);
+
+                        // Ignore duplicate token_count snapshots. They are common and
+                        // otherwise make sum(last_token_usage) overcount badly.
+                        if !delta.is_zero() {
+                            model_calls += 1;
+                            usage.add_assign(delta);
+                            call_inputs.push(delta.input_tokens);
+
+                            let model_name = active_model
+                                .as_deref()
+                                .or(main_model.as_deref())
+                                .unwrap_or("unknown")
+                                .to_owned();
+                            models_seen.insert(model_name.clone());
+                            let entry = by_model.entry(model_name).or_default();
+                            entry.model_calls += 1;
+                            entry.add_usage(delta);
+                        }
                     }
+                } else if payload_type
+                    .as_deref()
+                    .is_some_and(|kind| kind == "compacted" || kind == "compact")
+                {
+                    compactions += 1;
                 }
             }
             _ => {}
+        }
+    }
+
+    for model in models_seen {
+        if let Some(entry) = by_model.get_mut(&model) {
+            entry.threads = 1;
         }
     }
 
@@ -2177,10 +2971,64 @@ fn analyze_rollout(path: &Path, policy: &AgentStatsPolicy) -> Result<AgentSessio
     let median = percentile(&call_inputs, 1, 2);
     let p90 = percentile(&call_inputs, 9, 10);
     let peak = call_inputs.last().copied().unwrap_or(0);
-    let uncached = totals.0.saturating_sub(totals.1);
-    let quota_delta = quota_start.zip(quota_end).map(|(start, end)| end - start);
 
+    if main_model.is_none() {
+        main_model = active_model.filter(|model| !is_auxiliary_model(model));
+    }
+
+    Ok((
+        AgentThreadStats {
+            thread_id: identity.thread_id.clone(),
+            parent_thread_id: identity.parent_thread_id.clone(),
+            source_kind: identity.source_kind.clone(),
+            file: path.display().to_string(),
+            cwd: identity.cwd.clone(),
+            repository_url: identity.repository_url.clone(),
+            git_branch: identity.git_branch.clone(),
+            git_commit_start: identity.git_commit.clone(),
+            first_user_request,
+            skills: { let mut v: Vec<_> = skills.into_iter().collect(); v.sort(); v },
+            referenced_plans: { let mut v: Vec<_> = referenced_plans.into_iter().collect(); v.sort(); v },
+            command_families,
+            commits,
+            task_completions,
+            final_result,
+            model: main_model,
+            reasoning_effort,
+            started_at,
+            ended_at,
+            input_tokens: usage.input_tokens,
+            cached_input_tokens: usage.cached_input_tokens,
+            cache_write_input_tokens: usage.cache_write_input_tokens,
+            uncached_input_tokens: usage
+                .input_tokens
+                .saturating_sub(usage.cached_input_tokens),
+            output_tokens: usage.output_tokens,
+            reasoning_output_tokens: usage.reasoning_output_tokens,
+            model_calls,
+            tool_calls,
+            compactions,
+            inherited_records_skipped,
+            median_input_tokens_per_call: median,
+            p90_input_tokens_per_call: p90,
+            peak_input_tokens_per_call: peak,
+            account_weekly_used_percent_first: account_quota_first,
+            account_weekly_used_percent_last: account_quota_last,
+            by_model,
+            warnings,
+        },
+        call_inputs,
+    ))
+}
+
+fn build_assessment(
+    model_calls: u64,
+    peak: u64,
+    compactions: u64,
+    policy: &AgentStatsPolicy,
+) -> Vec<String> {
     let mut assessment = Vec::new();
+
     if model_calls > policy.bad_model_calls {
         assessment.push(format!(
             "BAD: {model_calls} model calls > {}",
@@ -2223,26 +3071,196 @@ fn analyze_rollout(path: &Path, policy: &AgentStatsPolicy) -> Result<AgentSessio
         assessment.push(format!("OK: {compactions} compactions"));
     }
 
-    Ok(AgentSessionStats {
-        file: path.display().to_string(),
-        model,
-        reasoning_effort,
+    assessment
+}
+
+fn analyze_workflow(
+    index: &HashMap<String, RolloutIdentity>,
+    root_thread_id: &str,
+    policy: &AgentStatsPolicy,
+) -> Result<AgentWorkflowStats> {
+    let ids = workflow_thread_ids(index, root_thread_id);
+    let mut threads = Vec::new();
+    let mut all_inputs = Vec::new();
+
+    for id in &ids {
+        let identity = index
+            .get(id)
+            .ok_or_else(|| anyhow!("Missing rollout identity for thread {id}"))?;
+        let (stats, call_inputs) = analyze_rollout(identity)?;
+        threads.push(stats);
+        all_inputs.extend(call_inputs);
+    }
+
+    threads.sort_by(|a, b| a.started_at.cmp(&b.started_at));
+    all_inputs.sort_unstable();
+
+    let root = threads
+        .iter()
+        .find(|thread| thread.thread_id == root_thread_id)
+        .ok_or_else(|| anyhow!("Root rollout {root_thread_id} was not analyzed"))?;
+
+    let mut by_model: HashMap<String, AgentModelStats> = HashMap::new();
+    let mut input_tokens = 0_u64;
+    let mut cached_input_tokens = 0_u64;
+    let mut cache_write_input_tokens = 0_u64;
+    let mut output_tokens = 0_u64;
+    let mut reasoning_output_tokens = 0_u64;
+    let mut model_calls = 0_u64;
+    let mut tool_calls = 0_u64;
+    let mut compactions = 0_u64;
+    let mut inherited_records_skipped = 0_u64;
+    let mut review_threads = 0_usize;
+    let mut compact_threads = 0_usize;
+    let mut warnings = Vec::new();
+    let mut skills = HashSet::new();
+    let mut referenced_plans = HashSet::new();
+    let mut command_families: HashMap<String, u64> = HashMap::new();
+    let mut commits: Vec<ObservedCommit> = Vec::new();
+    let mut task_completions = 0_u64;
+
+    for thread in &threads {
+        input_tokens = input_tokens.saturating_add(thread.input_tokens);
+        cached_input_tokens = cached_input_tokens.saturating_add(thread.cached_input_tokens);
+        cache_write_input_tokens =
+            cache_write_input_tokens.saturating_add(thread.cache_write_input_tokens);
+        output_tokens = output_tokens.saturating_add(thread.output_tokens);
+        reasoning_output_tokens =
+            reasoning_output_tokens.saturating_add(thread.reasoning_output_tokens);
+        model_calls = model_calls.saturating_add(thread.model_calls);
+        tool_calls = tool_calls.saturating_add(thread.tool_calls);
+        compactions = compactions.saturating_add(thread.compactions);
+        inherited_records_skipped =
+            inherited_records_skipped.saturating_add(thread.inherited_records_skipped);
+
+        if thread.source_kind == "subagent:review" {
+            review_threads += 1;
+        } else if thread.source_kind == "subagent:compact" {
+            compact_threads += 1;
+        }
+
+        for warning in &thread.warnings {
+            warnings.push(format!("{}: {warning}", thread.thread_id));
+        }
+        for skill in &thread.skills { skills.insert(skill.clone()); }
+        for plan in &thread.referenced_plans { referenced_plans.insert(plan.clone()); }
+        for (family, count) in &thread.command_families {
+            *command_families.entry(family.clone()).or_insert(0) += count;
+        }
+        for commit in &thread.commits {
+            if !commits.iter().any(|existing| existing.hash == commit.hash) { commits.push(commit.clone()); }
+        }
+        task_completions = task_completions.saturating_add(thread.task_completions);
+
+        for (model, usage) in &thread.by_model {
+            let entry = by_model.entry(model.clone()).or_default();
+            entry.threads = entry.threads.saturating_add(usage.threads);
+            entry.input_tokens = entry.input_tokens.saturating_add(usage.input_tokens);
+            entry.cached_input_tokens = entry
+                .cached_input_tokens
+                .saturating_add(usage.cached_input_tokens);
+            entry.cache_write_input_tokens = entry
+                .cache_write_input_tokens
+                .saturating_add(usage.cache_write_input_tokens);
+            entry.output_tokens = entry.output_tokens.saturating_add(usage.output_tokens);
+            entry.reasoning_output_tokens = entry
+                .reasoning_output_tokens
+                .saturating_add(usage.reasoning_output_tokens);
+            entry.model_calls = entry.model_calls.saturating_add(usage.model_calls);
+            entry.tool_calls = entry.tool_calls.saturating_add(usage.tool_calls);
+        }
+    }
+
+    let started_at = threads
+        .iter()
+        .filter_map(|thread| thread.started_at.clone())
+        .min();
+    let ended_at = threads
+        .iter()
+        .filter_map(|thread| thread.ended_at.clone())
+        .max();
+
+    let account_quota_first = threads
+        .iter()
+        .filter_map(|thread| {
+            thread
+                .started_at
+                .as_ref()
+                .zip(thread.account_weekly_used_percent_first)
+                .map(|(timestamp, percent)| (timestamp.clone(), percent))
+        })
+        .min_by(|a, b| a.0.cmp(&b.0))
+        .map(|(_, percent)| percent);
+
+    let account_quota_last = threads
+        .iter()
+        .filter_map(|thread| {
+            thread
+                .ended_at
+                .as_ref()
+                .zip(thread.account_weekly_used_percent_last)
+                .map(|(timestamp, percent)| (timestamp.clone(), percent))
+        })
+        .max_by(|a, b| a.0.cmp(&b.0))
+        .map(|(_, percent)| percent);
+
+    let median = percentile(&all_inputs, 1, 2);
+    let p90 = percentile(&all_inputs, 9, 10);
+    let peak = all_inputs.last().copied().unwrap_or(0);
+    let calls_over_100k = all_inputs.iter().filter(|&&v| v >= 100_000).count() as u64;
+    let calls_over_120k = all_inputs.iter().filter(|&&v| v >= 120_000).count() as u64;
+    let calls_over_200k = all_inputs.iter().filter(|&&v| v >= 200_000).count() as u64;
+    let cached_input_percent = if input_tokens == 0 { 0.0 } else { cached_input_tokens as f64 * 100.0 / input_tokens as f64 };
+    let uncached = input_tokens.saturating_sub(cached_input_tokens);
+    let replay_amplification = (uncached > 0).then(|| input_tokens as f64 / uncached as f64);
+    let assessment = build_assessment(model_calls, peak, compactions, policy);
+
+    Ok(AgentWorkflowStats {
+        root_thread_id: root_thread_id.to_owned(),
+        root_file: root.file.clone(),
+        root_source: root.source_kind.clone(),
+        cwd: root.cwd.clone(),
+        repository_url: root.repository_url.clone(),
+        git_branch: root.git_branch.clone(),
+        git_commit_start: root.git_commit_start.clone(),
+        first_user_request: root.first_user_request.clone(),
+        skills: { let mut v: Vec<_> = skills.into_iter().collect(); v.sort(); v },
+        referenced_plans: { let mut v: Vec<_> = referenced_plans.into_iter().collect(); v.sort(); v },
+        command_families,
+        commits,
+        task_completions,
+        final_result: root.final_result.clone(),
+        model: root.model.clone(),
+        reasoning_effort: root.reasoning_effort.clone(),
         started_at,
         ended_at,
-        input_tokens: totals.0,
-        cached_input_tokens: totals.1,
-        uncached_input_tokens: uncached,
-        output_tokens: totals.2,
-        reasoning_output_tokens: totals.3,
+        threads: threads.len(),
+        spawned_threads: threads.len().saturating_sub(1),
+        review_threads,
+        compact_threads,
+        input_tokens,
+        cached_input_tokens,
+        cache_write_input_tokens,
+        uncached_input_tokens: input_tokens.saturating_sub(cached_input_tokens),
+        output_tokens,
+        reasoning_output_tokens,
         model_calls,
         tool_calls,
         compactions,
+        inherited_records_skipped,
         median_input_tokens_per_call: median,
         p90_input_tokens_per_call: p90,
         peak_input_tokens_per_call: peak,
-        weekly_used_percent_start: quota_start,
-        weekly_used_percent_end: quota_end,
-        weekly_used_percent_delta: quota_delta,
+        calls_over_100k,
+        calls_over_120k,
+        calls_over_200k,
+        cached_input_percent,
+        replay_amplification,
+        account_weekly_used_percent_first: account_quota_first,
+        account_weekly_used_percent_last: account_quota_last,
+        by_model,
+        thread_details: threads,
+        warnings,
         assessment,
     })
 }
@@ -2257,93 +3275,141 @@ fn format_tokens(value: u64) -> String {
     }
 }
 
-fn print_agent_stats(stats: &AgentSessionStats) {
-    println!("Codex session");
-    println!("────────────────────────────────────────");
-    println!(
-        "Model              {}{}",
-        stats.model.as_deref().unwrap_or("unknown"),
-        stats
-            .reasoning_effort
-            .as_deref()
-            .map(|effort| format!(" / {effort}"))
-            .unwrap_or_default()
-    );
-    println!("File               {}", stats.file);
-    if let Some(started) = &stats.started_at {
-        println!("Started            {started}");
-    }
-    if let Some(ended) = &stats.ended_at {
-        println!("Ended              {ended}");
-    }
-    println!();
-    println!("Usage");
-    println!("Input              {}", format_tokens(stats.input_tokens));
-    println!(
-        "  cached           {}",
-        format_tokens(stats.cached_input_tokens)
-    );
-    println!(
-        "  uncached         {}",
-        format_tokens(stats.uncached_input_tokens)
-    );
-    println!("Output             {}", format_tokens(stats.output_tokens));
-    println!(
-        "Reasoning          {}",
-        format_tokens(stats.reasoning_output_tokens)
-    );
-    println!();
-    println!("Agent loop");
-    println!("Model calls        {}", stats.model_calls);
-    println!("Tool calls         {}", stats.tool_calls);
-    println!("Compactions        {}", stats.compactions);
-    println!();
-    println!("Input / model call");
-    println!(
-        "Median             {}",
-        format_tokens(stats.median_input_tokens_per_call)
-    );
-    println!(
-        "P90                {}",
-        format_tokens(stats.p90_input_tokens_per_call)
-    );
-    println!(
-        "Peak               {}",
-        format_tokens(stats.peak_input_tokens_per_call)
-    );
+fn percent(count: u64, total: u64) -> f64 {
+    if total == 0 { 0.0 } else { count as f64 * 100.0 / total as f64 }
+}
 
-    if let (Some(start), Some(end)) = (
-        stats.weekly_used_percent_start,
-        stats.weekly_used_percent_end,
-    ) {
+fn print_agent_stats(stats: &AgentWorkflowStats) {
+    println!("Codex session");
+    println!("────────────────────────────────────────────────────────");
+    if let Some(cwd) = &stats.cwd { println!("Workspace          {cwd}"); }
+    if let Some(branch) = &stats.git_branch {
+        let commit = stats.git_commit_start.as_deref().unwrap_or("unknown");
+        println!("Git start          {branch} @ {}", truncate_one_line(commit, 12));
+    }
+    if let Some(repo) = &stats.repository_url { println!("Repository         {repo}"); }
+    if let Some(request) = &stats.first_user_request { println!("Request            {request}"); }
+    if !stats.skills.is_empty() { println!("Skills             {}", stats.skills.join(", ")); }
+    for plan in stats.referenced_plans.iter().take(5) { println!("Plan reference     {plan}"); }
+    if stats.referenced_plans.len() > 5 { println!("Plan references    +{} more", stats.referenced_plans.len() - 5); }
+    println!("Model              {}{}", stats.model.as_deref().unwrap_or("unknown"), stats.reasoning_effort.as_deref().map(|e| format!(" / {e}")).unwrap_or_default());
+    println!("Source             {}", stats.root_source);
+    if let Some(started) = &stats.started_at { println!("Started            {started}"); }
+    if let Some(ended) = &stats.ended_at { println!("Ended              {ended}"); }
+    println!("Threads            {} ({} spawned)", stats.threads, stats.spawned_threads);
+    println!("Completed turns    {}", stats.task_completions);
+    if let Some(result) = &stats.final_result { println!("Last result        {result}"); }
+
+    if !stats.commits.is_empty() {
         println!();
-        println!("Weekly quota       {start:.1}% → {end:.1}%");
-        if let Some(delta) = stats.weekly_used_percent_delta {
-            println!("Delta              {delta:+.1}%");
+        println!("Observed output");
+        for commit in &stats.commits {
+            let mut suffix = String::new();
+            if let Some(files) = commit.files_changed { suffix.push_str(&format!(" · {files} files")); }
+            match (commit.insertions, commit.deletions) {
+                (Some(ins), Some(del)) => suffix.push_str(&format!(" · +{ins}/-{del}")),
+                (Some(ins), None) => suffix.push_str(&format!(" · +{ins}")),
+                (None, Some(del)) => suffix.push_str(&format!(" · -{del}")),
+                _ => {}
+            }
+            println!("Commit             {} {}{}", commit.hash, commit.subject, suffix);
         }
     }
 
     println!();
-    println!("Assessment");
-    for item in &stats.assessment {
-        println!("  {item}");
+    println!("Cost shape");
+    println!("Processed input    {}", format_tokens(stats.input_tokens));
+    println!("  cached/replayed  {} ({:.1}%)", format_tokens(stats.cached_input_tokens), stats.cached_input_percent);
+    println!("  uncached/fresh   {} ({:.1}%)", format_tokens(stats.uncached_input_tokens), 100.0 - stats.cached_input_percent);
+    if let Some(amp) = stats.replay_amplification { println!("Replay amplify     {:.1}× processed/fresh", amp); }
+    println!("Output             {}", format_tokens(stats.output_tokens));
+    println!("Reasoning          {}", format_tokens(stats.reasoning_output_tokens));
+
+    println!();
+    println!("Agent activity");
+    println!("Model calls        {}", stats.model_calls);
+    println!("Tool calls         {} ({:.2} / model call)", stats.tool_calls, if stats.model_calls == 0 { 0.0 } else { stats.tool_calls as f64 / stats.model_calls as f64 });
+    println!("Compactions        {}", stats.compactions);
+    if stats.task_completions > 0 {
+        println!("Input / turn       {}", format_tokens(stats.input_tokens / stats.task_completions));
+        println!("Calls / turn       {:.1}", stats.model_calls as f64 / stats.task_completions as f64);
+    }
+    if !stats.command_families.is_empty() {
+        let mut commands: Vec<_> = stats.command_families.iter().collect();
+        commands.sort_by_key(|(_, count)| std::cmp::Reverse(**count));
+        let top = commands.into_iter().take(8).map(|(name,count)| format!("{name} {count}")).collect::<Vec<_>>().join(" · ");
+        println!("Top commands       {top}");
+    }
+
+    println!();
+    println!("Context health");
+    println!("Median / call      {}", format_tokens(stats.median_input_tokens_per_call));
+    println!("P90 / call         {}", format_tokens(stats.p90_input_tokens_per_call));
+    println!("Peak / call        {}", format_tokens(stats.peak_input_tokens_per_call));
+    println!("Calls ≥100K        {} ({:.1}%)", stats.calls_over_100k, percent(stats.calls_over_100k, stats.model_calls));
+    println!("Calls ≥120K        {} ({:.1}%)", stats.calls_over_120k, percent(stats.calls_over_120k, stats.model_calls));
+    println!("Calls ≥200K        {} ({:.1}%)", stats.calls_over_200k, percent(stats.calls_over_200k, stats.model_calls));
+
+    if !stats.by_model.is_empty() {
+        println!();
+        println!("Model mix");
+        let mut models: Vec<_> = stats.by_model.iter().collect();
+        models.sort_by_key(|(_, usage)| std::cmp::Reverse(usage.input_tokens));
+        for (model, usage) in models {
+            println!("  {:20} {:>9} input · {:>4} calls · {:>2} threads", model, format_tokens(usage.input_tokens), usage.model_calls, usage.threads);
+        }
+    }
+
+    if let (Some(first), Some(last)) = (stats.account_weekly_used_percent_first, stats.account_weekly_used_percent_last) {
+        println!();
+        println!("Account weekly");
+        println!("Used               {first:.1}% → {last:.1}%");
+        println!("Remaining          {:.1}% → {:.1}%", 100.0 - first, 100.0 - last);
+        println!("Attribution        account-wide snapshots; delta is not session cost");
+    }
+
+    println!();
+    println!("Diagnosis");
+    let context = if stats.compactions >= 2 || stats.p90_input_tokens_per_call >= 120_000 { "RUNAWAY" } else if stats.compactions == 1 || stats.p90_input_tokens_per_call >= 100_000 { "PRESSURED" } else { "HEALTHY" };
+    let looping = if stats.model_calls > 120 { "HIGH" } else if stats.model_calls > 80 { "ELEVATED" } else { "NORMAL" };
+    println!("Context            {context}");
+    println!("Loop volume        {looping}");
+    if stats.cached_input_percent >= 95.0 && stats.p90_input_tokens_per_call >= 120_000 {
+        println!("Primary driver     repeated large-context replay");
+    } else if stats.model_calls > 120 {
+        println!("Primary driver     high model-call volume");
+    } else if stats.compactions > 0 {
+        println!("Primary driver     context pressure / compaction");
+    } else {
+        println!("Primary driver     no dominant pathology detected");
+    }
+    for item in &stats.assessment { println!("  {item}"); }
+
+    if !stats.warnings.is_empty() {
+        println!();
+        println!("Scanner warnings");
+        for warning in &stats.warnings { println!("  WARN: {warning}"); }
     }
 }
 
 fn cmd_agent_stats(last: usize, file: Option<PathBuf>, json: bool) -> Result<()> {
     let config = load_agent_config()?;
-    let files = if let Some(file) = file {
+    let index = rollout_index()?;
+
+    let root_ids = if let Some(file) = file {
         if !file.is_file() {
             bail!("Rollout file does not exist: {}", file.display());
         }
-        vec![file]
+        let identity = read_rollout_identity(&file)?;
+        let root = root_thread_id(&index, &identity.thread_id);
+        vec![root]
     } else {
-        recent_rollout_files(last)?
+        recent_root_thread_ids(&index, last)?
     };
 
-    let stats = files
+    let stats = root_ids
         .iter()
-        .map(|path| analyze_rollout(path, &config.stats))
+        .map(|root| analyze_workflow(&index, root, &config.stats))
         .collect::<Result<Vec<_>>>()?;
 
     if json {
@@ -2351,12 +3417,13 @@ fn cmd_agent_stats(last: usize, file: Option<PathBuf>, json: bool) -> Result<()>
         return Ok(());
     }
 
-    for (index, session) in stats.iter().enumerate() {
-        if index > 0 {
+    for (position, workflow) in stats.iter().enumerate() {
+        if position > 0 {
             println!("\n");
         }
-        print_agent_stats(session);
+        print_agent_stats(workflow);
     }
+
     Ok(())
 }
 
