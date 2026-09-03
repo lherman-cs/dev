@@ -218,10 +218,6 @@ enum AgentAction {
     Resume {
         /// Session ID to resume; omit to use Codex's interactive resume picker
         session: Option<String>,
-
-        /// Profile to apply to the resumed session
-        #[arg(long, value_enum, default_value_t = AgentProfileName::Default)]
-        profile: AgentProfileName,
     },
 
     /// Show Codex usage statistics from local rollout JSONL files
@@ -2065,7 +2061,18 @@ fn exec_codex(profile: AgentProfileName, prompt: Vec<String>) -> Result<()> {
     let mut command = Command::new("codex");
     command.args(&args);
     if !prompt.is_empty() {
-        command.arg(prompt.join(" "));
+        let prefix = match profile {
+            AgentProfileName::Plan => Some("$dev-plan"),
+            AgentProfileName::Build => Some("$dev-build"),
+            AgentProfileName::Review => Some("$dev-review"),
+            _ => None,
+        };
+
+        let prompt_str = prompt.join(" ");
+        command.arg(match prefix {
+            Some(prefix) => format!("{prefix} {prompt_str}"),
+            None => prompt_str,
+        });
     }
 
     info!(
@@ -2090,9 +2097,22 @@ fn exec_codex(profile: AgentProfileName, prompt: Vec<String>) -> Result<()> {
     }
 }
 
-fn exec_codex_resume(profile: AgentProfileName, session: Option<String>) -> Result<()> {
+fn agent_codex_base_args(config: &AgentConfig) -> Result<Vec<String>> {
+    let mut overrides = Vec::new();
+    flatten_codex_table("", &config.codex, &mut overrides)?;
+
+    let mut args = Vec::new();
+    for (key, value) in overrides {
+        args.push("-c".to_string());
+        args.push(format!("{key}={value}"));
+    }
+
+    Ok(args)
+}
+
+fn exec_codex_resume(session: Option<String>) -> Result<()> {
     let config = load_agent_config()?;
-    let args = agent_codex_args(&config, profile)?;
+    let args = agent_codex_base_args(&config)?;
 
     let mut command = Command::new("codex");
     command.args(&args);
@@ -2102,7 +2122,7 @@ fn exec_codex_resume(profile: AgentProfileName, session: Option<String>) -> Resu
         command.arg(session);
     }
 
-    info!("Resuming Codex session with '{}' profile", profile.as_str());
+    info!("Resuming Codex session");
 
     #[cfg(unix)]
     {
@@ -2129,7 +2149,7 @@ fn cmd_agent(action: Option<AgentAction>) -> Result<()> {
         Some(AgentAction::Plan { prompt }) => exec_codex(AgentProfileName::Plan, prompt),
         Some(AgentAction::Build { prompt }) => exec_codex(AgentProfileName::Build, prompt),
         Some(AgentAction::Review { prompt }) => exec_codex(AgentProfileName::Review, prompt),
-        Some(AgentAction::Resume { session, profile }) => exec_codex_resume(profile, session),
+        Some(AgentAction::Resume { session }) => exec_codex_resume(session),
         Some(AgentAction::Stats { last, file, json }) => cmd_agent_stats(last, file, json),
         Some(AgentAction::Config { profile, args }) => cmd_agent_config(profile, args),
     }
