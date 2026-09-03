@@ -151,13 +151,51 @@ Inspect the complete scoped production diff and run `git diff --check` or the re
 
 ## 6. Commit, write the handoff, and stop
 
-If production code changed, create one coherent Conventional Commit containing only this plan’s implementation.
+If production code changed, create one coherent commit containing only this plan’s implementation.
 
-Include:
+The commit MUST follow Conventional Commits 1.0.0:
 
-`Dev-Plan: plans/<project>/<NN>-<outcome>.md`
+`<type>[optional scope][!]: <description>`
 
-Inspect the final commit and worktree.
+Choose the type from the actual change:
+
+- `feat` — adds user- or caller-visible capability.
+- `fix` — corrects incorrect behavior.
+- `refactor` — changes implementation without changing intended behavior.
+- `perf` — improves performance without otherwise changing intended behavior.
+- `test` — changes tests only.
+- `docs` — changes documentation only.
+- `build` — changes build tooling or dependencies.
+- `ci` — changes CI configuration or automation.
+- `chore` — maintenance that does not fit the above.
+
+Use a short noun scope only when it materially improves identification of the affected subsystem. Do not invent a scope merely to fill the format.
+
+Write the description as a concise imperative summary of the implemented outcome.
+
+The commit message must describe only the repository change. Do not mention internal workflow state, plan paths, plan numbers, build evidence, agent activity, or implementation process anywhere in the commit subject or body.
+
+If the change is breaking, append `!` to the type or scope and include a `BREAKING CHANGE: <description>` footer when additional explanation is useful.
+
+Prefer a subject-only commit when the summary is sufficient. Add a body only when the repository change itself needs material explanation.
+
+Examples:
+
+```text
+feat(rtc): add negotiated data channel bindings
+```
+
+```text
+fix(router): preserve binding during shard migration
+```
+
+```text
+refactor(agent): centralize transport state ownership
+```
+
+Do not use generic subjects such as `implement plan`, `update code`, `misc changes`, or any internal plan terminology.
+
+Inspect the final commit message, commit diff, and worktree.
 
 Write or replace a compact build-evidence file beside the plan by replacing the plan’s `.md` suffix with `.build.md`:
 
@@ -194,7 +232,7 @@ None.
 
 Include only applicable entries. Do not include reasoning transcripts, command logs, copied diffs, broad repository summaries, or speculative follow-up work.
 
-The build evidence is navigation for a fresh reviewer. It does not replace independent review of the plan, repository, diff, and tests.
+The build evidence is internal workflow state and must remain outside Git history. It is navigation for a fresh reviewer, not part of the shipped change.
 
 Report only:
 
