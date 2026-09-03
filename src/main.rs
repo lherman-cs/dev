@@ -213,6 +213,16 @@ enum AgentAction {
         /// Optional initial Codex prompt
         prompt: Vec<String>,
     },
+    /// Resume a Codex session with the embedded overlay applied
+    #[command(alias = "c")]
+    Resume {
+        /// Session ID to resume; omit to use Codex's interactive resume picker
+        session: Option<String>,
+
+        /// Profile to apply to the resumed session
+        #[arg(long, value_enum, default_value_t = AgentProfileName::Default)]
+        profile: AgentProfileName,
+    },
 
     /// Show Codex usage statistics from local rollout JSONL files
     Stats {
@@ -2080,12 +2090,46 @@ fn exec_codex(profile: AgentProfileName, prompt: Vec<String>) -> Result<()> {
     }
 }
 
+fn exec_codex_resume(profile: AgentProfileName, session: Option<String>) -> Result<()> {
+    let config = load_agent_config()?;
+    let args = agent_codex_args(&config, profile)?;
+
+    let mut command = Command::new("codex");
+    command.args(&args);
+    command.arg("resume");
+
+    if let Some(session) = session {
+        command.arg(session);
+    }
+
+    info!("Resuming Codex session with '{}' profile", profile.as_str());
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        let error = command.exec();
+        Err(error).context("Failed to exec codex resume")
+    }
+
+    #[cfg(not(unix))]
+    {
+        let status = command.status().context("Failed to launch codex resume")?;
+
+        if !status.success() {
+            bail!("codex resume exited with status {status}");
+        }
+
+        Ok(())
+    }
+}
+
 fn cmd_agent(action: Option<AgentAction>) -> Result<()> {
     match action {
         None => exec_codex(AgentProfileName::Default, Vec::new()),
         Some(AgentAction::Plan { prompt }) => exec_codex(AgentProfileName::Plan, prompt),
         Some(AgentAction::Build { prompt }) => exec_codex(AgentProfileName::Build, prompt),
         Some(AgentAction::Review { prompt }) => exec_codex(AgentProfileName::Review, prompt),
+        Some(AgentAction::Resume { session, profile }) => exec_codex_resume(profile, session),
         Some(AgentAction::Stats { last, file, json }) => cmd_agent_stats(last, file, json),
         Some(AgentAction::Config { profile, args }) => cmd_agent_config(profile, args),
     }
