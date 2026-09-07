@@ -225,6 +225,31 @@ enum AgentAction {
         json: bool,
     },
 
+    /// Print a compact Codex transcript from local rollout JSONL files
+
+    #[command(alias = "t")]
+    Transcript {
+        /// Number of most recent sessions to show
+
+        #[arg(long, default_value_t = 1, conflicts_with = "file")]
+        last: usize,
+
+        /// Read one explicit rollout JSONL file
+
+        #[arg(long)]
+        file: Option<PathBuf>,
+
+        /// Maximum characters kept for each tool input/output; 0 means unlimited
+
+        #[arg(long, default_value_t = 4_000)]
+        max_tool_chars: usize,
+
+        /// Emit machine-readable JSON
+
+        #[arg(long)]
+        json: bool,
+    },
+
     /// Show the embedded overlay and effective Codex runtime overrides
     Config {
         /// Profile to inspect
@@ -505,6 +530,44 @@ struct AgentWorkflowStats {
     thread_details: Vec<AgentThreadStats>,
     warnings: Vec<String>,
     assessment: Vec<String>,
+}
+
+#[derive(Debug, Serialize, Clone)]
+
+struct AgentTranscriptEvent {
+    timestamp: Option<String>,
+
+    thread_id: String,
+
+    source_kind: String,
+
+    model: Option<String>,
+
+    kind: String,
+
+    tool: Option<String>,
+
+    text: String,
+
+    sequence: u64,
+}
+
+#[derive(Debug, Serialize)]
+
+struct AgentWorkflowTranscript {
+    root_thread_id: String,
+
+    cwd: Option<String>,
+
+    repository_url: Option<String>,
+
+    git_branch: Option<String>,
+
+    git_commit_start: Option<String>,
+
+    threads: usize,
+
+    events: Vec<AgentTranscriptEvent>,
 }
 
 #[derive(Subcommand)]
@@ -1850,7 +1913,10 @@ fn reconcile_path(source: &Path, target: &Path, apply: bool) -> Result<()> {
             // files. The source tree is authoritative for paths it contains.
             remove_existing(target)?;
         } else {
-            info!("[DRY-RUN] Would replace {} with a copied file", target.display());
+            info!(
+                "[DRY-RUN] Would replace {} with a copied file",
+                target.display()
+            );
         }
     }
 
@@ -2095,6 +2161,12 @@ fn cmd_agent(action: Option<AgentAction>) -> Result<()> {
         Some(AgentAction::Review { prompt }) => exec_codex(AgentProfileName::Review, prompt),
         Some(AgentAction::Stats { last, file, json }) => cmd_agent_stats(last, file, json),
         Some(AgentAction::Config { profile, args }) => cmd_agent_config(profile, args),
+        Some(AgentAction::Transcript {
+            last,
+            file,
+            max_tool_chars,
+            json,
+        }) => cmd_agent_transcript(last, file, max_tool_chars, json),
     }
 }
 
@@ -2114,6 +2186,580 @@ fn cmd_agent_config(profile: AgentProfileName, args_only: bool) -> Result<()> {
     for pair in args.chunks_exact(2) {
         println!("  {} {}", pair[0], pair[1]);
     }
+    Ok(())
+}
+
+fn transcript_message_text(payload: &Value, role: &str) -> Option<String> {
+    if payload.get("role").and_then(Value::as_str) != Some(role) {
+        return None;
+    }
+
+    if role == "user" {
+        // Codex also persists injected AGENTS/environment/skill material as
+
+        // user-role messages. Keep only records explicitly marked as user.text
+
+        // when that metadata is present.
+
+        if let Some(kinds) = payload
+            .get("internal_chat_message_metadata_passthrough")
+            .and_then(|m| m.get("content_item_kinds"))
+            .and_then(Value::as_array)
+        {
+            if !kinds.iter().any(|v| v.as_str() == Some("user.text")) {
+                return None;
+            }
+        }
+    }
+
+    let content = payload.get("content")?.as_array()?;
+
+    let mut parts = Vec::new();
+
+    for item in content {
+        let kind = item.get("type").and_then(Value::as_str).unwrap_or("");
+
+        if matches!(kind, "input_text" | "output_text" | "text") {
+            if let Some(text) = item.get("text").and_then(Value::as_str) {
+                parts.push(text);
+            }
+        }
+    }
+
+    (!parts.is_empty()).then(|| parts.join("\n"))
+}
+
+fn truncate_transcript_tool_text(value: String, max_chars: usize) -> String {
+    if max_chars == 0 || value.chars().count() <= max_chars {
+        return value;
+    }
+
+    let omitted = value.chars().count().saturating_sub(max_chars);
+
+    let mut out = value.chars().take(max_chars).collect::<String>();
+
+    out.push_str(&format!("\n… <{omitted} chars omitted>"));
+
+    out
+}
+
+fn transcript_value_text(value: &Value) -> Option<String> {
+    match value {
+        Value::String(text) => Some(text.clone()),
+
+        Value::Array(items) => {
+            let mut parts = Vec::new();
+
+            for item in items {
+                if let Some(text) = item.as_str() {
+                    parts.push(text.to_owned());
+
+                    continue;
+                }
+
+                if let Some(text) = item
+                    .get("text")
+                    .or_else(|| item.get("output_text"))
+                    .and_then(Value::as_str)
+                {
+                    parts.push(text.to_owned());
+
+                    continue;
+                }
+
+                let kind = item.get("type").and_then(Value::as_str).unwrap_or("");
+
+                if kind.contains("image") {
+                    parts.push("<image omitted>".to_string());
+                }
+            }
+
+            if parts.is_empty() {
+                serde_json::to_string_pretty(value).ok()
+            } else {
+                Some(parts.join("\n"))
+            }
+        }
+
+        Value::Null => None,
+
+        other => serde_json::to_string_pretty(other).ok(),
+    }
+}
+
+fn transcript_tool_call(payload: &Value) -> Option<(Option<String>, String, Option<String>)> {
+    if !looks_like_tool_call(payload) {
+        return None;
+    }
+
+    let tool = payload
+        .get("name")
+        .or_else(|| payload.get("tool_name"))
+        .and_then(Value::as_str)
+        .map(ToOwned::to_owned)
+        .or_else(|| {
+            payload
+                .get("type")
+                .and_then(Value::as_str)
+                .map(ToOwned::to_owned)
+        });
+
+    let input = payload
+        .get("arguments")
+        .or_else(|| payload.get("input"))
+        .or_else(|| payload.get("command"))
+        .and_then(transcript_value_text)
+        .unwrap_or_else(|| "<no tool input recorded>".to_string());
+
+    let call_id = payload
+        .get("call_id")
+        .or_else(|| payload.get("id"))
+        .and_then(Value::as_str)
+        .map(ToOwned::to_owned);
+
+    Some((tool, input, call_id))
+}
+
+fn transcript_tool_output(
+    payload: &Value,
+
+    tool_names: &HashMap<String, String>,
+) -> Option<(Option<String>, String)> {
+    let kind = payload.get("type").and_then(Value::as_str)?;
+
+    if !kind.ends_with("_call_output") && !kind.ends_with("_search_output") && kind != "tool_output"
+    {
+        return None;
+    }
+
+    let call_id = payload
+        .get("call_id")
+        .or_else(|| payload.get("id"))
+        .and_then(Value::as_str);
+
+    let tool = call_id
+        .and_then(|id| tool_names.get(id))
+        .cloned()
+        .or_else(|| {
+            payload
+                .get("name")
+                .and_then(Value::as_str)
+                .map(ToOwned::to_owned)
+        });
+
+    let output = payload
+        .get("output")
+        .or_else(|| payload.get("content"))
+        .and_then(transcript_value_text)
+        .unwrap_or_else(|| "<no tool output recorded>".to_string());
+
+    Some((tool, output))
+}
+
+fn transcript_event(
+    identity: &RolloutIdentity,
+
+    timestamp: Option<String>,
+
+    active_model: &Option<String>,
+
+    kind: &str,
+
+    tool: Option<String>,
+
+    text: String,
+
+    sequence: u64,
+) -> AgentTranscriptEvent {
+    AgentTranscriptEvent {
+        timestamp,
+
+        thread_id: identity.thread_id.clone(),
+
+        source_kind: identity.source_kind.clone(),
+
+        model: active_model.clone(),
+
+        kind: kind.to_string(),
+
+        tool,
+
+        text,
+
+        sequence,
+    }
+}
+
+fn read_transcript_events(
+    identity: &RolloutIdentity,
+
+    max_tool_chars: usize,
+) -> Result<Vec<AgentTranscriptEvent>> {
+    let file = File::open(&identity.file)
+        .with_context(|| format!("Failed to open Codex rollout: {}", identity.file.display()))?;
+
+    let reader = BufReader::new(file);
+
+    let mut events = Vec::new();
+
+    let mut active_model = None;
+
+    let mut tool_names: HashMap<String, String> = HashMap::new();
+
+    let mut sequence = 0_u64;
+
+    for (line_number, line) in reader.lines().enumerate() {
+        let line = line.with_context(|| {
+            format!(
+                "Failed reading {} at line {}",
+                identity.file.display(),
+                line_number + 1
+            )
+        })?;
+
+        let line = line.trim_start_matches('\u{feff}');
+
+        let value: Value = serde_json::from_str(line).with_context(|| {
+            format!(
+                "Invalid JSON in {} at line {}",
+                identity.file.display(),
+                line_number + 1
+            )
+        })?;
+
+        let top_type = value.get("type").and_then(Value::as_str);
+
+        if top_type != Some("session_meta") && rollout_line_is_inherited(identity, &value) {
+            continue;
+        }
+
+        let timestamp = value
+            .get("timestamp")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned);
+
+        match top_type {
+            Some("session_meta") => {
+                let payload = value.get("payload").unwrap_or(&Value::Null);
+
+                let meta = session_meta_object(payload);
+
+                if active_model.is_none() {
+                    active_model = meta
+                        .get("base_instructions")
+                        .and_then(|base| base.get("provenance"))
+                        .and_then(|prov| prov.get("model"))
+                        .and_then(Value::as_str)
+                        .map(ToOwned::to_owned);
+                }
+            }
+
+            Some("turn_context") => {
+                if let Some(model) = json_str(&value, &["payload", "model"]) {
+                    active_model = Some(model);
+                }
+            }
+
+            Some("world_state") => {
+                if let Some(model) = json_str(&value, &["payload", "state", "model"]) {
+                    active_model = Some(model);
+                }
+            }
+
+            Some("response_item") => {
+                let payload = value.get("payload").unwrap_or(&Value::Null);
+
+                if let Some(message) = transcript_message_text(payload, "user") {
+                    sequence += 1;
+
+                    events.push(transcript_event(
+                        identity,
+                        timestamp.clone(),
+                        &active_model,
+                        "user",
+                        None,
+                        message,
+                        sequence,
+                    ));
+
+                    continue;
+                }
+
+                if let Some(message) = transcript_message_text(payload, "assistant") {
+                    sequence += 1;
+
+                    events.push(transcript_event(
+                        identity,
+                        timestamp.clone(),
+                        &active_model,
+                        "assistant",
+                        None,
+                        message,
+                        sequence,
+                    ));
+
+                    continue;
+                }
+
+                if let Some((tool, input, call_id)) = transcript_tool_call(payload) {
+                    if let (Some(call_id), Some(tool)) = (&call_id, &tool) {
+                        tool_names.insert(call_id.clone(), tool.clone());
+                    }
+
+                    sequence += 1;
+
+                    events.push(transcript_event(
+                        identity,
+                        timestamp.clone(),
+                        &active_model,
+                        "tool_call",
+                        tool,
+                        truncate_transcript_tool_text(input, max_tool_chars),
+                        sequence,
+                    ));
+
+                    continue;
+                }
+
+                if let Some((tool, output)) = transcript_tool_output(payload, &tool_names) {
+                    sequence += 1;
+
+                    events.push(transcript_event(
+                        identity,
+                        timestamp,
+                        &active_model,
+                        "tool_output",
+                        tool,
+                        truncate_transcript_tool_text(output, max_tool_chars),
+                        sequence,
+                    ));
+
+                    continue;
+                }
+
+                if payload
+                    .get("type")
+                    .and_then(Value::as_str)
+                    .is_some_and(|kind| {
+                        matches!(
+                            kind,
+                            "compaction" | "compaction_trigger" | "context_compaction"
+                        )
+                    })
+                {
+                    sequence += 1;
+
+                    events.push(transcript_event(
+                        identity,
+                        timestamp,
+                        &active_model,
+                        "compaction",
+                        None,
+                        "<context compacted>".to_string(),
+                        sequence,
+                    ));
+                }
+            }
+
+            Some("event_msg") => {
+                let payload_type = json_str(&value, &["payload", "type"]);
+
+                if payload_type.as_deref() == Some("thread_settings_applied") {
+                    if let Some(model) = json_str(&value, &["payload", "thread_settings", "model"])
+                    {
+                        active_model = Some(model);
+                    }
+                } else if payload_type
+                    .as_deref()
+                    .is_some_and(|kind| kind == "compacted" || kind == "compact")
+                {
+                    sequence += 1;
+
+                    events.push(transcript_event(
+                        identity,
+                        timestamp,
+                        &active_model,
+                        "compaction",
+                        None,
+                        "<context compacted>".to_string(),
+                        sequence,
+                    ));
+                }
+            }
+
+            Some("compacted") => {
+                sequence += 1;
+
+                events.push(transcript_event(
+                    identity,
+                    timestamp,
+                    &active_model,
+                    "compaction",
+                    None,
+                    "<context compacted>".to_string(),
+                    sequence,
+                ));
+            }
+
+            _ => {}
+        }
+    }
+
+    Ok(events)
+}
+
+fn build_workflow_transcript(
+    index: &HashMap<String, RolloutIdentity>,
+
+    root_thread_id: &str,
+
+    max_tool_chars: usize,
+) -> Result<AgentWorkflowTranscript> {
+    let ids = workflow_thread_ids(index, root_thread_id);
+
+    let root = index
+        .get(root_thread_id)
+        .ok_or_else(|| anyhow!("Missing root rollout identity for thread {root_thread_id}"))?;
+
+    let mut events = Vec::new();
+
+    for id in &ids {
+        let identity = index
+            .get(id)
+            .ok_or_else(|| anyhow!("Missing rollout identity for thread {id}"))?;
+
+        events.extend(read_transcript_events(identity, max_tool_chars)?);
+    }
+
+    events.sort_by(|a, b| {
+        a.timestamp
+            .cmp(&b.timestamp)
+            .then_with(|| a.thread_id.cmp(&b.thread_id))
+            .then_with(|| a.sequence.cmp(&b.sequence))
+    });
+
+    Ok(AgentWorkflowTranscript {
+        root_thread_id: root_thread_id.to_owned(),
+
+        cwd: root.cwd.clone(),
+
+        repository_url: root.repository_url.clone(),
+
+        git_branch: root.git_branch.clone(),
+
+        git_commit_start: root.git_commit.clone(),
+
+        threads: ids.len(),
+
+        events,
+    })
+}
+
+fn print_agent_transcript(transcript: &AgentWorkflowTranscript) {
+    println!("Codex transcript");
+
+    println!("────────────────────────────────────────────────────────");
+
+    if let Some(cwd) = &transcript.cwd {
+        println!("Workspace          {cwd}");
+    }
+
+    if let Some(branch) = &transcript.git_branch {
+        let commit = transcript.git_commit_start.as_deref().unwrap_or("unknown");
+
+        println!(
+            "Git start          {branch} @ {}",
+            truncate_one_line(commit, 12)
+        );
+    }
+
+    if let Some(repo) = &transcript.repository_url {
+        println!("Repository         {repo}");
+    }
+
+    println!("Session            {}", transcript.root_thread_id);
+
+    println!("Threads            {}", transcript.threads);
+
+    println!();
+
+    for event in &transcript.events {
+        let timestamp = event.timestamp.as_deref().unwrap_or("unknown-time");
+
+        let thread_suffix = if transcript.threads > 1 {
+            format!(" · {} · {}", event.source_kind, event.thread_id)
+        } else {
+            String::new()
+        };
+
+        let model_suffix = event
+            .model
+            .as_deref()
+            .filter(|_| matches!(event.kind.as_str(), "assistant" | "tool_call"))
+            .map(|model| format!(" · {model}"))
+            .unwrap_or_default();
+
+        let tool_suffix = event
+            .tool
+            .as_deref()
+            .map(|tool| format!(" · {tool}"))
+            .unwrap_or_default();
+
+        println!(
+            "[{timestamp}] {}{tool_suffix}{model_suffix}{thread_suffix}",
+            event.kind
+        );
+
+        println!("{}", event.text);
+
+        println!();
+    }
+}
+
+fn cmd_agent_transcript(
+    last: usize,
+
+    file: Option<PathBuf>,
+
+    max_tool_chars: usize,
+
+    json: bool,
+) -> Result<()> {
+    let index = rollout_index()?;
+
+    let root_ids = if let Some(file) = file {
+        if !file.is_file() {
+            bail!("Rollout file does not exist: {}", file.display());
+        }
+
+        let identity = read_rollout_identity(&file)?;
+
+        let root = root_thread_id(&index, &identity.thread_id);
+
+        vec![root]
+    } else {
+        recent_root_thread_ids(&index, last)?
+    };
+
+    let transcripts = root_ids
+        .iter()
+        .map(|root| build_workflow_transcript(&index, root, max_tool_chars))
+        .collect::<Result<Vec<_>>>()?;
+
+    if json {
+        println!("{}", serde_json::to_string_pretty(&transcripts)?);
+
+        return Ok(());
+    }
+
+    for (position, transcript) in transcripts.iter().enumerate() {
+        if position > 0 {
+            println!("\n");
+        }
+
+        print_agent_transcript(transcript);
+    }
+
     Ok(())
 }
 
@@ -3307,7 +3953,6 @@ fn percent(count: u64, total: u64) -> f64 {
     }
 }
 
-
 fn cached_percent(input: u64, cached: u64) -> f64 {
     percent(cached, input)
 }
@@ -3335,8 +3980,7 @@ fn top_commands(commands: &HashMap<String, u64>, limit: usize) -> Option<String>
 fn is_repository_read_command(name: &str) -> bool {
     matches!(
         name,
-        "rg" | "grep" | "find" | "fd" | "sed" | "cat" | "nl" | "head" | "tail"
-            | "awk" | "less"
+        "rg" | "grep" | "find" | "fd" | "sed" | "cat" | "nl" | "head" | "tail" | "awk" | "less"
     )
 }
 
@@ -3410,7 +4054,10 @@ fn print_agent_stats(stats: &AgentWorkflowStats, policy: &AgentStatsPolicy) {
         .collect();
 
     let delegated_input = delegated.iter().map(|t| t.input_tokens).sum::<u64>();
-    let delegated_fresh = delegated.iter().map(|t| t.uncached_input_tokens).sum::<u64>();
+    let delegated_fresh = delegated
+        .iter()
+        .map(|t| t.uncached_input_tokens)
+        .sum::<u64>();
     let delegated_calls = delegated.iter().map(|t| t.model_calls).sum::<u64>();
     let delegated_compactions = delegated.iter().map(|t| t.compactions).sum::<u64>();
 
@@ -3542,9 +4189,7 @@ fn print_agent_stats(stats: &AgentWorkflowStats, policy: &AgentStatsPolicy) {
     println!();
     println!(
         "Health             main {} · delegation {} · {} compactions",
-        main_health,
-        delegation,
-        stats.compactions
+        main_health, delegation, stats.compactions
     );
 
     if delegated_compactions > 0 {
