@@ -1,213 +1,114 @@
 ---
 name: dev-review
-description: Independently review one completed plan and revision for contract completeness, correctness, robustness, ownership, simplicity, readability, and evidence. Fix only narrow in-scope issues, then stop.
+description: Independently review one completed numbered plan and revision for completeness, correctness, ownership, simplicity, and evidence. Never modify production code.
 ---
 
 # Dev Review
 
-Review one completed implementation independently as a senior software engineer. Judge the contract, repository, diff, and evidence—not the builder’s reasoning. Do not begin new work or spawn subagents.
+Review exactly one completed numbered plan against one revision. Never modify production code.
 
-`plans/` is Git-ignored local workflow state. Access it directly through the filesystem; never use Git to discover, inspect, validate, stage, or commit its contents.
+Judge the plan, repository, diff, and evidence—not the builder's reasoning.
 
-Use the numbered plan’s `Implementation handoff` and matching `.build.md` file as navigation. Independently verify their claims against the repository, revision, diff, and evidence.
+Require one exact plan path. Review `HEAD` unless another revision is supplied. `plans/` is Git-ignored workflow state.
 
-Do not read sibling numbered plans unless the exact plan names one as a dependency and a concrete review question requires it.
+## Explorer
 
-## Engineering standard
+Delegate repository investigation to `explorer` whenever resolving a concrete review concern requires more than one search or source read.
 
-- Derive truth from the exact plan, its relevant spec sections, the current request, repository instructions, architecture, code, tests, and real or intended callers.
-- Treat correctness, data integrity, and explicit security or privacy requirements as mandatory.
-- Among otherwise valid implementations, prioritize:
-  1. Robustness
-  2. Simplicity
-  3. Scalability
-  4. Performance
-  5. Security
-- Every abstraction, layer, state, dependency, option, compatibility path, or extension point must satisfy a current requirement or enforce a proven boundary.
-- Keep one canonical owner and source of truth.
-- Review correctness before simplification.
-- Reuse the plan’s repository coordinates and the build evidence to avoid repeating broad discovery, while independently judging every conclusion that affects acceptance.
-- Minimize context and tool use. Start from the diff, inspect unchanged code only for concrete questions, batch related searches, and keep diagnostics concise.
+Do not use `explorer` for facts already directly established by the plan, scoped diff, or one known file or symbol.
 
-## 1. Establish the contract
+Always spawn with `agent_type="explorer"` and `fork_turns="none"`.
 
-Resolve:
+Give it:
+- one self-contained review question;
+- the narrowest known scope;
+- relevant plan anchors, changed paths, symbols, callers, tests, or suspected behavior;
+- the exact correctness, completeness, ownership, lifecycle, or simplicity concern being investigated.
 
-1. the revision, normally `HEAD`;
-2. its exact plan path from the `Dev-Plan:` trailer or an explicit path;
-3. the matching build-evidence path by replacing the plan’s `.md` suffix with `.build.md`;
-4. the relevant sibling spec sections named by the plan’s `Implementation handoff`;
-5. relevant repository instructions and architecture named by the plan.
+Do not perform the same repository investigation in the parent thread.
 
-Do not guess the plan.
+The parent may directly:
+- inspect the complete scoped diff;
+- read one known file, symbol, caller, or test;
+- inspect specific code identified by the explorer;
+- perform targeted verification needed to judge a finding.
 
-Resolve the plan path relative to the repository root and read it directly from `plans/`. If the file is absent, request its exact path or contents.
+If a review concern expands into multiple searches or source reads, delegate it rather than broadly rediscovering the repository in the parent.
 
-Read only the spec sections named in the plan’s implementation handoff. Read additional spec sections only when required to answer a concrete contract question raised by the diff or repository evidence.
+Reuse the explorer for related follow-ups; do not repeat its searches.
 
-If the plan predates the `Implementation handoff` section, read the sibling spec once. Do not compensate by reading every sibling plan or broadly surveying the repository.
+Explorer gathers repository facts. You independently judge them.
 
-Read the matching `.build.md` file when present.
+## Workflow
 
-Accept build evidence as matching only when:
+1. **Establish**
 
-- its `Plan` is the exact reviewed plan; and
-- its `Commit` identifies the reviewed revision, or correctly records a no-change result against that revision.
+   * Read the exact plan and matching `.build.md` when present.
+   * Inspect the complete human-written diff.
+   * Read additional code directly only for a single concrete and narrowly located review question.
+   * Delegate broader or multi-step repository investigation to `explorer`.
+   * Start from the plan's verified preconditions and repository handoff.
+   * Do not reread `spec.md`, sibling plans, or broadly rediscover the repository.
+   * Do not duplicate explorer investigation in the parent.
 
-If the build evidence is absent, incomplete, or stale, continue the review without it and note the limitation only when material. Do not infer missing validation or changed paths.
+   Build evidence records claimed work and verification; it is never the verdict.
 
-Use build evidence only to identify:
+   If repository reality invalidates the approved plan: `REQUIRES REPLANNING`.
 
-- paths the builder claims changed;
-- commands or evidence the builder claims were verified;
-- declared deviations;
-- the claimed final revision.
+2. **Review**
 
-Do not treat the builder’s status or successful command claims as the review verdict.
+   Check:
 
-Inspect version-control state and preserve unrelated production work.
+   * scope and acceptance are complete;
+   * required callers/migrations are handled;
+   * relevant success, failure, validation, lifecycle, cleanup, ordering, concurrency, compatibility, integrity, security, and performance behavior is correct;
+   * responsibility remains in the canonical owner;
+   * no duplicated policy/state or unnecessary abstraction, dependency, configuration, compatibility, or public surface was added;
+   * verification applies to the reviewed revision and proves the contract.
 
-Begin with the complete human-written diff. Inspect generated output only for contract or reproducibility questions. Inspect unchanged surrounding code only when required to evaluate a specific risk.
+   When establishing any of these requires multi-file or multi-search investigation, delegate the concrete question to `explorer`.
 
-Use the plan’s named canonical owner, starting points, direct callers, relevant tests, and completeness searches before broadening repository inspection.
+3. **Classify**
 
-If the revision is too broad to review reliably as one acceptance boundary, report a blocker and require it to be split.
+   * `BLOCKER` — requires changing the contract, architecture, acceptance boundary, or a fundamental correctness/security/integrity decision.
+   * `ISSUE` — concrete in-scope defect or unnecessary mechanism that must be corrected.
 
-## 2. Review in order
+   Do not report taste, speculative improvements, or unrelated cleanup.
 
-### Contract completeness
+4. **Verify**
 
-Confirm every outcome, constraint, and verification requirement is delivered.
+   * Run only checks needed to establish the verdict.
+   * Do not rerun expensive successful build checks without a concrete reason.
+   * Never accept solely because build evidence reports success.
+   * Delegate repository investigation needed to validate a suspected finding when it requires multiple searches or source reads.
 
-Identify partial migrations, missing callers, and claims unsupported by evidence.
+5. **Handoff**
 
-Use the plan’s named direct callers, relevant tests, and completeness searches to check the intended boundary without repeating broad repository discovery.
+   Write `plans/<project>/<NN>-<outcome>.review.md`.
 
-### Correctness and robustness
+Accepted:
 
-Inspect relevant:
+```markdown
+# Review
+Plan: <path>
+Revision: <revision>
+Verdict: ACCEPTED
+```
 
-- success and failure behavior;
-- validation boundaries;
-- lifecycle and cleanup;
-- cancellation and retries;
-- idempotency;
-- stale, duplicate, or reordered operations;
-- concurrency and resource ownership;
-- compatibility;
-- data integrity;
-- security;
-- measured scalability or performance requirements.
+Otherwise:
 
-### Ownership and architecture
+```markdown
+# Review
+Plan: <path>
+Revision: <revision>
+Verdict: CHANGES REQUIRED | REQUIRES REPLANNING
 
-Reject:
-
-- responsibility in the wrong owner;
-- duplicated policy or state;
-- hidden coupling;
-- parallel implementations;
-- unnecessary public surface;
-- violations of authoritative repository constraints.
-
-If the approved plan itself requires avoidable or contradictory architecture, report a blocker and return it to planning.
-
-### Minimum complete design
-
-Challenge every added:
-
-- abstraction;
-- wrapper or adapter;
-- state value or cache;
-- dependency;
-- configuration option;
-- compatibility path;
-- extension point.
-
-Prefer deletion, reuse, derivation, inlining, or moving behavior to its canonical owner.
-
-Do not optimize for fewer characters. Never remove required robustness or clarity.
-
-### Readability and usability
-
-Confirm APIs, names, control flow, errors, comments, and module structure are conventional, locally understandable, and difficult to misuse.
-
-### Evidence quality
-
-Confirm tests and validation:
-
-- apply to the exact reviewed revision;
-- would fail if the claimed behavior broke;
-- prove the real contract;
-- use the real external boundary when required;
-- avoid unnecessary fixtures, mocks, sleeps, and implementation coupling.
-
-Use the build evidence to locate prior validation, but independently determine whether that evidence is sufficient and relevant.
-
-## 3. Classify findings
-
-| Severity | Meaning |
-|---|---|
-| `BLOCKER` | The result cannot be accepted without changing the approved contract, architecture, acceptance boundary, or a fundamental correctness, security, or data-integrity decision. |
-| `ISSUE` | A concrete in-scope defect or unnecessary complexity must be fixed before acceptance. |
-| `NOTE` | A useful non-blocking observation. It does not require a code change in this review. |
-
-Do not create findings from personal taste, speculative improvements, or unrelated cleanup.
-
-Fix only clear `ISSUE` findings whose correction stays within the approved plan.
-
-Return `BLOCKER` findings to `dev-plan`.
-
-Amend the target only when it is safe and unshared; otherwise follow repository policy or create a separate correction commit.
-
-Preserve the `Dev-Plan:` trailer.
-
-## 4. Verify
-
-When no review fix was required:
-
-- re-check every acceptance item;
-- inspect the complete final production diff;
-- confirm every remaining mechanism is necessary;
-- confirm the build evidence maps to the exact revision and actual contract;
-- run focused checks needed to resolve concrete review questions;
-- do not automatically rerun a successful expensive command from matching build evidence on an unchanged tree when no finding challenges it;
-- rerun an expensive command when its evidence is missing, stale, ambiguous, contradicted, required by repository policy, or necessary to establish the verdict.
-
-After any fixes:
-
-- re-check every acceptance item;
-- inspect the complete final production diff;
-- confirm every remaining mechanism is necessary;
-- run affected focused checks;
-- run required final validation once on the final unchanged tree;
-- confirm no `BLOCKER` or `ISSUE` remains.
-
-Never accept a result merely because the build evidence reports passing validation.
-
-## 5. Report and stop
-
-Begin with a plain-language summary and one verdict:
-
-- `ACCEPTED`
-- `CORRECTED AND ACCEPTED`
-- `REQUIRES REPLANNING`
-
-Then report findings as:
-
-| Severity | Location | Finding | Impact | Required action |
+## Findings
+| ID | Severity | Location | Finding | Required outcome |
 |---|---|---|---|---|
+| R1 | ISSUE | `<path>::<symbol>` | <defect> | <required state> |
+```
 
-Include blockers and issues. Include notes only when they materially help explain the result; notes never block acceptance.
+State what is wrong and the required outcome, not how to implement the fix.
 
-If there are no blockers or issues, state:
-
-`No material findings.`
-
-Follow with:
-
-- **Verified**
-- **Commit**
-- **Notes**, only when material
-
-Then stop.
+Report the verdict and material findings. Then stop.

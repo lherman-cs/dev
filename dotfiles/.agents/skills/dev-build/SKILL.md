@@ -1,245 +1,110 @@
 ---
 name: dev-build
-description: Implement exactly one approved numbered plan quickly, robustly, and minimally; verify it, create one coherent commit when code changes, and stop. Requires an exact plan path.
+description: Implement exactly one approved numbered plan, address current review findings, verify it, commit it, write compact evidence, and stop.
 ---
 
 # Dev Build
 
-Implement exactly one numbered plan as a senior software engineer. Do not redesign the project, review another commit, continue into another plan, or spawn subagents.
+Implement exactly one supplied numbered plan. The plan is the contract.
 
-`plans/` is Git-ignored local workflow state. Access it directly through the filesystem; never use Git to discover, inspect, validate, stage, or commit its contents.
+Do not redesign the project, continue into another plan, or broadly rediscover the repository.
 
-Use the exact plan’s `Implementation handoff` as the primary repository navigation map. Treat its facts as pointers to confirm, not as substitutes for repository evidence.
+Require one exact plan path. `plans/` is Git-ignored workflow state.
 
-Do not read sibling numbered plans unless the exact plan names one as a dependency and a concrete implementation question requires it.
+## Explorer
 
-## Engineering standard
+Delegate unresolved repository investigation to `explorer` whenever answering the concrete question requires more than one search or source read.
 
-- Derive truth from the exact plan, its relevant spec sections, the current request, repository instructions, architecture, code, tests, and real or intended callers.
-- Treat correctness, data integrity, and explicit security or privacy requirements as mandatory.
-- Among otherwise valid implementations, prioritize:
-  1. Robustness
-  2. Simplicity
-  3. Scalability
-  4. Performance
-  5. Security
-- Prefer, in order:
-  1. no change;
-  2. reuse existing behavior;
-  3. extend the canonical owner;
-  4. use standard, native, or already-adopted mechanisms;
-  5. reuse an existing dependency;
-  6. add the least custom machinery that completely satisfies the requirement.
-- Every new abstraction, layer, state, dependency, option, compatibility path, or extension point must satisfy a current requirement or enforce a proven boundary.
-- Keep one canonical owner and source of truth.
-- Prefer direct data flow, small deep interfaces, conventional names, and obvious control flow.
-- Fix root causes, not symptoms.
-- Reuse planner-provided repository anchors before searching. Do not independently rediscover settled ownership or architecture unless named evidence is stale, incomplete, ambiguous, or contradicted by the current tree.
-- Minimize context and tool use. Batch related work, avoid repeated evidence, and keep diagnostics concise.
-- Do not rely on compaction. If the work no longer fits one bounded outcome, stop and return to planning.
+Do not use `explorer` to rediscover facts already settled by the plan's verified preconditions or repository handoff.
 
-## 1. Establish the contract
+Always spawn with `agent_type="explorer"` and `fork_turns="none"`.
 
-Require one exact `plans/<project>/<NN>-*.md` path. Reject an omitted path, directory, ambiguous match, or `next`.
+Give it:
+- one self-contained unresolved repository question;
+- the narrowest known scope;
+- relevant plan anchors, paths, symbols, callers, tests, or failure evidence;
+- the exact fact needed to continue implementation.
 
-Before editing:
+Do not perform the same investigation in the parent thread.
 
-1. Read the exact plan directly from `plans/`.
-2. Read only the sections of sibling `spec.md` named under the plan’s `Implementation handoff`.
-3. Read only relevant repository instructions and architecture named by the plan or required by the named implementation anchors.
-4. Inspect version-control state and preserve unrelated production work.
-5. In one grouped pass, confirm the named canonical owner, starting points, direct callers, relevant tests, and completeness searches.
-6. Use those anchors to confirm the relevant data flow, lifecycle, failure paths, cleanup, and existing evidence.
-7. Derive a private acceptance checklist.
+The parent may directly:
+- read files and symbols explicitly named by the plan;
+- follow one obvious caller, failure path, or test;
+- inspect code identified by the explorer;
+- perform targeted verification of an explorer finding.
 
-Read additional sections of `spec.md`, additional unchanged production code, or broader repository search results only when needed to answer a concrete unresolved implementation question.
+If investigation expands into multiple searches or source reads, delegate it instead of continuing repository discovery in the parent.
 
-If the plan predates the `Implementation handoff` section, read the sibling spec once and perform one focused repository discovery pass. Record the missing handoff under `Deviations` in the build evidence. Do not compensate by reading sibling numbered plans or performing a broad repository inventory.
+Reuse the explorer for related follow-ups; do not repeat its searches.
 
-If the plan path does not exist, stop and report it.
+Explorer gathers unresolved repository facts. You implement.
 
-If a named handoff anchor is stale or wrong, inspect only enough surrounding evidence to determine whether the plan remains valid.
+## Workflow
 
-If repository reality or a new user correction materially contradicts the plan or requires a consequential new decision, stop and return to `dev-plan`. Do not silently redesign during implementation.
+1. **Establish**
 
-If existing behavior already satisfies the plan, prove it, write the build evidence, report that no change is required, and stop without creating a commit.
+   * Read the exact plan and applicable repository instructions.
+   * Inspect version-control state.
+   * Start from its verified preconditions and repository handoff.
+   * Do not reread `spec.md`, sibling plans, or dependency plans.
+   * Do not revalidate settled facts unless the current tree contradicts them.
+   * If resolving a contradiction requires multi-step repository investigation, delegate it to `explorer`.
 
-## 2. Implement quickly
+   If a verified precondition or material plan assumption is false: `REQUIRES REPLANNING`.
 
-Build the minimum complete solution.
+   If a matching `.review.md` targets current `HEAD` with `CHANGES REQUIRED`, treat its findings as additional acceptance obligations.
 
-- Start from the plan’s named implementation anchors.
-- Gather related evidence before editing.
-- Batch related searches, reads, edits, and checks.
-- Read named starting points, callers, and tests in grouped operations rather than one file or symbol per turn.
-- Avoid broad discovery and whole-file or whole-log dumps when targeted evidence is sufficient.
-- Do not reread unchanged content or rerun unchanged commands without a concrete reason.
-- Do not repeat repository investigation already captured by the handoff unless the current tree contradicts it.
-- Before broadening a search, identify the concrete unresolved question privately and stop searching when it is answered.
-- Do not inspect sibling plans or future milestones merely for context.
-- Keep full diagnostics on disk and bring only relevant excerpts into context.
-- Avoid speculative abstractions, wrappers, duplicated or derivable state, dependencies, configuration, compatibility, and future-proofing.
-- Do not add public surface without a current in-scope caller or explicit contract.
-- Follow the change through required callers, failure paths, cleanup, tests, and removal of displaced in-scope code.
-- Do not perform adjacent cleanup.
+2. **Implement**
 
-Prefer fewer concepts and failure modes, not fewer characters. Keep behavior complete and locally understandable.
+   * Build the minimum complete solution.
+   * Follow only required callers, failure paths, cleanup, tests, and displaced in-scope code.
+   * Batch related reads, edits, and checks.
+   * Avoid adjacent cleanup and speculative machinery.
+   * Do not repeat unchanged searches, reads, or commands.
+   * When an unresolved implementation question requires multiple searches or source reads, delegate it to `explorer` rather than broadly investigating in the parent.
 
-## 3. Debug from evidence
+   If implementation requires a consequential decision absent from the plan: `REQUIRES REPLANNING`.
 
-Use:
+3. **Debug**
 
-`reproduce → hypothesis → discriminating evidence → root cause → fix → regression evidence`
+   * Use `reproduce → hypothesis → evidence → root cause → fix`.
+   * Run the smallest discriminating check.
+   * Delegate multi-file root-cause investigation to `explorer`; keep direct parent investigation to narrow hypotheses and targeted reads.
+   * Do not repeat unchanged failures or apply speculative patches.
+   * Environment/tooling failures are not implementation work. Use only an obvious local correction; otherwise: `BLOCKED`.
+   * Never create alternate clones/worktrees or manually replace authoritative generated output to bypass a blocker.
 
-- Run the cheapest check that can distinguish the current hypothesis.
-- Do not repeat an unchanged failing command.
-- Do not apply speculative patches.
-- After two failed hypotheses for the same symptom, stop editing and re-establish the root cause from the smallest useful reproducer, trace, or diagnostic.
-- Return to planning when the approved design is wrong.
+4. **Verify**
 
-## 4. Validate economically
+   * Prove every acceptance item and current review finding.
+   * Prefer focused checks while iterating.
+   * Run required final acceptance/completeness checks once on the final tree.
+   * Inspect the complete scoped diff and run `git diff --check` or equivalent.
 
-Assume tests are slow and expensive.
+5. **Commit**
 
-Before an expensive command, identify what it will prove and how each outcome changes the next action. Do not run it when neither outcome is actionable.
+   * If code changed, create one coherent Conventional Commit containing only this plan.
+   * Describe the repository change, not workflow state.
 
-While iterating:
+6. **Handoff**
 
-1. Use static reasoning to choose the next check.
-2. Run the narrowest check that can falsify the current change.
-3. Prefer focused tests before integration or repository-wide suites.
-4. Use the real external boundary when the contract requires interoperability.
-5. Do not rerun a successful expensive check on an unchanged relevant tree.
-6. Run required final validation once on the unchanged final tree.
-
-Never weaken tests, invariants, thresholds, or requirements merely to get green.
-
-Treat a failure as pre-existing only when the starting state or durable evidence proves it.
-
-## 5. Audit the result
-
-### Correctness
-
-- Map every plan requirement to code and evidence.
-- Inspect important success, failure, boundary, lifecycle, concurrency, and cleanup behavior.
-- Confirm the implementation fully satisfies the plan.
-- Run or inspect the plan’s named completeness searches once against the final tree when applicable.
-- Confirm every named in-scope caller or consumer is handled.
-
-### Simplicity and readability
-
-Read every human-written changed line.
-
-Remove unnecessary:
-
-- abstractions;
-- wrappers;
-- indirection;
-- duplicated or derivable state;
-- dependencies;
-- configuration;
-- compatibility paths;
-- public surface;
-- comments compensating for unclear code;
-- dead or displaced paths.
-
-Confirm every remaining mechanism satisfies a current requirement or proven boundary.
-
-Keep the code obvious, robust, conventional, and maintainable.
-
-Inspect the complete scoped production diff and run `git diff --check` or the repository equivalent.
-
-## 6. Commit, write the handoff, and stop
-
-If production code changed, create one coherent commit containing only this plan’s implementation.
-
-The commit MUST follow Conventional Commits 1.0.0:
-
-`<type>[optional scope][!]: <description>`
-
-Choose the type from the actual change:
-
-- `feat` — adds user- or caller-visible capability.
-- `fix` — corrects incorrect behavior.
-- `refactor` — changes implementation without changing intended behavior.
-- `perf` — improves performance without otherwise changing intended behavior.
-- `test` — changes tests only.
-- `docs` — changes documentation only.
-- `build` — changes build tooling or dependencies.
-- `ci` — changes CI configuration or automation.
-- `chore` — maintenance that does not fit the above.
-
-Use a short noun scope only when it materially improves identification of the affected subsystem. Do not invent a scope merely to fill the format.
-
-Write the description as a concise imperative summary of the implemented outcome.
-
-The commit message must describe only the repository change. Do not mention internal workflow state, plan paths, plan numbers, build evidence, agent activity, or implementation process anywhere in the commit subject or body.
-
-If the change is breaking, append `!` to the type or scope and include a `BREAKING CHANGE: <description>` footer when additional explanation is useful.
-
-Prefer a subject-only commit when the summary is sufficient. Add a body only when the repository change itself needs material explanation.
-
-Examples:
-
-```text
-feat(rtc): add negotiated data channel bindings
-```
-
-```text
-fix(router): preserve binding during shard migration
-```
-
-```text
-refactor(agent): centralize transport state ownership
-```
-
-Do not use generic subjects such as `implement plan`, `update code`, `misc changes`, or any internal plan terminology.
-
-Inspect the final commit message, commit diff, and worktree.
-
-Write or replace a compact build-evidence file beside the plan by replacing the plan’s `.md` suffix with `.build.md`:
-
-`plans/<project>/<NN>-<outcome>.build.md`
-
-Write the build evidence whenever the exact plan was successfully read, including completed, no-change, blocked, or requires-replanning outcomes.
-
-Use:
+   * Write `plans/<project>/<NN>-<outcome>.build.md`:
 
 ```markdown
 # Build evidence
-
-Plan: plans/<project>/<NN>-<outcome>.md
-Base revision: <starting revision>
-Commit: <final commit, current revision, or none>
+Plan: <path>
+Base revision: <revision>
+Commit: <revision or none>
 Status: COMPLETED | NO CHANGE | BLOCKED | REQUIRES REPLANNING
 
 ## Changed paths
-
-- `<path>` — <one-line purpose>
-
-None.
+- `<path>` — <purpose>
 
 ## Verification
-
-- `<exact command or evidence>` — PASS
-- `<exact command or evidence>` — FAIL: <concise reason>
-- `<exact command or evidence>` — NOT RUN: <concise reason>
+- `<evidence>` — PASS | FAIL: <reason> | NOT RUN: <reason>
 
 ## Deviations
-
 None.
 ```
 
-Include only applicable entries. Do not include reasoning transcripts, command logs, copied diffs, broad repository summaries, or speculative follow-up work.
-
-The build evidence is internal workflow state and must remain outside Git history. It is navigation for a fresh reviewer, not part of the shipped change.
-
-Report only:
-
-- **Changed**
-- **Verified**
-- **Commit**, or **No commit** when no change was required
-- **Handoff**
-- **Notes**, only when material
-
-Then stop.
+Keep it factual and compact. Then report status and stop.

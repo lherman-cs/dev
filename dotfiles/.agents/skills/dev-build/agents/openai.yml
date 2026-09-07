@@ -1,7 +1,7 @@
 interface:
   display_name: "Dev Build"
-  short_description: "Implement one exact numbered plan"
-  default_prompt: "Use $dev-build with an exact numbered plan path. Implement only that plan, verify it, create one coherent commit, then stop."
+  short_description: "Implement one approved plan and record evidence"
+  default_prompt: "Use $dev-build with an exact numbered plan path."
 
 policy:
   allow_implicit_invocation: false
