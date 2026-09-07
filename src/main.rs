@@ -3221,7 +3221,15 @@ fn analyze_workflow(
     };
     let uncached = input_tokens.saturating_sub(cached_input_tokens);
     let replay_amplification = (uncached > 0).then(|| input_tokens as f64 / uncached as f64);
-    let assessment = build_assessment(model_calls, peak, compactions, policy);
+    // Main-thread health is the primary optimization target. Delegated
+    // explorer pressure is reported separately instead of making a healthy
+    // root workflow look unhealthy.
+    let assessment = build_assessment(
+        root.model_calls,
+        root.peak_input_tokens_per_call,
+        root.compactions,
+        policy,
+    );
 
     Ok(AgentWorkflowStats {
         root_thread_id: root_thread_id.to_owned(),
@@ -3299,7 +3307,132 @@ fn percent(count: u64, total: u64) -> f64 {
     }
 }
 
-fn print_agent_stats(stats: &AgentWorkflowStats) {
+
+fn cached_percent(input: u64, cached: u64) -> f64 {
+    percent(cached, input)
+}
+
+fn replay_amplification(input: u64, uncached: u64) -> Option<f64> {
+    (uncached > 0).then(|| input as f64 / uncached as f64)
+}
+
+fn top_commands(commands: &HashMap<String, u64>, limit: usize) -> Option<String> {
+    if commands.is_empty() {
+        return None;
+    }
+    let mut commands: Vec<_> = commands.iter().collect();
+    commands.sort_by_key(|(name, count)| (std::cmp::Reverse(**count), *name));
+    Some(
+        commands
+            .into_iter()
+            .take(limit)
+            .map(|(name, count)| format!("{name} {count}"))
+            .collect::<Vec<_>>()
+            .join(" · "),
+    )
+}
+
+fn is_repository_read_command(name: &str) -> bool {
+    matches!(
+        name,
+        "rg" | "grep" | "find" | "fd" | "sed" | "cat" | "nl" | "head" | "tail"
+            | "awk" | "less"
+    )
+}
+
+fn repository_read_commands(commands: &HashMap<String, u64>) -> u64 {
+    commands
+        .iter()
+        .filter(|(name, _)| is_repository_read_command(name))
+        .map(|(_, count)| *count)
+        .sum()
+}
+
+fn main_thread_health(thread: &AgentThreadStats, policy: &AgentStatsPolicy) -> &'static str {
+    if thread.model_calls > policy.bad_model_calls
+        || thread.peak_input_tokens_per_call >= policy.bad_peak_input_tokens
+        || thread.compactions >= policy.bad_compactions
+    {
+        "RUNAWAY"
+    } else if thread.model_calls > policy.warn_model_calls
+        || thread.peak_input_tokens_per_call >= policy.warn_peak_input_tokens
+        || thread.compactions >= policy.warn_compactions
+    {
+        "PRESSURED"
+    } else {
+        "HEALTHY"
+    }
+}
+
+fn delegation_grade(
+    spawned_threads: usize,
+    main_input_share: f64,
+    repository_read_offload: Option<f64>,
+) -> &'static str {
+    if spawned_threads == 0 {
+        return "NONE";
+    }
+    let read_strong = repository_read_offload.is_none_or(|value| value >= 80.0);
+    let read_good = repository_read_offload.is_none_or(|value| value >= 60.0);
+    if main_input_share <= 25.0 && read_strong {
+        "STRONG"
+    } else if main_input_share <= 40.0 && read_good {
+        "GOOD"
+    } else if main_input_share <= 60.0 {
+        "WEAK"
+    } else {
+        "POOR"
+    }
+}
+
+fn thread_usage_model(thread: &AgentThreadStats) -> &str {
+    thread
+        .by_model
+        .iter()
+        .filter(|(model, _)| !is_auxiliary_model(model))
+        .max_by_key(|(_, usage)| usage.input_tokens)
+        .map(|(model, _)| model.as_str())
+        .or_else(|| thread.model.as_deref())
+        .unwrap_or("unknown")
+}
+
+fn print_agent_stats(stats: &AgentWorkflowStats, policy: &AgentStatsPolicy) {
+    let root = stats
+        .thread_details
+        .iter()
+        .find(|thread| thread.thread_id == stats.root_thread_id)
+        .expect("workflow stats must contain the root thread");
+
+    let delegated: Vec<_> = stats
+        .thread_details
+        .iter()
+        .filter(|thread| thread.thread_id != stats.root_thread_id)
+        .collect();
+
+    let delegated_input = delegated.iter().map(|t| t.input_tokens).sum::<u64>();
+    let delegated_fresh = delegated.iter().map(|t| t.uncached_input_tokens).sum::<u64>();
+    let delegated_calls = delegated.iter().map(|t| t.model_calls).sum::<u64>();
+    let delegated_compactions = delegated.iter().map(|t| t.compactions).sum::<u64>();
+
+    let main_input_share = percent(root.input_tokens, stats.input_tokens);
+    let delegated_input_share = percent(delegated_input, stats.input_tokens);
+
+    let main_repository_reads = repository_read_commands(&root.command_families);
+    let delegated_repository_reads = delegated
+        .iter()
+        .map(|thread| repository_read_commands(&thread.command_families))
+        .sum::<u64>();
+    let total_repository_reads = main_repository_reads.saturating_add(delegated_repository_reads);
+    let repository_read_offload = (total_repository_reads > 0)
+        .then(|| percent(delegated_repository_reads, total_repository_reads));
+
+    let main_health = main_thread_health(root, policy);
+    let delegation = delegation_grade(
+        stats.spawned_threads,
+        main_input_share,
+        repository_read_offload,
+    );
+
     println!("Codex session");
     println!("────────────────────────────────────────────────────────");
     if let Some(cwd) = &stats.cwd {
@@ -3321,36 +3454,18 @@ fn print_agent_stats(stats: &AgentWorkflowStats) {
     if !stats.skills.is_empty() {
         println!("Skills             {}", stats.skills.join(", "));
     }
-    for plan in stats.referenced_plans.iter().take(5) {
-        println!("Plan reference     {plan}");
-    }
-    if stats.referenced_plans.len() > 5 {
-        println!(
-            "Plan references    +{} more",
-            stats.referenced_plans.len() - 5
-        );
-    }
     println!(
-        "Model              {}{}",
-        stats.model.as_deref().unwrap_or("unknown"),
-        stats
-            .reasoning_effort
+        "Main model         {}{}",
+        thread_usage_model(root),
+        root.reasoning_effort
             .as_deref()
-            .map(|e| format!(" / {e}"))
+            .map(|effort| format!(" / {effort}"))
             .unwrap_or_default()
     );
-    println!("Source             {}", stats.root_source);
-    if let Some(started) = &stats.started_at {
-        println!("Started            {started}");
-    }
-    if let Some(ended) = &stats.ended_at {
-        println!("Ended              {ended}");
-    }
     println!(
-        "Threads            {} ({} spawned)",
+        "Threads            {} ({} delegated)",
         stats.threads, stats.spawned_threads
     );
-    println!("Completed turns    {}", stats.task_completions);
     if let Some(result) = &stats.final_result {
         println!("Last result        {result}");
     }
@@ -3377,152 +3492,67 @@ fn print_agent_stats(stats: &AgentWorkflowStats) {
     }
 
     println!();
-    println!("Cost shape");
-    println!("Processed input    {}", format_tokens(stats.input_tokens));
+    println!("Efficiency");
     println!(
-        "  cached/replayed  {} ({:.1}%)",
-        format_tokens(stats.cached_input_tokens),
-        stats.cached_input_percent
-    );
-    println!(
-        "  uncached/fresh   {} ({:.1}%)",
-        format_tokens(stats.uncached_input_tokens),
-        100.0 - stats.cached_input_percent
-    );
-    if let Some(amp) = stats.replay_amplification {
-        println!("Replay amplify     {:.1}× processed/fresh", amp);
-    }
-    println!("Output             {}", format_tokens(stats.output_tokens));
-    println!(
-        "Reasoning          {}",
-        format_tokens(stats.reasoning_output_tokens)
+        "Main               {:20} {:>8} input · {:>7} fresh · {:>3} calls · p90 {:>7} · peak {:>7}",
+        thread_usage_model(root),
+        format_tokens(root.input_tokens),
+        format_tokens(root.uncached_input_tokens),
+        root.model_calls,
+        format_tokens(root.p90_input_tokens_per_call),
+        format_tokens(root.peak_input_tokens_per_call),
     );
 
-    println!();
-    println!("Agent activity");
-    println!("Model calls        {}", stats.model_calls);
-    println!(
-        "Tool calls         {} ({:.2} / model call)",
-        stats.tool_calls,
-        if stats.model_calls == 0 {
-            0.0
+    for (index, thread) in delegated.iter().enumerate() {
+        let label = if delegated.len() == 1 {
+            "Explorer".to_string()
         } else {
-            stats.tool_calls as f64 / stats.model_calls as f64
-        }
+            format!("Explorer {}", index + 1)
+        };
+        println!(
+            "{:<18} {:20} {:>8} input · {:>7} fresh · {:>3} calls · p90 {:>7} · peak {:>7}",
+            label,
+            thread_usage_model(thread),
+            format_tokens(thread.input_tokens),
+            format_tokens(thread.uncached_input_tokens),
+            thread.model_calls,
+            format_tokens(thread.p90_input_tokens_per_call),
+            format_tokens(thread.peak_input_tokens_per_call),
+        );
+    }
+
+    if delegated.is_empty() {
+        println!("Offload            none");
+    } else if let Some(read_offload) = repository_read_offload {
+        println!(
+            "Offload            {:.1}% input · {:.1}% repo reads",
+            delegated_input_share, read_offload
+        );
+    } else {
+        println!("Offload            {:.1}% input", delegated_input_share);
+    }
+
+    println!(
+        "Total              {} input · {} fresh · {} calls",
+        format_tokens(stats.input_tokens),
+        format_tokens(stats.uncached_input_tokens),
+        stats.model_calls
     );
-    println!("Compactions        {}", stats.compactions);
-    if stats.task_completions > 0 {
-        println!(
-            "Input / turn       {}",
-            format_tokens(stats.input_tokens / stats.task_completions)
-        );
-        println!(
-            "Calls / turn       {:.1}",
-            stats.model_calls as f64 / stats.task_completions as f64
-        );
-    }
-    if !stats.command_families.is_empty() {
-        let mut commands: Vec<_> = stats.command_families.iter().collect();
-        commands.sort_by_key(|(_, count)| std::cmp::Reverse(**count));
-        let top = commands
-            .into_iter()
-            .take(8)
-            .map(|(name, count)| format!("{name} {count}"))
-            .collect::<Vec<_>>()
-            .join(" · ");
-        println!("Top commands       {top}");
-    }
 
     println!();
-    println!("Context health");
     println!(
-        "Median / call      {}",
-        format_tokens(stats.median_input_tokens_per_call)
-    );
-    println!(
-        "P90 / call         {}",
-        format_tokens(stats.p90_input_tokens_per_call)
-    );
-    println!(
-        "Peak / call        {}",
-        format_tokens(stats.peak_input_tokens_per_call)
-    );
-    println!(
-        "Calls ≥100K        {} ({:.1}%)",
-        stats.calls_over_100k,
-        percent(stats.calls_over_100k, stats.model_calls)
-    );
-    println!(
-        "Calls ≥120K        {} ({:.1}%)",
-        stats.calls_over_120k,
-        percent(stats.calls_over_120k, stats.model_calls)
-    );
-    println!(
-        "Calls ≥200K        {} ({:.1}%)",
-        stats.calls_over_200k,
-        percent(stats.calls_over_200k, stats.model_calls)
+        "Health             main {} · delegation {} · {} compactions",
+        main_health,
+        delegation,
+        stats.compactions
     );
 
-    if !stats.by_model.is_empty() {
-        println!();
-        println!("Model mix");
-        let mut models: Vec<_> = stats.by_model.iter().collect();
-        models.sort_by_key(|(_, usage)| std::cmp::Reverse(usage.input_tokens));
-        for (model, usage) in models {
-            println!(
-                "  {:20} {:>9} input · {:>4} calls · {:>2} threads",
-                model,
-                format_tokens(usage.input_tokens),
-                usage.model_calls,
-                usage.threads
-            );
-        }
-    }
-
-    if let (Some(first), Some(last)) = (
-        stats.account_weekly_used_percent_first,
-        stats.account_weekly_used_percent_last,
-    ) {
-        println!();
-        println!("Account weekly");
-        println!("Used               {first:.1}% → {last:.1}%");
+    if delegated_compactions > 0 {
         println!(
-            "Remaining          {:.1}% → {:.1}%",
-            100.0 - first,
-            100.0 - last
+            "Note               delegated context compacted {} time{}",
+            delegated_compactions,
+            if delegated_compactions == 1 { "" } else { "s" }
         );
-        println!("Attribution        account-wide snapshots; delta is not session cost");
-    }
-
-    println!();
-    println!("Diagnosis");
-    let context = if stats.compactions >= 2 || stats.p90_input_tokens_per_call >= 120_000 {
-        "RUNAWAY"
-    } else if stats.compactions == 1 || stats.p90_input_tokens_per_call >= 100_000 {
-        "PRESSURED"
-    } else {
-        "HEALTHY"
-    };
-    let looping = if stats.model_calls > 120 {
-        "HIGH"
-    } else if stats.model_calls > 80 {
-        "ELEVATED"
-    } else {
-        "NORMAL"
-    };
-    println!("Context            {context}");
-    println!("Loop volume        {looping}");
-    if stats.cached_input_percent >= 95.0 && stats.p90_input_tokens_per_call >= 120_000 {
-        println!("Primary driver     repeated large-context replay");
-    } else if stats.model_calls > 120 {
-        println!("Primary driver     high model-call volume");
-    } else if stats.compactions > 0 {
-        println!("Primary driver     context pressure / compaction");
-    } else {
-        println!("Primary driver     no dominant pathology detected");
-    }
-    for item in &stats.assessment {
-        println!("  {item}");
     }
 
     if !stats.warnings.is_empty() {
@@ -3563,7 +3593,7 @@ fn cmd_agent_stats(last: usize, file: Option<PathBuf>, json: bool) -> Result<()>
         if position > 0 {
             println!("\n");
         }
-        print_agent_stats(workflow);
+        print_agent_stats(workflow, &config.stats);
     }
 
     Ok(())
