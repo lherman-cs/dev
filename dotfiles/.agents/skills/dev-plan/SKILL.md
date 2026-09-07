@@ -11,48 +11,49 @@ Define one bounded project. Never modify production code.
 
 ## Main-thread boundary
 
-Preserve the parent for requirements, consequential decisions, design, and plan writing. Keep bulk evidence out of its context.
+Preserve the parent for requirements, consequential decisions, design, and plan writing. Keep bulk repository evidence out of its context.
 
 The parent may directly consume only:
 - the user's request and decisions;
 - applicable repository instructions;
 - compact explorer findings;
-- the exact plan sections it is actively writing or patching;
+- exact plan sections it is actively writing or patching;
 - narrow verification output for its own edits;
 - one cited source location when exact semantics are indispensable to a consequential decision.
 
 Existing specs, plans, build/review evidence, implementation source, callers, tests, history, and cross-file state are repository evidence. Do not bulk-read them in the parent.
 
-Before repository discovery, spawn `explorer`. Do not first inspect plan sets or implementation files "for orientation."
+Before repository discovery, identify independent evidence questions from the request and known anchors, then delegate them. Do not first read plan sets or implementation files merely for orientation.
 
-## Explorer
+## Explorers
 
-Use `explorer` as the primary repository context owner.
+Use `explorer` as the repository context owner.
 
 Spawn with `agent_type="explorer"` and `fork_turns="none"`.
 
-Prefer one primary explorer for related questions so repository context accumulates there rather than in the parent. Continue with it when a follow-up depends on evidence it already gathered. Spawn another only for genuinely independent work that will not duplicate context.
+Use the smallest useful fan-out:
+- one explorer when the evidence is cohesive;
+- two or three explorers in parallel when the task spans independent ownership boundaries or subsystems;
+- never split by evidence type when the same subsystem knowledge is required.
 
-Ask the explorer to build a decision-grade evidence packet from the relevant workflow artifacts and repository state. Give it:
-- the user's objective;
-- known paths or symbols;
-- the exact decisions or plan boundaries the evidence must inform.
+Good partitions are independent subsystems or ownership boundaries. Bad partitions are "implementation", "callers", and "tests" for the same subsystem, because they duplicate orientation.
 
-Require a compact result containing:
-- settled contract and prior decisions relevant to this task;
-- current repository truth;
-- stale or conflicting assumptions;
-- canonical owners, callers/consumers, tests, and completeness checks;
+Each explorer gets one coherent question, the narrowest useful anchors, and the decision or plan boundary its evidence must inform. Scopes should overlap as little as practical.
+
+Require each explorer to return one compact decision-grade packet:
+- direct conclusions;
 - relevant `path::symbol` evidence;
+- important relationships and constraints;
+- stale or conflicting assumptions;
 - material uncertainty requiring a parent decision.
 
-Do not request search history, raw command output, large excerpts, implementation proposals, or design decisions.
+Explorers report directly to the parent. Do not add a synthesis agent.
 
-The explorer gathers facts. The parent decides.
+The parent integrates evidence and decides. Do not repeat explorer discovery in the parent. If a packet is incomplete, continue that explorer only when the missing fact belongs to the same coherent scope; otherwise delegate the new concern separately.
 
-Do not repeat explorer discovery in the parent. If evidence is incomplete or conflicting, ask the explorer to resolve it first. Direct parent source inspection is a last resort and stays limited to the cited location necessary for the decision.
+Direct parent source inspection is a last resort and stays limited to the cited location necessary for a consequential decision.
 
-If `explorer` is unavailable, use only narrow reads required to determine whether work can proceed. Broad parent-side discovery is not an allowed fallback.
+If explorers are unavailable, use only narrow reads required to determine whether work can proceed. Broad parent-side discovery is not an allowed fallback.
 
 ## Workflow
 
@@ -63,7 +64,7 @@ If `explorer` is unavailable, use only narrow reads required to determine whethe
 
 2. **Discover**
    * Identify only repository facts that can change the contract, design, acceptance, or plan boundaries.
-   * Delegate evidence gathering to the primary explorer.
+   * Partition independent repository questions and run useful explorers concurrently.
    * Ask follow-ups only when the answer can materially change the plan.
    * Stop when decision-relevant evidence is sufficient.
 
@@ -81,7 +82,7 @@ If `explorer` is unavailable, use only narrow reads required to determine whethe
 5. **Write**
    * Create or update `plans/<project>/spec.md`.
    * Create ordered `plans/<project>/<NN>-<outcome>.md`.
-   * Read only the exact existing sections needed for a surgical edit; do not reload whole plan sets after discovery.
+   * Read only exact existing sections needed for a surgical edit; do not reload whole plan sets after discovery.
    * Verify structure and changed sections without rereading unchanged artifacts.
 
 Each numbered plan must contain:

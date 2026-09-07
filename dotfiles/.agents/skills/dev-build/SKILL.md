@@ -25,17 +25,21 @@ The parent may directly consume only:
 
 Do not make the parent reconstruct architecture, caller graphs, patterns, lifecycle paths, or test surfaces from raw repository reads.
 
-After reading the exact plan, spawn `explorer` before any broad repository orientation.
+After reading the exact plan, identify independent evidence questions from its handoff and delegate them before broad repository orientation.
 
-## Explorer
+## Explorers
 
-Use `explorer` as the primary repository context owner for implementation support.
+Use `explorer` as the repository context owner for implementation support.
 
 Spawn with `agent_type="explorer"` and `fork_turns="none"`.
 
-Prefer one primary explorer for related questions and continue with it when follow-ups depend on existing evidence. Spawn another only for independent investigation without substantial overlap.
+Use the smallest useful fan-out:
+- one explorer for one cohesive implementation surface;
+- two or three in parallel when the plan crosses independent owners/subsystems that can be investigated without substantial overlap.
 
-Give it the exact plan path and ask it to locate only evidence required to execute that contract:
+Partition by coherent ownership boundary, not by "implementation", "callers", and "tests" for the same subsystem.
+
+Explorer questions may cover:
 - exact edit surfaces and surrounding invariants;
 - canonical implementation patterns;
 - callers/consumers that must move with the change;
@@ -43,15 +47,15 @@ Give it the exact plan path and ask it to locate only evidence required to execu
 - relevant tests, fixtures, and verification commands;
 - contradictions between the plan and current tree.
 
-Require a compact answer with direct conclusions, `path::symbol` evidence, important relationships, and material uncertainty.
+Require each explorer to return compact factual conclusions with `path::symbol` evidence, important relationships, and material uncertainty.
 
-Do not ask it to choose product behavior, architecture, or implementation strategy. The explorer gathers facts; the parent implements.
+Explorers report directly to the parent. Do not add a synthesis agent. Do not ask them to choose product behavior, architecture, or implementation strategy.
 
-Do not duplicate its tracing in the parent. Read only returned source regions required to edit or verify behavior.
+The parent implements. Do not duplicate explorer tracing in the parent; read only returned source regions required to edit or verify behavior.
 
-For debugging, keep the hypothesis and fix decision in the parent; use the same explorer for read-heavy tracing and large failure-output analysis.
+For debugging, keep the hypothesis and fix decision in the parent. Continue an existing explorer for same-scope tracing; use a separate explorer for an independent failure surface.
 
-If `explorer` is unavailable, use only narrow direct reads required to continue. Broad parent-side discovery is not an allowed fallback.
+If explorers are unavailable, use only narrow direct reads required to continue. Broad parent-side discovery is not an allowed fallback.
 
 ## Workflow
 
@@ -61,7 +65,7 @@ If `explorer` is unavailable, use only narrow direct reads required to continue.
    * Start from verified preconditions and the repository handoff.
    * Do not reread `spec.md`, sibling plans, or dependency plans.
    * Do not revalidate settled facts without contradictory evidence.
-   * Spawn the primary explorer before non-local repository investigation.
+   * Partition and delegate non-local repository questions before investigating them in the parent.
 
    If a verified precondition or material assumption is false: `REQUIRES REPLANNING`.
 
@@ -74,14 +78,14 @@ If `explorer` is unavailable, use only narrow direct reads required to continue.
    * Batch related reads, edits, and checks.
    * Avoid adjacent cleanup and speculative machinery.
    * Do not repeat unchanged searches, reads, or commands.
-   * Keep tracing in the explorer; keep edits and implementation decisions in the parent.
+   * Keep repository tracing in explorers; keep edits and implementation decisions in the parent.
 
    If implementation requires a consequential decision absent from the plan: `REQUIRES REPLANNING`.
 
 3. **Debug**
    * Use `reproduce → hypothesis → evidence → root cause → fix`.
    * Run the smallest discriminating check first.
-   * Delegate cross-file diagnosis or large output to the primary explorer.
+   * Delegate cross-file diagnosis or large output to the appropriate explorer.
    * Stop when root cause is established.
    * Do not repeat unchanged failures or apply speculative patches.
    * For environment/tooling failures, use only an obvious local correction; otherwise: `BLOCKED`.
@@ -91,7 +95,7 @@ If `explorer` is unavailable, use only narrow direct reads required to continue.
    * Prove every acceptance item and current review finding.
    * Prefer focused, quiet checks while iterating.
    * Run required final acceptance/completeness checks once on the final tree.
-   * Delegate noisy failure-output analysis and non-local completeness tracing to `explorer`.
+   * Delegate noisy failure-output analysis and non-local completeness tracing to explorers.
    * Inspect human-authored changed hunks directly; delegate large/generated diff completeness checks when they would add bulk context without improving parent judgment.
    * Run `git diff --check` or equivalent.
    * Repeat a successful check only if later changes could invalidate it.

@@ -309,6 +309,9 @@ struct RolloutIdentity {
     parent_thread_id: Option<String>,
     forked_from_id: Option<String>,
     source_kind: String,
+    agent_path: Option<String>,
+    agent_nickname: Option<String>,
+    agent_role: Option<String>,
     started_at: Option<String>,
     cwd: Option<String>,
     repository_url: Option<String>,
@@ -447,6 +450,9 @@ struct AgentThreadStats {
     thread_id: String,
     parent_thread_id: Option<String>,
     source_kind: String,
+    agent_path: Option<String>,
+    agent_nickname: Option<String>,
+    agent_role: Option<String>,
     file: String,
     cwd: Option<String>,
     repository_url: Option<String>,
@@ -2896,6 +2902,21 @@ fn read_rollout_identity(path: &Path) -> Result<RolloutIdentity> {
             .ok_or_else(|| anyhow!("session_meta has no thread id in {}", path.display()))?;
 
         let kind = source_kind(meta);
+        let agent_path = meta
+            .get("agent_path")
+            .or_else(|| meta.get("agentPath"))
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned);
+        let agent_nickname = meta
+            .get("agent_nickname")
+            .or_else(|| meta.get("agentNickname"))
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned);
+        let agent_role = meta
+            .get("agent_role")
+            .or_else(|| meta.get("agentRole"))
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned);
         let direct_parent = meta
             .get("parent_thread_id")
             .or_else(|| meta.get("parentThreadId"))
@@ -2960,6 +2981,9 @@ fn read_rollout_identity(path: &Path) -> Result<RolloutIdentity> {
             parent_thread_id,
             forked_from_id,
             source_kind: kind,
+            agent_path,
+            agent_nickname,
+            agent_role,
             started_at,
             cwd,
             repository_url,
@@ -2971,6 +2995,66 @@ fn read_rollout_identity(path: &Path) -> Result<RolloutIdentity> {
     }
 
     bail!("No session_meta found near start of {}", path.display())
+}
+
+fn spawned_child_ids_from_rollout(identity: &RolloutIdentity) -> Result<HashSet<String>> {
+    let file = File::open(&identity.file)
+        .with_context(|| format!("Failed to open Codex rollout: {}", identity.file.display()))?;
+    let reader = BufReader::new(file);
+    let mut children = HashSet::new();
+
+    for (line_number, line) in reader.lines().enumerate() {
+        let line = line.with_context(|| {
+            format!(
+                "Failed reading {} at line {}",
+                identity.file.display(),
+                line_number + 1
+            )
+        })?;
+        let line = line.trim_start_matches('\u{feff}');
+        let value: Value = serde_json::from_str(line).with_context(|| {
+            format!(
+                "Invalid JSON in {} at line {}",
+                identity.file.display(),
+                line_number + 1
+            )
+        })?;
+
+        if value.get("type").and_then(Value::as_str) != Some("event_msg") {
+            continue;
+        }
+
+        let payload = value.get("payload").unwrap_or(&Value::Null);
+        match payload.get("type").and_then(Value::as_str) {
+            // Multi-Agent V2 canonical parent-side topology signal.
+            Some("sub_agent_activity")
+                if payload.get("kind").and_then(Value::as_str) == Some("started") =>
+            {
+                if let Some(child) = payload
+                    .get("agent_thread_id")
+                    .or_else(|| payload.get("agentThreadId"))
+                    .and_then(Value::as_str)
+                {
+                    children.insert(child.to_owned());
+                }
+            }
+
+            // V1 / compatibility spawn completion carries the resolved child id.
+            Some("collab_agent_spawn_end") => {
+                if let Some(child) = payload
+                    .get("new_thread_id")
+                    .or_else(|| payload.get("newThreadId"))
+                    .and_then(Value::as_str)
+                {
+                    children.insert(child.to_owned());
+                }
+            }
+
+            _ => {}
+        }
+    }
+
+    Ok(children)
 }
 
 fn rollout_index() -> Result<HashMap<String, RolloutIdentity>> {
@@ -3004,6 +3088,39 @@ fn rollout_index() -> Result<HashMap<String, RolloutIdentity>> {
             home.display()
         );
     }
+
+    // session_meta.parent_thread_id is useful, but Multi-Agent V2 also persists
+    // authoritative parent-side SubAgentActivity records. Reconcile from those
+    // records so sibling fan-out is not lost when child metadata is incomplete,
+    // stale, or represented differently across Codex versions.
+    let parents = index
+        .values()
+        .map(|identity| (identity.thread_id.clone(), identity.clone()))
+        .collect::<Vec<_>>();
+    let mut parent_edges = Vec::new();
+
+    for (parent_id, identity) in parents {
+        match spawned_child_ids_from_rollout(&identity) {
+            Ok(children) => {
+                for child_id in children {
+                    if child_id != parent_id {
+                        parent_edges.push((parent_id.clone(), child_id));
+                    }
+                }
+            }
+            Err(error) => warn!(
+                "Could not recover subagent topology from {}: {error:#}",
+                identity.file.display()
+            ),
+        }
+    }
+
+    for (parent_id, child_id) in parent_edges {
+        if let Some(child) = index.get_mut(&child_id) {
+            child.parent_thread_id = Some(parent_id);
+        }
+    }
+
     Ok(index)
 }
 
@@ -3619,6 +3736,9 @@ fn analyze_rollout(identity: &RolloutIdentity) -> Result<(AgentThreadStats, Vec<
             thread_id: identity.thread_id.clone(),
             parent_thread_id: identity.parent_thread_id.clone(),
             source_kind: identity.source_kind.clone(),
+            agent_path: identity.agent_path.clone(),
+            agent_nickname: identity.agent_nickname.clone(),
+            agent_role: identity.agent_role.clone(),
             file: path.display().to_string(),
             cwd: identity.cwd.clone(),
             repository_url: identity.repository_url.clone(),
@@ -4029,6 +4149,30 @@ fn delegation_grade(
     }
 }
 
+fn delegated_thread_label(
+    thread: &AgentThreadStats,
+    index: usize,
+    total: usize,
+) -> String {
+    let base = thread
+        .agent_role
+        .as_deref()
+        .or(thread.agent_nickname.as_deref())
+        .or_else(|| {
+            thread
+                .agent_path
+                .as_deref()
+                .and_then(|path| path.rsplit('/').find(|part| !part.is_empty()))
+        })
+        .unwrap_or("agent");
+
+    if total == 1 {
+        base.to_string()
+    } else {
+        format!("{base} {}", index + 1)
+    }
+}
+
 fn thread_usage_model(thread: &AgentThreadStats) -> &str {
     thread
         .by_model
@@ -4151,11 +4295,7 @@ fn print_agent_stats(stats: &AgentWorkflowStats, policy: &AgentStatsPolicy) {
     );
 
     for (index, thread) in delegated.iter().enumerate() {
-        let label = if delegated.len() == 1 {
-            "Explorer".to_string()
-        } else {
-            format!("Explorer {}", index + 1)
-        };
+        let label = delegated_thread_label(thread, index, delegated.len());
         println!(
             "{:<18} {:20} {:>8} input · {:>7} fresh · {:>3} calls · p90 {:>7} · peak {:>7}",
             label,

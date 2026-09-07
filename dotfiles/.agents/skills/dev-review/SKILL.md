@@ -25,38 +25,42 @@ The parent may directly consume only:
 
 Do not load broad caller graphs, unchanged modules, generated diffs, large diagnostics, or repository history into the parent.
 
-After reading the contract and changed-file inventory, spawn `explorer` before surrounding-repository investigation.
+After reading the contract and changed-file inventory, identify independent evidence questions and delegate them before surrounding-repository investigation.
 
-## Explorer
+## Explorers
 
-Use `explorer` as the primary repository context owner for review evidence.
+Use `explorer` as the repository context owner for review evidence.
 
 Spawn with `agent_type="explorer"` and `fork_turns="none"`.
 
-Prefer one primary explorer for related review questions and continue with it for follow-ups. Spawn another only for an independent investigation without substantial overlap.
+Use the smallest useful fan-out:
+- one explorer when the change is cohesive;
+- two or three in parallel when correctness depends on independent owners/subsystems or changed surfaces.
 
-Give it the plan path, reviewed revision, and changed paths. Ask it to establish:
+Partition by coherent ownership or subsystem. Do not split "callers", "tests", and "implementation" into separate explorers when they require the same architectural context.
+
+Explorer questions may establish:
 - canonical ownership and surrounding architecture;
 - callers, consumers, migrations, and displaced paths;
-- lifecycle, cleanup, failure, ordering, concurrency, validation, and security relationships relevant to the change;
+- lifecycle, cleanup, failure, ordering, concurrency, validation, and security relationships;
 - relevant tests and fixtures;
 - unchanged code whose behavior can invalidate the patch;
 - completeness risks and large/generated diff facts.
 
-Require concise factual conclusions with `path::symbol` evidence and material uncertainty.
+Require each explorer to return concise factual conclusions with `path::symbol` evidence and material uncertainty.
 
-Do not ask it to "review the patch", find bugs generally, classify severity, propose fixes, or decide the verdict. The explorer gathers facts; the parent judges.
+Explorers report directly to the parent. Do not add a synthesis agent. Do not ask them to review the patch generally, find bugs without a concrete scope, classify severity, propose fixes, or decide the verdict.
 
-Do not duplicate explorer discovery in the parent. Inspect only changed hunks and exact cited source needed to reason about a material concern.
+The parent judges. Do not duplicate explorer discovery in the parent; inspect only material changed hunks and exact cited source needed to reason about a concern.
 
-If `explorer` is unavailable, use only narrow direct reads required to continue. Broad parent-side discovery is not an allowed fallback.
+If explorers are unavailable, use only narrow direct reads required to continue. Broad parent-side discovery is not an allowed fallback.
 
 ## Workflow
 
 1. **Establish**
    * Read the exact plan and matching `.build.md` once.
    * Inspect version-control state and the changed-file inventory.
-   * Spawn the primary explorer for surrounding repository evidence.
+   * Partition independent surrounding-repository questions and run useful explorers concurrently.
    * Inspect material human-authored diff hunks directly; avoid dumping large generated or mechanical diffs into the parent.
    * Do not reread `spec.md`, sibling plans, or broadly rediscover the repository.
 
@@ -73,7 +77,7 @@ If `explorer` is unavailable, use only narrow direct reads required to continue.
    * no duplicated policy/state or unnecessary abstraction, dependency, configuration, compatibility, or public surface was added;
    * verification applies to the reviewed revision and proves the contract.
 
-   Keep reasoning about changed code in the parent. Turn surrounding-repository questions into concrete follow-ups for the primary explorer. Stop when each concern is proved or disproved.
+   Keep reasoning about changed code in the parent. Turn surrounding-repository questions into concrete explorer follow-ups. Continue the same explorer only for the same coherent scope; delegate independent concerns separately. Stop when each concern is proved or disproved.
 
 3. **Classify**
    * `BLOCKER` — requires changing the contract, architecture, acceptance boundary, or a fundamental correctness/security/integrity decision.
@@ -84,7 +88,7 @@ If `explorer` is unavailable, use only narrow direct reads required to continue.
 4. **Verify**
    * Run only checks needed to establish the verdict.
    * Do not rerun expensive successful build checks without a concrete reason.
-   * Delegate large-output inspection and non-local failure tracing to `explorer`.
+   * Delegate large-output inspection and non-local failure tracing to explorers.
    * Never accept solely because build evidence reports success.
 
 5. **Handoff**
