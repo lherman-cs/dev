@@ -1,38 +1,69 @@
 ---
 name: dev-plan
-description: Define one bounded software project, resolve consequential decisions, gather necessary repository evidence, and write executable plans. Never implement
+description: Define one bounded software project, resolve consequential decisions, gather necessary repository evidence, and write executable numbered plans. Never implement.
 ---
 
 # Dev Plan
 
-Define one bounded project. Never implement production code.
+Define one bounded project. Never modify production code.
 
 `plans/` is Git-ignored workflow state. Access exact paths directly.
 
+## Context discipline
+
+Preserve the parent thread for requirements, consequential decisions, design, and plan writing.
+
+Repository reading is supporting work. Offload it to `explorer` by default so repository context does not accumulate in the parent.
+
+The parent should directly consume only:
+
+* the user's request and decisions;
+* applicable repository instructions;
+* concise explorer findings;
+* plan artifacts it must write or edit;
+* a specific source location when exact semantics are necessary for a consequential decision.
+
+Do not broadly search or read implementation source in the parent.
+
 ## Explorer
 
-Delegate repository discovery to `explorer` whenever answering a concrete repository question requires more than one search or source read.
+Use `explorer` for repository discovery, including:
 
-For `plan` and `replan`, presume repository discovery requires `explorer` unless the answer is already available from a single known file, symbol, caller, or test.
+* existing architecture and ownership;
+* implementation state;
+* callers and consumers;
+* tests and fixtures;
+* lifecycle and failure paths;
+* related plan/build/review evidence;
+* cross-file consistency;
+* exact repository facts needed to make a decision.
 
-Always spawn with `agent_type="explorer"` and `fork_turns="none"`.
+Spawn with `agent_type="explorer"` and `fork_turns="none"`.
 
-Give it:
-- one self-contained repository question;
-- the narrowest known scope;
-- useful paths, symbols, callers, tests, or plan anchors;
-- the specific fact or uncertainty that must be resolved.
+Prefer one primary explorer for related repository questions. Let repository context accumulate there rather than in the parent. Continue with that explorer when a follow-up depends on evidence it already gathered.
 
-Do not perform the same repository discovery in the parent thread.
+Spawn additional explorers only for independent questions that can be investigated without duplicating the same repository context.
 
-The parent may directly:
-- read one known file or symbol;
-- inspect a specific caller or test already identified;
-- verify a targeted explorer finding needed for a consequential design decision.
+Give the explorer:
 
-Reuse the explorer for related follow-ups; do not repeat its searches.
+* a self-contained repository question;
+* the narrowest useful paths, symbols, or other anchors already known;
+* the decision or plan boundary the evidence will inform.
 
-Explorer gathers repository facts. You resolve decisions and write the plan.
+Require a compact result containing:
+
+* the direct answer;
+* relevant `path::symbol` evidence;
+* important relationships or constraints;
+* material uncertainty or conflicting evidence.
+
+Do not request search history, raw command output, large source excerpts, implementation proposals, or design decisions.
+
+The explorer gathers facts. The parent decides.
+
+Do not repeat explorer discovery in the parent. If its answer is incomplete, ask it to resolve the missing repository fact first. Direct parent source inspection is a last resort and must stay limited to the exact cited location needed for a consequential decision.
+
+If `explorer` is unavailable, use only narrowly targeted direct reads needed to continue. Broad parent-side repository discovery is not an allowed fallback.
 
 ## Workflow
 
@@ -43,17 +74,17 @@ Explorer gathers repository facts. You resolve decisions and write the plan.
    * Recommend an answer when justified.
    * Do not investigate implementation details before direction is clear.
 
-2. **Investigate**
+2. **Discover**
 
-   * Verify only facts that can change the contract, design, acceptance, or plan boundaries.
-   * Start from user-provided anchors, repository instructions, canonical owners, callers, and tests.
-   * Delegate repository discovery to `explorer` unless the required fact is available from one known file, symbol, caller, or test.
-   * Keep parent reads surgical and limited to targeted verification or evidence needed for a consequential decision.
-   * Do not duplicate explorer searches or broadly rediscover the repository in the parent.
-   * Stop when the concrete question is answered.
+   * Identify the repository facts that can change the contract, design, acceptance, or plan boundaries.
+   * Delegate repository evidence gathering to `explorer`.
+   * Start from user-provided anchors, repository instructions, canonical owners, callers, tests, and existing workflow evidence when known.
+   * Ask follow-up repository questions only when the answer can materially change the plan.
+   * Stop when the decision-relevant evidence is sufficient.
 
 3. **Design**
 
+   * Resolve the design from the approved requirements and distilled repository evidence.
    * Prefer the canonical owner and existing mechanisms.
    * Add only what the approved outcome requires.
    * Avoid speculative abstractions, state, configuration, compatibility, dependencies, and future-proofing.
@@ -66,7 +97,7 @@ Explorer gathers repository facts. You resolve decisions and write the plan.
 
 5. **Write**
 
-   * Create `plans/<project>/spec.md`.
+   * Create or update `plans/<project>/spec.md`.
    * Create ordered `plans/<project>/<NN>-<outcome>.md`.
 
 Each numbered plan must contain:
@@ -100,6 +131,6 @@ Each numbered plan must contain:
 <exact plan paths or None>
 ```
 
-The numbered plan is the complete build/review contract. Do not require later agents to reread `spec.md` or rediscover settled repository facts.
+The numbered plan is the complete build/review contract. Later agents must not need `spec.md`, sibling plans, or broad repository discovery to recover settled facts.
 
 Finish by reporting the approved outcome, consequential decisions, files written, and first plan path. Then stop.

@@ -1,6 +1,6 @@
 ---
 name: dev-review
-description: Independently review one completed numbered plan and revision for completeness, correctness, ownership, simplicity, and evidence. Never modify production code.
+description: Independently review one completed numbered plan and revision for completeness, correctness, ownership, simplicity, and evidence. Never modify production code
 ---
 
 # Dev Review
@@ -11,45 +11,75 @@ Judge the plan, repository, diff, and evidence—not the builder's reasoning.
 
 Require one exact plan path. Review `HEAD` unless another revision is supplied. `plans/` is Git-ignored workflow state.
 
+## Context discipline
+
+Preserve the parent thread for understanding the contract, inspecting the actual change, reasoning about correctness, classifying findings, and deciding the verdict.
+
+Repository search, surrounding-code discovery, caller tracing, lifecycle tracing, test discovery, and large-output inspection are supporting work. Offload them to `explorer`.
+
+The parent should directly consume only:
+
+* the exact numbered plan;
+* matching build evidence when present;
+* applicable repository instructions;
+* the human-written scoped diff;
+* concise explorer findings;
+* specific surrounding source locations needed to validate a finding;
+* focused verification results.
+
+The diff is the primary review artifact and belongs in the parent. The surrounding repository does not.
+
 ## Explorer
 
-Delegate repository investigation to `explorer` whenever resolving a concrete review concern requires more than one search or source read.
+Use `explorer` for repository evidence needed to review the change, including:
 
-Do not use `explorer` for facts already directly established by the plan, scoped diff, or one known file or symbol.
+* ownership and architectural context;
+* callers and consumers;
+* migrations and displaced paths;
+* lifecycle, cleanup, failure, ordering, and concurrency relationships;
+* validation and security boundaries;
+* relevant tests and fixtures;
+* unchanged code whose behavior affects a changed path;
+* completeness checks;
+* large verification or diagnostic output.
 
-Always spawn with `agent_type="explorer"` and `fork_turns="none"`.
+Spawn with `agent_type="explorer"` and `fork_turns="none"`.
 
-Give it:
-- one self-contained review question;
-- the narrowest known scope;
-- relevant plan anchors, changed paths, symbols, callers, tests, or suspected behavior;
-- the exact correctness, completeness, ownership, lifecycle, or simplicity concern being investigated.
+Prefer one primary explorer for related review questions. Let repository context accumulate there and continue with it when follow-up questions depend on that context.
 
-Do not perform the same repository investigation in the parent thread.
+Spawn another explorer only for an independent investigation that can proceed without duplicating the same repository evidence.
 
-The parent may directly:
-- inspect the complete scoped diff;
-- read one known file, symbol, caller, or test;
-- inspect specific code identified by the explorer;
-- perform targeted verification needed to judge a finding.
+Give the explorer:
 
-If a review concern expands into multiple searches or source reads, delegate it rather than broadly rediscovering the repository in the parent.
+* one concrete factual review question;
+* relevant changed paths, symbols, plan anchors, or suspected behavior;
+* the exact uncertainty the parent needs resolved.
 
-Reuse the explorer for related follow-ups; do not repeat its searches.
+Require a compact result containing:
 
-Explorer gathers repository facts. You independently judge them.
+* the direct factual answer;
+* relevant `path::symbol` evidence;
+* important relationships;
+* material uncertainty or conflicting evidence.
+
+Do not ask the explorer to review the patch generally, find bugs without a concrete question, classify severity, propose fixes, or decide the verdict.
+
+The explorer gathers facts. The parent reviews and judges.
+
+Do not duplicate explorer discovery in the parent. Inspect only the exact cited source needed to validate a material finding or resolve conflicting evidence.
+
+If `explorer` is unavailable, use only narrowly targeted direct reads needed to continue. Broad parent-side repository discovery is not an allowed fallback.
 
 ## Workflow
 
 1. **Establish**
 
    * Read the exact plan and matching `.build.md` when present.
-   * Inspect the complete human-written diff.
-   * Read additional code directly only for a single concrete and narrowly located review question.
-   * Delegate broader or multi-step repository investigation to `explorer`.
-   * Start from the plan's verified preconditions and repository handoff.
+   * Inspect the complete human-written scoped diff once.
+   * Start from verified preconditions and the repository handoff.
+   * Delegate surrounding repository context to `explorer`.
    * Do not reread `spec.md`, sibling plans, or broadly rediscover the repository.
-   * Do not duplicate explorer investigation in the parent.
+   * Revisit diff locations only for a concrete review question.
 
    Build evidence records claimed work and verification; it is never the verdict.
 
@@ -57,16 +87,20 @@ Explorer gathers repository facts. You independently judge them.
 
 2. **Review**
 
-   Check:
+   Check what can affect the plan's contract:
 
    * scope and acceptance are complete;
-   * required callers/migrations are handled;
+   * required callers and migrations are handled;
    * relevant success, failure, validation, lifecycle, cleanup, ordering, concurrency, compatibility, integrity, security, and performance behavior is correct;
    * responsibility remains in the canonical owner;
    * no duplicated policy/state or unnecessary abstraction, dependency, configuration, compatibility, or public surface was added;
    * verification applies to the reviewed revision and proves the contract.
 
-   When establishing any of these requires multi-file or multi-search investigation, delegate the concrete question to `explorer`.
+   Keep reasoning about changed code in the parent.
+
+   Turn questions about the surrounding repository into concrete explorer requests rather than tracing them directly in the parent. Continue with the same explorer for related follow-ups.
+
+   Stop investigating a concern when it is proved or disproved.
 
 3. **Classify**
 
@@ -79,12 +113,12 @@ Explorer gathers repository facts. You independently judge them.
 
    * Run only checks needed to establish the verdict.
    * Do not rerun expensive successful build checks without a concrete reason.
+   * Delegate large-output inspection or non-local failure tracing to `explorer`.
    * Never accept solely because build evidence reports success.
-   * Delegate repository investigation needed to validate a suspected finding when it requires multiple searches or source reads.
 
 5. **Handoff**
 
-   Write `plans/<project>/<NN>-<outcome>.review.md`.
+Write `plans/<project>/<NN>-<outcome>.review.md`.
 
 Accepted:
 
