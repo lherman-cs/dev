@@ -94,7 +94,7 @@ fi
 
 log "Linking dotfiles..."
 if command -v dev &>/dev/null; then
-  dev link --from "$PWD/dotfiles" --force --apply
+  dev reconcile --from "$PWD/dotfiles" --apply
 else
   error "'dev' command not found in PATH. Skipping dotfile linking."
 fi

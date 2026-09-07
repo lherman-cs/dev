@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 use std::fs::{self, File};
-use std::io::{self, BufRead, BufReader, Write};
+use std::io::{self, BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::mpsc;
@@ -63,8 +63,8 @@ enum Commands {
         path: String,
     },
 
-    /// Create symlinks from one directory to another
-    Link {
+    /// Reconcile files from one directory into another using regular copies
+    Reconcile {
         /// Source directory (defaults to current directory)
         #[arg(short, long)]
         from: Option<PathBuf>,
@@ -76,10 +76,6 @@ enum Commands {
         /// Apply changes (dry-run if false)
         #[arg(short, long, visible_alias = "real", default_value_t = false)]
         apply: bool,
-
-        /// Force overwrite existing files
-        #[arg(long, default_value = "false")]
-        force: bool,
     },
 
     /// Filter structured logs from stdin
@@ -213,12 +209,6 @@ enum AgentAction {
         /// Optional initial Codex prompt
         prompt: Vec<String>,
     },
-    /// Resume a Codex session with the embedded overlay applied
-    #[command(alias = "c")]
-    Resume {
-        /// Session ID to resume; omit to use Codex's interactive resume picker
-        session: Option<String>,
-    },
 
     /// Show Codex usage statistics from local rollout JSONL files
     Stats {
@@ -229,26 +219,6 @@ enum AgentAction {
         /// Analyze one explicit rollout JSONL file
         #[arg(long)]
         file: Option<PathBuf>,
-
-        /// Emit machine-readable JSON
-        #[arg(long)]
-        json: bool,
-    },
-
-    /// Print a compact Codex transcript from local rollout JSONL files
-    #[command(alias = "t")]
-    Transcript {
-        /// Number of most recent sessions to show
-        #[arg(long, default_value_t = 1, conflicts_with = "file")]
-        last: usize,
-
-        /// Read one explicit rollout JSONL file
-        #[arg(long)]
-        file: Option<PathBuf>,
-
-        /// Maximum characters kept for each tool input/output; 0 means unlimited
-        #[arg(long, default_value_t = 4_000)]
-        max_tool_chars: usize,
 
         /// Emit machine-readable JSON
         #[arg(long)]
@@ -535,29 +505,6 @@ struct AgentWorkflowStats {
     thread_details: Vec<AgentThreadStats>,
     warnings: Vec<String>,
     assessment: Vec<String>,
-}
-
-#[derive(Debug, Serialize, Clone)]
-struct AgentTranscriptEvent {
-    timestamp: Option<String>,
-    thread_id: String,
-    source_kind: String,
-    model: Option<String>,
-    kind: String,
-    tool: Option<String>,
-    text: String,
-    sequence: u64,
-}
-
-#[derive(Debug, Serialize)]
-struct AgentWorkflowTranscript {
-    root_thread_id: String,
-    cwd: Option<String>,
-    repository_url: Option<String>,
-    git_branch: Option<String>,
-    git_commit_start: Option<String>,
-    threads: usize,
-    events: Vec<AgentTranscriptEvent>,
 }
 
 #[derive(Subcommand)]
@@ -1794,68 +1741,64 @@ fn remove_existing(path: &Path) -> Result<()> {
     Ok(())
 }
 
-fn symlink_points_to(target: &Path, source: &Path) -> bool {
-    let Ok(link) = fs::read_link(target) else {
-        return false;
+fn files_equal(source: &Path, target: &Path) -> Result<bool> {
+    let source_metadata = fs::metadata(source)
+        .with_context(|| format!("Failed to inspect source file: {}", source.display()))?;
+    let target_metadata = match fs::metadata(target) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(false),
+        Err(error) => {
+            return Err(error)
+                .with_context(|| format!("Failed to inspect target file: {}", target.display()));
+        }
     };
 
-    let resolved = if link.is_absolute() {
-        link
-    } else {
-        target.parent().unwrap_or_else(|| Path::new(".")).join(link)
-    };
-
-    fs::canonicalize(resolved).ok().as_deref() == fs::canonicalize(source).ok().as_deref()
-}
-
-fn create_symlink(source: &Path, target: &Path, is_dir: bool) -> Result<()> {
-    #[cfg(unix)]
-    {
-        let _ = is_dir;
-        std::os::unix::fs::symlink(source, target)
-            .with_context(|| format!("Failed to create symlink: {}", target.display()))?;
+    if !target_metadata.is_file() || source_metadata.len() != target_metadata.len() {
+        return Ok(false);
     }
 
-    #[cfg(windows)]
-    {
-        if is_dir {
-            std::os::windows::fs::symlink_dir(source, target).with_context(|| {
-                format!("Failed to create directory symlink: {}", target.display())
-            })?;
-        } else {
-            std::os::windows::fs::symlink_file(source, target)
-                .with_context(|| format!("Failed to create file symlink: {}", target.display()))?;
+    let mut source = BufReader::new(
+        File::open(source).with_context(|| format!("Failed to open {}", source.display()))?,
+    );
+    let mut target = BufReader::new(
+        File::open(target).with_context(|| format!("Failed to open {}", target.display()))?,
+    );
+    let mut source_buf = [0_u8; 16 * 1024];
+    let mut target_buf = [0_u8; 16 * 1024];
+
+    loop {
+        let source_read = source.read(&mut source_buf)?;
+        let target_read = target.read(&mut target_buf)?;
+        if source_read != target_read {
+            return Ok(false);
+        }
+        if source_read == 0 {
+            return Ok(true);
+        }
+        if source_buf[..source_read] != target_buf[..target_read] {
+            return Ok(false);
         }
     }
-
-    Ok(())
 }
 
-fn link_path(source: &Path, target: &Path, apply: bool, force: bool) -> Result<()> {
+fn reconcile_path(source: &Path, target: &Path, apply: bool) -> Result<()> {
     let source_metadata = fs::symlink_metadata(source)
         .with_context(|| format!("Failed to inspect source: {}", source.display()))?;
-    let atomic_dir = source_metadata.is_dir() && source.join(".link-dir").is_file();
 
-    if source_metadata.is_dir() && !atomic_dir {
+    if source_metadata.is_dir() {
         if path_exists(target) {
             let target_metadata = fs::symlink_metadata(target)
                 .with_context(|| format!("Failed to inspect target: {}", target.display()))?;
-
             if !target_metadata.is_dir() || target_metadata.file_type().is_symlink() {
-                if !force {
-                    bail!(
-                        "{} already exists and is not a directory. Use --force to override",
-                        target.display()
-                    );
-                }
                 if apply {
                     remove_existing(target)?;
                     fs::create_dir_all(target).with_context(|| {
                         format!("Failed to create directory: {}", target.display())
                     })?;
+                    info!("Replaced {} with a copied directory", target.display());
                 } else {
                     info!(
-                        "[DRY-RUN] Would replace {} with a directory",
+                        "[DRY-RUN] Would replace {} with a copied directory",
                         target.display()
                     );
                 }
@@ -1863,6 +1806,7 @@ fn link_path(source: &Path, target: &Path, apply: bool, force: bool) -> Result<(
         } else if apply {
             fs::create_dir_all(target)
                 .with_context(|| format!("Failed to create directory: {}", target.display()))?;
+            info!("Created directory {}", target.display());
         } else {
             info!("[DRY-RUN] Would create directory {}", target.display());
         }
@@ -1873,32 +1817,40 @@ fn link_path(source: &Path, target: &Path, apply: bool, force: bool) -> Result<(
         entries.sort_by_key(|entry| entry.file_name());
 
         for entry in entries {
-            link_path(&entry.path(), &target.join(entry.file_name()), apply, force)?;
+            // Legacy marker from the old symlink-based deployment. Ignore it so
+            // `reconcile` can migrate repositories before the marker is deleted.
+            if entry.file_name() == ".link-dir" {
+                continue;
+            }
+            reconcile_path(&entry.path(), &target.join(entry.file_name()), apply)?;
         }
         return Ok(());
     }
 
+    if source_metadata.file_type().is_symlink() {
+        bail!(
+            "Source symlinks are not supported by reconcile: {}",
+            source.display()
+        );
+    }
+
     if path_exists(target) {
-        if symlink_points_to(target, source) {
-            info!(
-                "Already linked {} -> {}",
-                source.display(),
-                target.display()
-            );
+        let target_metadata = fs::symlink_metadata(target)
+            .with_context(|| format!("Failed to inspect target: {}", target.display()))?;
+
+        if !target_metadata.file_type().is_symlink()
+            && target_metadata.is_file()
+            && files_equal(source, target)?
+        {
             return Ok(());
         }
 
-        if !force {
-            bail!(
-                "{} already exists. Use --force to override",
-                target.display()
-            );
-        }
-
         if apply {
+            // This intentionally removes legacy symlinks as well as stale copied
+            // files. The source tree is authoritative for paths it contains.
             remove_existing(target)?;
         } else {
-            info!("[DRY-RUN] Would replace {}", target.display());
+            info!("[DRY-RUN] Would replace {} with a copied file", target.display());
         }
     }
 
@@ -1907,11 +1859,17 @@ fn link_path(source: &Path, target: &Path, apply: bool, force: bool) -> Result<(
             fs::create_dir_all(parent)
                 .with_context(|| format!("Failed to create directory: {}", parent.display()))?;
         }
-        create_symlink(source, target, source_metadata.is_dir())?;
-        info!("Linked {} -> {}", source.display(), target.display());
-    } else {
+        fs::copy(source, target).with_context(|| {
+            format!(
+                "Failed to copy {} to {}",
+                source.display(),
+                target.display()
+            )
+        })?;
+        info!("Copied {} -> {}", source.display(), target.display());
+    } else if !path_exists(target) {
         info!(
-            "[DRY-RUN] Would link {} -> {}",
+            "[DRY-RUN] Would copy {} -> {}",
             source.display(),
             target.display()
         );
@@ -1920,7 +1878,7 @@ fn link_path(source: &Path, target: &Path, apply: bool, force: bool) -> Result<(
     Ok(())
 }
 
-fn cmd_link(from: Option<PathBuf>, to: Option<PathBuf>, apply: bool, force: bool) -> Result<()> {
+fn cmd_reconcile(from: Option<PathBuf>, to: Option<PathBuf>, apply: bool) -> Result<()> {
     let from = from
         .or_else(|| std::env::current_dir().ok())
         .ok_or_else(|| anyhow!("Could not determine source directory"))?;
@@ -1941,13 +1899,13 @@ fn cmd_link(from: Option<PathBuf>, to: Option<PathBuf>, apply: bool, force: bool
     };
 
     info!(
-        "Linking from {} to {}{}",
+        "Reconciling copies from {} to {}{}",
         from_abs.display(),
         to_abs.display(),
         if apply { "" } else { " (dry-run)" }
     );
 
-    link_path(&from_abs, &to_abs, apply, force)
+    reconcile_path(&from_abs, &to_abs, apply)
 }
 
 fn cmd_log(filters: Vec<String>) -> Result<()> {
@@ -2104,18 +2062,7 @@ fn exec_codex(profile: AgentProfileName, prompt: Vec<String>) -> Result<()> {
     let mut command = Command::new("codex");
     command.args(&args);
     if !prompt.is_empty() {
-        let prefix = match profile {
-            AgentProfileName::Plan => Some("$dev-plan"),
-            AgentProfileName::Build => Some("$dev-build"),
-            AgentProfileName::Review => Some("$dev-review"),
-            _ => None,
-        };
-
-        let prompt_str = prompt.join(" ");
-        command.arg(match prefix {
-            Some(prefix) => format!("{prefix} {prompt_str}"),
-            None => prompt_str,
-        });
+        command.arg(prompt.join(" "));
     }
 
     info!(
@@ -2140,66 +2087,13 @@ fn exec_codex(profile: AgentProfileName, prompt: Vec<String>) -> Result<()> {
     }
 }
 
-fn agent_codex_base_args(config: &AgentConfig) -> Result<Vec<String>> {
-    let mut overrides = Vec::new();
-    flatten_codex_table("", &config.codex, &mut overrides)?;
-
-    let mut args = Vec::new();
-    for (key, value) in overrides {
-        args.push("-c".to_string());
-        args.push(format!("{key}={value}"));
-    }
-
-    Ok(args)
-}
-
-fn exec_codex_resume(session: Option<String>) -> Result<()> {
-    let config = load_agent_config()?;
-    let args = agent_codex_base_args(&config)?;
-
-    let mut command = Command::new("codex");
-    command.args(&args);
-    command.arg("resume");
-
-    if let Some(session) = session {
-        command.arg(session);
-    }
-
-    info!("Resuming Codex session");
-
-    #[cfg(unix)]
-    {
-        use std::os::unix::process::CommandExt;
-        let error = command.exec();
-        Err(error).context("Failed to exec codex resume")
-    }
-
-    #[cfg(not(unix))]
-    {
-        let status = command.status().context("Failed to launch codex resume")?;
-
-        if !status.success() {
-            bail!("codex resume exited with status {status}");
-        }
-
-        Ok(())
-    }
-}
-
 fn cmd_agent(action: Option<AgentAction>) -> Result<()> {
     match action {
         None => exec_codex(AgentProfileName::Default, Vec::new()),
         Some(AgentAction::Plan { prompt }) => exec_codex(AgentProfileName::Plan, prompt),
         Some(AgentAction::Build { prompt }) => exec_codex(AgentProfileName::Build, prompt),
         Some(AgentAction::Review { prompt }) => exec_codex(AgentProfileName::Review, prompt),
-        Some(AgentAction::Resume { session }) => exec_codex_resume(session),
         Some(AgentAction::Stats { last, file, json }) => cmd_agent_stats(last, file, json),
-        Some(AgentAction::Transcript {
-            last,
-            file,
-            max_tool_chars,
-            json,
-        }) => cmd_agent_transcript(last, file, max_tool_chars, json),
         Some(AgentAction::Config { profile, args }) => cmd_agent_config(profile, args),
     }
 }
@@ -2344,10 +2238,13 @@ fn read_rollout_identity(path: &Path) -> Result<RolloutIdentity> {
             .get("payload")
             .ok_or_else(|| anyhow!("session_meta has no payload in {}", path.display()))?;
         let meta = session_meta_object(payload);
+        // Codex 0.153+ subagent rollouts can carry the parent's id in
+        // `session_id` while `id` is the actual child thread id. Prefer `id`
+        // or the child can overwrite its parent in the rollout index.
         let thread_id = meta
-            .get("session_id")
-            .or_else(|| meta.get("id"))
+            .get("id")
             .or_else(|| meta.get("thread_id"))
+            .or_else(|| meta.get("session_id"))
             .and_then(Value::as_str)
             .map(ToOwned::to_owned)
             .ok_or_else(|| anyhow!("session_meta has no thread id in {}", path.display()))?;
@@ -3637,482 +3534,6 @@ fn print_agent_stats(stats: &AgentWorkflowStats) {
     }
 }
 
-
-fn transcript_message_text(payload: &Value, role: &str) -> Option<String> {
-    if payload.get("role").and_then(Value::as_str) != Some(role) {
-        return None;
-    }
-
-    if role == "user" {
-        // Codex also persists injected AGENTS/environment/skill material as
-        // user-role messages. Keep only records explicitly marked as user.text
-        // when that metadata is present.
-        if let Some(kinds) = payload
-            .get("internal_chat_message_metadata_passthrough")
-            .and_then(|m| m.get("content_item_kinds"))
-            .and_then(Value::as_array)
-        {
-            if !kinds.iter().any(|v| v.as_str() == Some("user.text")) {
-                return None;
-            }
-        }
-    }
-
-    let content = payload.get("content")?.as_array()?;
-    let mut parts = Vec::new();
-    for item in content {
-        let kind = item.get("type").and_then(Value::as_str).unwrap_or("");
-        if matches!(kind, "input_text" | "output_text" | "text") {
-            if let Some(text) = item.get("text").and_then(Value::as_str) {
-                parts.push(text);
-            }
-        }
-    }
-
-    (!parts.is_empty()).then(|| parts.join("\n"))
-}
-
-fn truncate_transcript_tool_text(value: String, max_chars: usize) -> String {
-    if max_chars == 0 || value.chars().count() <= max_chars {
-        return value;
-    }
-
-    let omitted = value.chars().count().saturating_sub(max_chars);
-    let mut out = value.chars().take(max_chars).collect::<String>();
-    out.push_str(&format!("\n… <{omitted} chars omitted>"));
-    out
-}
-
-fn transcript_value_text(value: &Value) -> Option<String> {
-    match value {
-        Value::String(text) => Some(text.clone()),
-        Value::Array(items) => {
-            let mut parts = Vec::new();
-            for item in items {
-                if let Some(text) = item.as_str() {
-                    parts.push(text.to_owned());
-                    continue;
-                }
-
-                if let Some(text) = item
-                    .get("text")
-                    .or_else(|| item.get("output_text"))
-                    .and_then(Value::as_str)
-                {
-                    parts.push(text.to_owned());
-                    continue;
-                }
-
-                let kind = item.get("type").and_then(Value::as_str).unwrap_or("");
-                if kind.contains("image") {
-                    parts.push("<image omitted>".to_string());
-                }
-            }
-
-            if parts.is_empty() {
-                serde_json::to_string_pretty(value).ok()
-            } else {
-                Some(parts.join("\n"))
-            }
-        }
-        Value::Null => None,
-        other => serde_json::to_string_pretty(other).ok(),
-    }
-}
-
-fn transcript_tool_call(payload: &Value) -> Option<(Option<String>, String, Option<String>)> {
-    if !looks_like_tool_call(payload) {
-        return None;
-    }
-
-    let tool = payload
-        .get("name")
-        .or_else(|| payload.get("tool_name"))
-        .and_then(Value::as_str)
-        .map(ToOwned::to_owned)
-        .or_else(|| payload.get("type").and_then(Value::as_str).map(ToOwned::to_owned));
-
-    let input = payload
-        .get("arguments")
-        .or_else(|| payload.get("input"))
-        .or_else(|| payload.get("command"))
-        .and_then(transcript_value_text)
-        .unwrap_or_else(|| "<no tool input recorded>".to_string());
-
-    let call_id = payload
-        .get("call_id")
-        .or_else(|| payload.get("id"))
-        .and_then(Value::as_str)
-        .map(ToOwned::to_owned);
-
-    Some((tool, input, call_id))
-}
-
-fn transcript_tool_output(
-    payload: &Value,
-    tool_names: &HashMap<String, String>,
-) -> Option<(Option<String>, String)> {
-    let kind = payload.get("type").and_then(Value::as_str)?;
-    if !kind.ends_with("_call_output")
-        && !kind.ends_with("_search_output")
-        && kind != "tool_output"
-    {
-        return None;
-    }
-
-    let call_id = payload
-        .get("call_id")
-        .or_else(|| payload.get("id"))
-        .and_then(Value::as_str);
-
-    let tool = call_id
-        .and_then(|id| tool_names.get(id))
-        .cloned()
-        .or_else(|| payload.get("name").and_then(Value::as_str).map(ToOwned::to_owned));
-
-    let output = payload
-        .get("output")
-        .or_else(|| payload.get("content"))
-        .and_then(transcript_value_text)
-        .unwrap_or_else(|| "<no tool output recorded>".to_string());
-
-    Some((tool, output))
-}
-
-fn transcript_event(
-    identity: &RolloutIdentity,
-    timestamp: Option<String>,
-    active_model: &Option<String>,
-    kind: &str,
-    tool: Option<String>,
-    text: String,
-    sequence: u64,
-) -> AgentTranscriptEvent {
-    AgentTranscriptEvent {
-        timestamp,
-        thread_id: identity.thread_id.clone(),
-        source_kind: identity.source_kind.clone(),
-        model: active_model.clone(),
-        kind: kind.to_string(),
-        tool,
-        text,
-        sequence,
-    }
-}
-
-fn read_transcript_events(
-    identity: &RolloutIdentity,
-    max_tool_chars: usize,
-) -> Result<Vec<AgentTranscriptEvent>> {
-    let file = File::open(&identity.file)
-        .with_context(|| format!("Failed to open Codex rollout: {}", identity.file.display()))?;
-    let reader = BufReader::new(file);
-
-    let mut events = Vec::new();
-    let mut active_model = None;
-    let mut tool_names: HashMap<String, String> = HashMap::new();
-    let mut sequence = 0_u64;
-
-    for (line_number, line) in reader.lines().enumerate() {
-        let line = line.with_context(|| {
-            format!(
-                "Failed reading {} at line {}",
-                identity.file.display(),
-                line_number + 1
-            )
-        })?;
-        let line = line.trim_start_matches('\u{feff}');
-        let value: Value = serde_json::from_str(line).with_context(|| {
-            format!(
-                "Invalid JSON in {} at line {}",
-                identity.file.display(),
-                line_number + 1
-            )
-        })?;
-
-        let top_type = value.get("type").and_then(Value::as_str);
-        if top_type != Some("session_meta") && rollout_line_is_inherited(identity, &value) {
-            continue;
-        }
-
-        let timestamp = value
-            .get("timestamp")
-            .and_then(Value::as_str)
-            .map(ToOwned::to_owned);
-
-        match top_type {
-            Some("session_meta") => {
-                let payload = value.get("payload").unwrap_or(&Value::Null);
-                let meta = session_meta_object(payload);
-                if active_model.is_none() {
-                    active_model = meta
-                        .get("base_instructions")
-                        .and_then(|base| base.get("provenance"))
-                        .and_then(|prov| prov.get("model"))
-                        .and_then(Value::as_str)
-                        .map(ToOwned::to_owned);
-                }
-            }
-            Some("turn_context") => {
-                if let Some(model) = json_str(&value, &["payload", "model"]) {
-                    active_model = Some(model);
-                }
-            }
-            Some("world_state") => {
-                if let Some(model) = json_str(&value, &["payload", "state", "model"]) {
-                    active_model = Some(model);
-                }
-            }
-            Some("response_item") => {
-                let payload = value.get("payload").unwrap_or(&Value::Null);
-
-                if let Some(message) = transcript_message_text(payload, "user") {
-                    sequence += 1;
-                    events.push(transcript_event(
-                        identity,
-                        timestamp.clone(),
-                        &active_model,
-                        "user",
-                        None,
-                        message,
-                        sequence,
-                    ));
-                    continue;
-                }
-
-                if let Some(message) = transcript_message_text(payload, "assistant") {
-                    sequence += 1;
-                    events.push(transcript_event(
-                        identity,
-                        timestamp.clone(),
-                        &active_model,
-                        "assistant",
-                        None,
-                        message,
-                        sequence,
-                    ));
-                    continue;
-                }
-
-                if let Some((tool, input, call_id)) = transcript_tool_call(payload) {
-                    if let (Some(call_id), Some(tool)) = (&call_id, &tool) {
-                        tool_names.insert(call_id.clone(), tool.clone());
-                    }
-                    sequence += 1;
-                    events.push(transcript_event(
-                        identity,
-                        timestamp.clone(),
-                        &active_model,
-                        "tool_call",
-                        tool,
-                        truncate_transcript_tool_text(input, max_tool_chars),
-                        sequence,
-                    ));
-                    continue;
-                }
-
-                if let Some((tool, output)) = transcript_tool_output(payload, &tool_names) {
-                    sequence += 1;
-                    events.push(transcript_event(
-                        identity,
-                        timestamp,
-                        &active_model,
-                        "tool_output",
-                        tool,
-                        truncate_transcript_tool_text(output, max_tool_chars),
-                        sequence,
-                    ));
-                    continue;
-                }
-
-                if payload
-                    .get("type")
-                    .and_then(Value::as_str)
-                    .is_some_and(|kind| {
-                        matches!(
-                            kind,
-                            "compaction" | "compaction_trigger" | "context_compaction"
-                        )
-                    })
-                {
-                    sequence += 1;
-                    events.push(transcript_event(
-                        identity,
-                        timestamp,
-                        &active_model,
-                        "compaction",
-                        None,
-                        "<context compacted>".to_string(),
-                        sequence,
-                    ));
-                }
-            }
-            Some("event_msg") => {
-                let payload_type = json_str(&value, &["payload", "type"]);
-                if payload_type.as_deref() == Some("thread_settings_applied") {
-                    if let Some(model) =
-                        json_str(&value, &["payload", "thread_settings", "model"])
-                    {
-                        active_model = Some(model);
-                    }
-                } else if payload_type
-                    .as_deref()
-                    .is_some_and(|kind| kind == "compacted" || kind == "compact")
-                {
-                    sequence += 1;
-                    events.push(transcript_event(
-                        identity,
-                        timestamp,
-                        &active_model,
-                        "compaction",
-                        None,
-                        "<context compacted>".to_string(),
-                        sequence,
-                    ));
-                }
-            }
-            Some("compacted") => {
-                sequence += 1;
-                events.push(transcript_event(
-                    identity,
-                    timestamp,
-                    &active_model,
-                    "compaction",
-                    None,
-                    "<context compacted>".to_string(),
-                    sequence,
-                ));
-            }
-            _ => {}
-        }
-    }
-
-    Ok(events)
-}
-
-fn build_workflow_transcript(
-    index: &HashMap<String, RolloutIdentity>,
-    root_thread_id: &str,
-    max_tool_chars: usize,
-) -> Result<AgentWorkflowTranscript> {
-    let ids = workflow_thread_ids(index, root_thread_id);
-    let root = index
-        .get(root_thread_id)
-        .ok_or_else(|| anyhow!("Missing root rollout identity for thread {root_thread_id}"))?;
-
-    let mut events = Vec::new();
-    for id in &ids {
-        let identity = index
-            .get(id)
-            .ok_or_else(|| anyhow!("Missing rollout identity for thread {id}"))?;
-        events.extend(read_transcript_events(identity, max_tool_chars)?);
-    }
-
-    events.sort_by(|a, b| {
-        a.timestamp
-            .cmp(&b.timestamp)
-            .then_with(|| a.thread_id.cmp(&b.thread_id))
-            .then_with(|| a.sequence.cmp(&b.sequence))
-    });
-
-    Ok(AgentWorkflowTranscript {
-        root_thread_id: root_thread_id.to_owned(),
-        cwd: root.cwd.clone(),
-        repository_url: root.repository_url.clone(),
-        git_branch: root.git_branch.clone(),
-        git_commit_start: root.git_commit.clone(),
-        threads: ids.len(),
-        events,
-    })
-}
-
-fn print_agent_transcript(transcript: &AgentWorkflowTranscript) {
-    println!("Codex transcript");
-    println!("────────────────────────────────────────────────────────");
-    if let Some(cwd) = &transcript.cwd {
-        println!("Workspace          {cwd}");
-    }
-    if let Some(branch) = &transcript.git_branch {
-        let commit = transcript.git_commit_start.as_deref().unwrap_or("unknown");
-        println!(
-            "Git start          {branch} @ {}",
-            truncate_one_line(commit, 12)
-        );
-    }
-    if let Some(repo) = &transcript.repository_url {
-        println!("Repository         {repo}");
-    }
-    println!("Session            {}", transcript.root_thread_id);
-    println!("Threads            {}", transcript.threads);
-    println!();
-
-    for event in &transcript.events {
-        let timestamp = event.timestamp.as_deref().unwrap_or("unknown-time");
-        let thread_suffix = if transcript.threads > 1 {
-            format!(" · {} · {}", event.source_kind, event.thread_id)
-        } else {
-            String::new()
-        };
-        let model_suffix = event
-            .model
-            .as_deref()
-            .filter(|_| matches!(event.kind.as_str(), "assistant" | "tool_call"))
-            .map(|model| format!(" · {model}"))
-            .unwrap_or_default();
-        let tool_suffix = event
-            .tool
-            .as_deref()
-            .map(|tool| format!(" · {tool}"))
-            .unwrap_or_default();
-
-        println!(
-            "[{timestamp}] {}{tool_suffix}{model_suffix}{thread_suffix}",
-            event.kind
-        );
-        println!("{}", event.text);
-        println!();
-    }
-}
-
-fn cmd_agent_transcript(
-    last: usize,
-    file: Option<PathBuf>,
-    max_tool_chars: usize,
-    json: bool,
-) -> Result<()> {
-    let index = rollout_index()?;
-
-    let root_ids = if let Some(file) = file {
-        if !file.is_file() {
-            bail!("Rollout file does not exist: {}", file.display());
-        }
-        let identity = read_rollout_identity(&file)?;
-        let root = root_thread_id(&index, &identity.thread_id);
-        vec![root]
-    } else {
-        recent_root_thread_ids(&index, last)?
-    };
-
-    let transcripts = root_ids
-        .iter()
-        .map(|root| build_workflow_transcript(&index, root, max_tool_chars))
-        .collect::<Result<Vec<_>>>()?;
-
-    if json {
-        println!("{}", serde_json::to_string_pretty(&transcripts)?);
-        return Ok(());
-    }
-
-    for (position, transcript) in transcripts.iter().enumerate() {
-        if position > 0 {
-            println!("\n");
-        }
-        print_agent_transcript(transcript);
-    }
-
-    Ok(())
-}
-
 fn cmd_agent_stats(last: usize, file: Option<PathBuf>, json: bool) -> Result<()> {
     let config = load_agent_config()?;
     let index = rollout_index()?;
@@ -4175,12 +3596,7 @@ fn main() {
         Commands::Review { base } => cmd_review(base),
         Commands::Run { workflow } => cmd_run(workflow),
         Commands::Find { path } => cmd_find(path),
-        Commands::Link {
-            from,
-            to,
-            apply,
-            force,
-        } => cmd_link(from, to, apply, force),
+        Commands::Reconcile { from, to, apply } => cmd_reconcile(from, to, apply),
         Commands::Log { filters } => cmd_log(filters),
         Commands::List { full, output } => cmd_list(full, &output),
         Commands::Add { name, path } => cmd_add(name, path),
