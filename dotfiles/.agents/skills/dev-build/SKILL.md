@@ -11,113 +11,92 @@ Do not redesign the project, continue into another plan, or broadly rediscover t
 
 Require one exact plan path. `plans/` is Git-ignored workflow state.
 
-## Context discipline
+## Main-thread boundary
 
-Preserve the parent thread for implementation decisions, focused source editing, verification decisions, and final handoff.
+Preserve the parent for understanding the contract, implementation decisions, source editing, focused verification, and final handoff. Keep repository orientation and tracing out of its context.
 
-Repository orientation, search, tracing, and large-output inspection are supporting work. Offload them to `explorer` so unrelated repository context does not accumulate in the parent.
+The parent may directly consume only:
+- the exact numbered plan and applicable repository instructions;
+- current review findings when present;
+- compact explorer findings;
+- exact source regions it must modify;
+- focused verification results;
+- human-authored diff hunks needed to validate its changes.
 
-The parent should directly consume only:
+Do not make the parent reconstruct architecture, caller graphs, patterns, lifecycle paths, or test surfaces from raw repository reads.
 
-* the exact numbered plan;
-* applicable repository instructions;
-* concise explorer findings;
-* source regions it must actually modify;
-* focused verification results;
-* the final scoped diff.
-
-Do not make the parent reconstruct repository architecture already represented by the plan or explorer findings.
+After reading the exact plan, spawn `explorer` before any broad repository orientation.
 
 ## Explorer
 
-Use `explorer` for read-heavy implementation support, including:
-
-* locating exact edit surfaces;
-* tracing callers and consumers;
-* finding established implementation patterns;
-* locating relevant tests and fixtures;
-* following lifecycle, failure, cleanup, and concurrency paths;
-* resolving contradictions between the plan and current tree;
-* tracing a failure across multiple files;
-* inspecting large diagnostic or verification output.
+Use `explorer` as the primary repository context owner for implementation support.
 
 Spawn with `agent_type="explorer"` and `fork_turns="none"`.
 
-Prefer one primary explorer for related implementation questions. Let it retain repository context and use it for follow-ups rather than moving that context into the parent.
+Prefer one primary explorer for related questions and continue with it when follow-ups depend on existing evidence. Spawn another only for independent investigation without substantial overlap.
 
-Spawn another explorer only for an independent investigation that does not substantially overlap the primary explorer's context.
+Give it the exact plan path and ask it to locate only evidence required to execute that contract:
+- exact edit surfaces and surrounding invariants;
+- canonical implementation patterns;
+- callers/consumers that must move with the change;
+- lifecycle, failure, cleanup, and concurrency paths;
+- relevant tests, fixtures, and verification commands;
+- contradictions between the plan and current tree.
 
-Give the explorer:
+Require a compact answer with direct conclusions, `path::symbol` evidence, important relationships, and material uncertainty.
 
-* one concrete repository question;
-* relevant plan anchors, paths, symbols, or failure evidence;
-* the exact fact needed to continue implementation.
+Do not ask it to choose product behavior, architecture, or implementation strategy. The explorer gathers facts; the parent implements.
 
-Require a compact result containing:
+Do not duplicate its tracing in the parent. Read only returned source regions required to edit or verify behavior.
 
-* the direct answer;
-* relevant `path::symbol` evidence;
-* important existing patterns or relationships;
-* material uncertainty.
+For debugging, keep the hypothesis and fix decision in the parent; use the same explorer for read-heavy tracing and large failure-output analysis.
 
-Do not ask the explorer to make product, architecture, or implementation decisions. Do not request raw search history, large source excerpts, or speculative fixes.
-
-The explorer gathers facts. The parent implements.
-
-Do not duplicate explorer discovery in the parent. Read the exact returned source regions needed for editing, but do not continue broad repository exploration from them.
-
-If `explorer` is unavailable, use only narrowly targeted direct reads needed to continue. Broad parent-side repository discovery is not an allowed fallback.
+If `explorer` is unavailable, use only narrow direct reads required to continue. Broad parent-side discovery is not an allowed fallback.
 
 ## Workflow
 
 1. **Establish**
-
-   * Read the exact plan and applicable repository instructions.
+   * Read the exact plan and applicable repository instructions once.
    * Inspect version-control state.
-   * Start from the plan's verified preconditions and repository handoff.
+   * Start from verified preconditions and the repository handoff.
    * Do not reread `spec.md`, sibling plans, or dependency plans.
-   * Do not revalidate settled repository facts without contradictory evidence.
-   * Delegate repository orientation or non-local questions to `explorer`.
+   * Do not revalidate settled facts without contradictory evidence.
+   * Spawn the primary explorer before non-local repository investigation.
 
-   If a verified precondition or material plan assumption is false: `REQUIRES REPLANNING`.
+   If a verified precondition or material assumption is false: `REQUIRES REPLANNING`.
 
    If a matching `.review.md` targets current `HEAD` with `CHANGES REQUIRED`, treat its findings as additional acceptance obligations.
 
 2. **Implement**
-
    * Build the minimum complete solution.
-   * Use explorer findings to narrow direct source reads to the regions that must be changed.
+   * Use explorer findings to narrow reads to source regions that must change.
    * Follow only required callers, failure paths, cleanup, tests, and displaced in-scope code.
    * Batch related reads, edits, and checks.
    * Avoid adjacent cleanup and speculative machinery.
    * Do not repeat unchanged searches, reads, or commands.
-   * Keep repository tracing in `explorer`; keep edits and implementation decisions in the parent.
+   * Keep tracing in the explorer; keep edits and implementation decisions in the parent.
 
    If implementation requires a consequential decision absent from the plan: `REQUIRES REPLANNING`.
 
 3. **Debug**
-
    * Use `reproduce → hypothesis → evidence → root cause → fix`.
    * Run the smallest discriminating check first.
-   * Keep the hypothesis and fix decision in the parent.
-   * Delegate read-heavy tracing, cross-file diagnosis, or large failure-output inspection to `explorer`.
-   * Continue with the same explorer when the next diagnostic question depends on context it already gathered.
-   * Stop investigating when the root cause is established.
+   * Delegate cross-file diagnosis or large output to the primary explorer.
+   * Stop when root cause is established.
    * Do not repeat unchanged failures or apply speculative patches.
-   * Environment/tooling failures are not implementation work. Use only an obvious local correction; otherwise: `BLOCKED`.
+   * For environment/tooling failures, use only an obvious local correction; otherwise: `BLOCKED`.
    * Never create alternate clones/worktrees or replace authoritative generated output to bypass a blocker.
 
 4. **Verify**
-
    * Prove every acceptance item and current review finding.
    * Prefer focused, quiet checks while iterating.
    * Run required final acceptance/completeness checks once on the final tree.
-   * If failure output is large or requires repository tracing, have `explorer` inspect and summarize it rather than repeatedly loading it into the parent.
+   * Delegate noisy failure-output analysis and non-local completeness tracing to `explorer`.
+   * Inspect human-authored changed hunks directly; delegate large/generated diff completeness checks when they would add bulk context without improving parent judgment.
+   * Run `git diff --check` or equivalent.
    * Repeat a successful check only if later changes could invalidate it.
-   * Inspect the complete scoped diff and run `git diff --check` or equivalent.
 
 5. **Commit**
-
    * If code changed, create one coherent Conventional Commit containing only this plan.
    * Describe the repository change, not workflow state.
 

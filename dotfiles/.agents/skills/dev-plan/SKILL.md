@@ -9,96 +9,80 @@ Define one bounded project. Never modify production code.
 
 `plans/` is Git-ignored workflow state. Access exact paths directly.
 
-## Context discipline
+## Main-thread boundary
 
-Preserve the parent thread for requirements, consequential decisions, design, and plan writing.
+Preserve the parent for requirements, consequential decisions, design, and plan writing. Keep bulk evidence out of its context.
 
-Repository reading is supporting work. Offload it to `explorer` by default so repository context does not accumulate in the parent.
+The parent may directly consume only:
+- the user's request and decisions;
+- applicable repository instructions;
+- compact explorer findings;
+- the exact plan sections it is actively writing or patching;
+- narrow verification output for its own edits;
+- one cited source location when exact semantics are indispensable to a consequential decision.
 
-The parent should directly consume only:
+Existing specs, plans, build/review evidence, implementation source, callers, tests, history, and cross-file state are repository evidence. Do not bulk-read them in the parent.
 
-* the user's request and decisions;
-* applicable repository instructions;
-* concise explorer findings;
-* plan artifacts it must write or edit;
-* a specific source location when exact semantics are necessary for a consequential decision.
-
-Do not broadly search or read implementation source in the parent.
+Before repository discovery, spawn `explorer`. Do not first inspect plan sets or implementation files "for orientation."
 
 ## Explorer
 
-Use `explorer` for repository discovery, including:
-
-* existing architecture and ownership;
-* implementation state;
-* callers and consumers;
-* tests and fixtures;
-* lifecycle and failure paths;
-* related plan/build/review evidence;
-* cross-file consistency;
-* exact repository facts needed to make a decision.
+Use `explorer` as the primary repository context owner.
 
 Spawn with `agent_type="explorer"` and `fork_turns="none"`.
 
-Prefer one primary explorer for related repository questions. Let repository context accumulate there rather than in the parent. Continue with that explorer when a follow-up depends on evidence it already gathered.
+Prefer one primary explorer for related questions so repository context accumulates there rather than in the parent. Continue with it when a follow-up depends on evidence it already gathered. Spawn another only for genuinely independent work that will not duplicate context.
 
-Spawn additional explorers only for independent questions that can be investigated without duplicating the same repository context.
-
-Give the explorer:
-
-* a self-contained repository question;
-* the narrowest useful paths, symbols, or other anchors already known;
-* the decision or plan boundary the evidence will inform.
+Ask the explorer to build a decision-grade evidence packet from the relevant workflow artifacts and repository state. Give it:
+- the user's objective;
+- known paths or symbols;
+- the exact decisions or plan boundaries the evidence must inform.
 
 Require a compact result containing:
+- settled contract and prior decisions relevant to this task;
+- current repository truth;
+- stale or conflicting assumptions;
+- canonical owners, callers/consumers, tests, and completeness checks;
+- relevant `path::symbol` evidence;
+- material uncertainty requiring a parent decision.
 
-* the direct answer;
-* relevant `path::symbol` evidence;
-* important relationships or constraints;
-* material uncertainty or conflicting evidence.
-
-Do not request search history, raw command output, large source excerpts, implementation proposals, or design decisions.
+Do not request search history, raw command output, large excerpts, implementation proposals, or design decisions.
 
 The explorer gathers facts. The parent decides.
 
-Do not repeat explorer discovery in the parent. If its answer is incomplete, ask it to resolve the missing repository fact first. Direct parent source inspection is a last resort and must stay limited to the exact cited location needed for a consequential decision.
+Do not repeat explorer discovery in the parent. If evidence is incomplete or conflicting, ask the explorer to resolve it first. Direct parent source inspection is a last resort and stays limited to the cited location necessary for the decision.
 
-If `explorer` is unavailable, use only narrowly targeted direct reads needed to continue. Broad parent-side repository discovery is not an allowed fallback.
+If `explorer` is unavailable, use only narrow reads required to determine whether work can proceed. Broad parent-side discovery is not an allowed fallback.
 
 ## Workflow
 
 1. **Align**
-
    * Resolve consequential ambiguity in outcome, behavior, ownership, lifecycle, compatibility, non-goals, acceptance, and risk.
-   * Ask related unresolved questions together.
-   * Recommend an answer when justified.
+   * Ask related unresolved questions together and recommend an answer when justified.
    * Do not investigate implementation details before direction is clear.
 
 2. **Discover**
-
-   * Identify the repository facts that can change the contract, design, acceptance, or plan boundaries.
-   * Delegate repository evidence gathering to `explorer`.
-   * Start from user-provided anchors, repository instructions, canonical owners, callers, tests, and existing workflow evidence when known.
-   * Ask follow-up repository questions only when the answer can materially change the plan.
-   * Stop when the decision-relevant evidence is sufficient.
+   * Identify only repository facts that can change the contract, design, acceptance, or plan boundaries.
+   * Delegate evidence gathering to the primary explorer.
+   * Ask follow-ups only when the answer can materially change the plan.
+   * Stop when decision-relevant evidence is sufficient.
 
 3. **Design**
-
-   * Resolve the design from the approved requirements and distilled repository evidence.
-   * Prefer the canonical owner and existing mechanisms.
-   * Add only what the approved outcome requires.
-   * Avoid speculative abstractions, state, configuration, compatibility, dependencies, and future-proofing.
+   * Resolve the design from approved requirements and distilled evidence.
+   * Prefer canonical owners and existing mechanisms.
+   * Add only what the outcome requires.
+   * Avoid speculative abstraction, state, configuration, compatibility, dependencies, and future-proofing.
    * Return to the user if evidence exposes a consequential undecided choice.
 
 4. **Confirm**
-
    * Present the proposed contract concisely.
    * Do not write plans until consequential decisions are resolved.
 
 5. **Write**
-
    * Create or update `plans/<project>/spec.md`.
    * Create ordered `plans/<project>/<NN>-<outcome>.md`.
+   * Read only the exact existing sections needed for a surgical edit; do not reload whole plan sets after discovery.
+   * Verify structure and changed sections without rereading unchanged artifacts.
 
 Each numbered plan must contain:
 
@@ -133,4 +117,4 @@ Each numbered plan must contain:
 
 The numbered plan is the complete build/review contract. Later agents must not need `spec.md`, sibling plans, or broad repository discovery to recover settled facts.
 
-Finish by reporting the approved outcome, consequential decisions, files written, and first plan path. Then stop.
+Report the approved outcome, consequential decisions, files written, and first plan path. Then stop.

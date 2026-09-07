@@ -1,6 +1,6 @@
 ---
 name: dev-review
-description: Independently review one completed numbered plan and revision for completeness, correctness, ownership, simplicity, and evidence. Never modify production code
+description: Independently review one completed numbered plan and revision for completeness, correctness, ownership, simplicity, and evidence. Never modify production code.
 ---
 
 # Dev Review
@@ -11,84 +11,61 @@ Judge the plan, repository, diff, and evidence—not the builder's reasoning.
 
 Require one exact plan path. Review `HEAD` unless another revision is supplied. `plans/` is Git-ignored workflow state.
 
-## Context discipline
+## Main-thread boundary
 
-Preserve the parent thread for understanding the contract, inspecting the actual change, reasoning about correctness, classifying findings, and deciding the verdict.
+Preserve the parent for understanding the contract, inspecting material changed code, reasoning about correctness, classifying findings, and deciding the verdict. Keep surrounding repository discovery out of its context.
 
-Repository search, surrounding-code discovery, caller tracing, lifecycle tracing, test discovery, and large-output inspection are supporting work. Offload them to `explorer`.
+The parent may directly consume only:
+- the exact numbered plan and matching build evidence;
+- applicable repository instructions;
+- compact explorer findings;
+- material human-authored changed hunks;
+- exact surrounding source needed to validate a finding;
+- focused verification results.
 
-The parent should directly consume only:
+Do not load broad caller graphs, unchanged modules, generated diffs, large diagnostics, or repository history into the parent.
 
-* the exact numbered plan;
-* matching build evidence when present;
-* applicable repository instructions;
-* the human-written scoped diff;
-* concise explorer findings;
-* specific surrounding source locations needed to validate a finding;
-* focused verification results.
-
-The diff is the primary review artifact and belongs in the parent. The surrounding repository does not.
+After reading the contract and changed-file inventory, spawn `explorer` before surrounding-repository investigation.
 
 ## Explorer
 
-Use `explorer` for repository evidence needed to review the change, including:
-
-* ownership and architectural context;
-* callers and consumers;
-* migrations and displaced paths;
-* lifecycle, cleanup, failure, ordering, and concurrency relationships;
-* validation and security boundaries;
-* relevant tests and fixtures;
-* unchanged code whose behavior affects a changed path;
-* completeness checks;
-* large verification or diagnostic output.
+Use `explorer` as the primary repository context owner for review evidence.
 
 Spawn with `agent_type="explorer"` and `fork_turns="none"`.
 
-Prefer one primary explorer for related review questions. Let repository context accumulate there and continue with it when follow-up questions depend on that context.
+Prefer one primary explorer for related review questions and continue with it for follow-ups. Spawn another only for an independent investigation without substantial overlap.
 
-Spawn another explorer only for an independent investigation that can proceed without duplicating the same repository evidence.
+Give it the plan path, reviewed revision, and changed paths. Ask it to establish:
+- canonical ownership and surrounding architecture;
+- callers, consumers, migrations, and displaced paths;
+- lifecycle, cleanup, failure, ordering, concurrency, validation, and security relationships relevant to the change;
+- relevant tests and fixtures;
+- unchanged code whose behavior can invalidate the patch;
+- completeness risks and large/generated diff facts.
 
-Give the explorer:
+Require concise factual conclusions with `path::symbol` evidence and material uncertainty.
 
-* one concrete factual review question;
-* relevant changed paths, symbols, plan anchors, or suspected behavior;
-* the exact uncertainty the parent needs resolved.
+Do not ask it to "review the patch", find bugs generally, classify severity, propose fixes, or decide the verdict. The explorer gathers facts; the parent judges.
 
-Require a compact result containing:
+Do not duplicate explorer discovery in the parent. Inspect only changed hunks and exact cited source needed to reason about a material concern.
 
-* the direct factual answer;
-* relevant `path::symbol` evidence;
-* important relationships;
-* material uncertainty or conflicting evidence.
-
-Do not ask the explorer to review the patch generally, find bugs without a concrete question, classify severity, propose fixes, or decide the verdict.
-
-The explorer gathers facts. The parent reviews and judges.
-
-Do not duplicate explorer discovery in the parent. Inspect only the exact cited source needed to validate a material finding or resolve conflicting evidence.
-
-If `explorer` is unavailable, use only narrowly targeted direct reads needed to continue. Broad parent-side repository discovery is not an allowed fallback.
+If `explorer` is unavailable, use only narrow direct reads required to continue. Broad parent-side discovery is not an allowed fallback.
 
 ## Workflow
 
 1. **Establish**
-
-   * Read the exact plan and matching `.build.md` when present.
-   * Inspect the complete human-written scoped diff once.
-   * Start from verified preconditions and the repository handoff.
-   * Delegate surrounding repository context to `explorer`.
+   * Read the exact plan and matching `.build.md` once.
+   * Inspect version-control state and the changed-file inventory.
+   * Spawn the primary explorer for surrounding repository evidence.
+   * Inspect material human-authored diff hunks directly; avoid dumping large generated or mechanical diffs into the parent.
    * Do not reread `spec.md`, sibling plans, or broadly rediscover the repository.
-   * Revisit diff locations only for a concrete review question.
 
    Build evidence records claimed work and verification; it is never the verdict.
 
    If repository reality invalidates the approved plan: `REQUIRES REPLANNING`.
 
 2. **Review**
-
-   Check what can affect the plan's contract:
-
+   Check only what can affect the plan's contract:
    * scope and acceptance are complete;
    * required callers and migrations are handled;
    * relevant success, failure, validation, lifecycle, cleanup, ordering, concurrency, compatibility, integrity, security, and performance behavior is correct;
@@ -96,24 +73,18 @@ If `explorer` is unavailable, use only narrowly targeted direct reads needed to 
    * no duplicated policy/state or unnecessary abstraction, dependency, configuration, compatibility, or public surface was added;
    * verification applies to the reviewed revision and proves the contract.
 
-   Keep reasoning about changed code in the parent.
-
-   Turn questions about the surrounding repository into concrete explorer requests rather than tracing them directly in the parent. Continue with the same explorer for related follow-ups.
-
-   Stop investigating a concern when it is proved or disproved.
+   Keep reasoning about changed code in the parent. Turn surrounding-repository questions into concrete follow-ups for the primary explorer. Stop when each concern is proved or disproved.
 
 3. **Classify**
-
    * `BLOCKER` — requires changing the contract, architecture, acceptance boundary, or a fundamental correctness/security/integrity decision.
    * `ISSUE` — concrete in-scope defect or unnecessary mechanism that must be corrected.
 
    Do not report taste, speculative improvements, or unrelated cleanup.
 
 4. **Verify**
-
    * Run only checks needed to establish the verdict.
    * Do not rerun expensive successful build checks without a concrete reason.
-   * Delegate large-output inspection or non-local failure tracing to `explorer`.
+   * Delegate large-output inspection and non-local failure tracing to `explorer`.
    * Never accept solely because build evidence reports success.
 
 5. **Handoff**
