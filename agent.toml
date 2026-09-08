@@ -27,8 +27,8 @@ model_reasoning_effort = "high"
 skill = "dev-plan"
 
 [profiles.project]
-model = "gpt-5.6-sol"
-model_reasoning_effort = "high"
+model = "gpt-5.6-terra"
+model_reasoning_effort = "medium"
 skill = "dev-project"
 
 [profiles.build]
