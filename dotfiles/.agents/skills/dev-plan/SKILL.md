@@ -101,6 +101,7 @@ If explorers are unavailable, use only narrow reads required to determine whethe
 5. **Write**
    - Create or update `plans/<project>/spec.md`.
    - Create ordered `plans/<project>/<NN>-<outcome>.md`.
+   - Write each numbered plan so a builder can execute it without recovering intent, making consequential design choices, or consulting sibling artifacts.
    - Read only exact existing sections needed for a surgical edit; do not reload whole plan sets after discovery.
    - Verify structure and changed sections without rereading unchanged artifacts.
 
@@ -135,6 +136,6 @@ Each numbered plan must contain:
 <exact plan paths or None>
 ````
 
-The numbered plan is the complete build/review contract. Later agents must not need `spec.md`, sibling plans, or broad repository discovery to recover settled facts.
+The numbered plan is the complete build/review contract. A builder must be able to execute it without recovering intent, making consequential design decisions, consulting `spec.md` or sibling plans, or performing broad repository discovery.
 
 Report the approved outcome, consequential decisions, files written, and first plan path. Then stop.
