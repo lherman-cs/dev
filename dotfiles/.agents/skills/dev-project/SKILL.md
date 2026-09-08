@@ -1,280 +1,100 @@
 ---
 name: dev-project
-description: Drive one approved multi-plan project through fresh isolated build and review agents until every plan is accepted or execution is blocked.
+description: Drive one approved multi-plan project through bounded build/review loops, advancing immediately after each accepted plan.
 ---
 
 # Dev Project
 
-Drive one existing project plan set to completion.
-
-Planning is outside this workflow. Numbered plans are approved contracts.
-
-Require one exact project directory under `plans/`.
+Drive one approved project directory under `plans/` to completion. Numbered plans are contracts; planning is outside this workflow.
 
 ## Role
 
-Own execution of the project-level build/review loop.
+Own dependency order, child sequencing, exact revisions, handoffs, retries, and advancement.
+Do not implement, review code, inspect diffs/tests, modify plans or `spec.md`, diagnose child work, redesign, or replan.
+Use only fresh `builder` and `reviewer` agents with `fork_turns="none"`. Never resume or follow up an old child.
 
-Do not:
+## State
 
-* implement production code;
-* review code;
-* modify plans or `spec.md`;
-* reinterpret acceptance criteria;
-* redesign or replan.
+At start or session resume:
 
-If the approved plans cannot be executed as written, stop with `REQUIRES REPLANNING`.
+1. enumerate numbered plans, excluding `spec.md`, `*.build.md`, and `*.review.md`;
+2. read declared dependencies and validate the graph;
+3. reconstruct state from matching handoffs and exact revisions.
+   Prefer the lowest-numbered ready incomplete plan. Ready means every dependency is accepted.
+   After startup, update only the current plan; do not repeatedly rescan the project or historical Git state.
 
-## Required agents
+States:
 
-Use only these execution agents:
-
-* `builder` — implements one numbered plan using `$dev-build`;
-* `reviewer` — independently reviews one numbered plan and exact revision using `$dev-review`.
-
-Every build and review attempt must be a fresh agent with:
-
-```text
-fork_turns="none"
-```
-
-Never resume or continue a previous builder or reviewer.
-
-## Context boundary
-
-Keep the orchestrator focused on workflow state.
-
-Consume only:
-
-* numbered plan paths;
-* declared dependencies;
-* matching `.build.md` and `.review.md`;
-* exact Git revisions;
-* compact child results.
-
-Do not inspect production code, diffs, tests, repository architecture, or child reasoning.
-
-Builders and reviewers own repository understanding.
-
-## Project discovery
-
-Enumerate numbered plans in the supplied project directory.
-
-Exclude:
-
-* `spec.md`;
-* `*.build.md`;
-* `*.review.md`;
-* unrelated workflow files.
-
-Execute plans in dependency order, preferring the lowest-numbered ready plan.
-
-A plan is ready only when all declared plan dependencies are accepted.
-
-Do not speculatively execute later plans.
+* `BUILD` — no successful current build.
+* `REVIEW` — latest build is `COMPLETED` or `NO CHANGE` without a matching review.
+* `REPAIR` — matching review says `CHANGES REQUIRED`.
+* `ACCEPTED` — matching review of the latest build revision says `ACCEPTED`.
+  A review applies only to its exact revision. Once accepted, a plan stays accepted; later `HEAD` movement never reopens it.
 
 ## Build
 
-For a ready or rejected plan, spawn exactly one fresh builder:
+For `BUILD` or `REPAIR`, spawn one fresh builder:
 
 ```text
-spawn_agent(
-    agent_type="builder",
-    fork_turns="none",
-    message="""
-Use $dev-build.
-
-Plan:
-<exact-plan-path>
-
-Execute exactly this numbered plan and stop after writing its build evidence.
-"""
-)
+spawn_agent(task_name="<plan>-build-<n>", agent_type="builder", fork_turns="none",
+message="Use $dev-build. Plan: <exact-plan-path>. Execute exactly this plan.
+If its current review says CHANGES REQUIRED, address its blocking findings without expanding scope.
+Write the authoritative build handoff and stop.")
 ```
 
-Wait for the builder to finish.
+Wait for completion and read `.build.md`.
 
-Use its matching `.build.md` as the authoritative handoff.
-
-Recognized build states:
-
-* `COMPLETED`
-* `NO CHANGE`
-* `BLOCKED`
-* `REQUIRES REPLANNING`
-
-For `COMPLETED` or `NO CHANGE`, identify the exact resulting revision and review it.
-
-For `BLOCKED` or `REQUIRES REPLANNING`, stop the project.
-
-Do not implement, diagnose, or repair the build yourself.
+* `COMPLETED` / `NO CHANGE` -> require exact revision, then `REVIEW`.
+* `BLOCKED` -> stop `BLOCKED`.
+* `REQUIRES REPLANNING` -> stop `REQUIRES REPLANNING`.
+  Do not diagnose or repair the build yourself.
 
 ## Review
 
-After a completed build, spawn exactly one fresh reviewer:
+Spawn one fresh reviewer against the exact build revision:
 
 ```text
-spawn_agent(
-    agent_type="reviewer",
-    fork_turns="none",
-    message="""
-Use $dev-review.
-
-Plan:
-<exact-plan-path>
-
-Revision:
-<exact-build-revision>
-
-Independently review exactly this plan at exactly this revision and stop after
-writing its review evidence.
-"""
-)
+spawn_agent(task_name="<plan>-review-<n>", agent_type="reviewer", fork_turns="none",
+message="Use $dev-review. Plan: <exact-plan-path>. Revision: <exact-revision>.
+Mode: INITIAL if this plan has no prior CHANGES REQUIRED review; otherwise REPAIR.
+Write the authoritative review handoff and stop.")
 ```
 
-Wait for the reviewer to finish.
+Wait for completion and read `.review.md`. Require exact plan, revision, mode, and recognized verdict.
 
-Use its matching `.review.md` as the authoritative handoff.
-
-The review must target the exact revision supplied.
-
-Recognized verdicts:
-
-* `ACCEPTED`
-* `CHANGES REQUIRED`
-* `REQUIRES REPLANNING`
-
-Only `ACCEPTED` completes a plan.
-
-## Feedback loop
-
-On `CHANGES REQUIRED`, do not resume the previous builder.
-
-Spawn another fresh builder:
-
-```text
-spawn_agent(
-    agent_type="builder",
-    fork_turns="none",
-    message="""
-Use $dev-build.
-
-Plan:
-<exact-plan-path>
-
-The current matching review artifact contains required changes.
-Address the approved plan plus those review findings, then stop after writing
-new build evidence.
-"""
-)
-```
-
-The builder consumes the durable `.review.md` directly.
-
-Do not summarize, rewrite, prioritize, or reinterpret review findings.
-
-Then spawn a fresh reviewer against the new exact revision.
-
-The loop is:
-
-```text
-builder A
-    |
-    v
-revision R1
-    |
-    v
-reviewer A(R1)
-    |
-    +-- ACCEPTED ----------> next plan
-    |
-    +-- CHANGES REQUIRED
-            |
-            v
-        builder B
-            |
-            v
-        revision R2
-            |
-            v
-        reviewer B(R2)
-```
-
-Every box is a separate isolated agent.
-
-## Main loop
-
-Repeat:
-
-1. Reconstruct current state from plans, handoffs, and Git.
-2. Find the lowest-numbered executable incomplete plan.
-3. If it needs building, spawn `builder`.
-4. If its latest build needs review, spawn `reviewer`.
-5. On `CHANGES REQUIRED`, spawn a fresh `builder`.
-6. On `ACCEPTED`, advance to the next plan.
-7. Continue until the entire project completes or a stop condition occurs.
-
-Do not return merely because one child agent completed.
-
-Drive the project continuously.
+* `ACCEPTED` -> record revision and immediately advance to the next ready plan.
+* `CHANGES REQUIRED` -> `REPAIR`.
+* `REQUIRES REPLANNING` -> stop.
+  Do not reinterpret, expand, or prioritize findings.
 
 ## Convergence
 
-Continue normal build/review repair while the existing plan remains executable.
+Allow at most two repair rounds per plan. `$dev-review` must use bounded repair review rather than reopening broad review.
+If the second repair review still says `CHANGES REQUIRED`, stop `BLOCKED`: `review loop did not converge within two repair rounds`.
+Retry once with a fresh same-role agent only when launch/runtime fails before a valid handoff, or the handoff is malformed.
+Do not retry tests, defects, review findings, repository contradictions, `BLOCKED`, or `REQUIRES REPLANNING`.
+Do not spawn a duplicate while a child is live; runtime failure without a handoff is an execution failure.
 
-Stop with `REQUIRES REPLANNING` when:
+## Integrity
 
-* satisfying review requires changing the plan;
-* a verified plan assumption is invalid;
-* dependencies are missing, contradictory, or cyclic;
-* a builder or reviewer reports `REQUIRES REPLANNING`;
-* repeated attempts show no substantive progress toward the contract.
-
-Do not invent a new contract to force convergence.
-
-## Failures
-
-Retry once with a fresh agent only for an obvious transient execution failure that produced no authoritative handoff.
-
-Do not treat:
-
-* failed tests;
-* implementation defects;
-* review findings;
-* repository contradictions;
-* plan defects
-
-as transient failures.
-
-Never skip review or advance dependent plans around a failure.
-
-## Exact metadata
-
-Never infer or reconstruct Git revisions from memory.
-
-Read revisions directly from authoritative build/review artifacts or Git.
-If the exact revision cannot be established, report it as unavailable rather
-than guessing or partially reproducing it.
+Never guess revisions. Use exact revisions from authoritative handoffs or Git.
+A `CHANGES REQUIRED` review is valid only with at least one blocking finding containing Requirement, Evidence, Impact, and Required outcome.
+Retry an invalid review once; if invalid again, stop `BLOCKED`.
+Missing, contradictory, or cyclic declared dependencies -> `REQUIRES REPLANNING`.
 
 ## Completion
 
-A plan is complete only when its latest build revision has an `ACCEPTED` review.
-
-The project is complete only when every active numbered plan is complete.
-
-On success report:
+Continue until terminal; never return merely because one child finished.
+Success:
 
 ```text
 Project: <path>
 Status: COMPLETED
 Final revision: <revision>
-
-Accepted:
-- <plan> — <revision>
-- <plan> — <revision>
+Accepted: <plan/revision list>
 ```
 
-On stop report:
+Stop:
 
 ```text
 Project: <path>

@@ -1,123 +1,91 @@
 ---
 name: dev-review
-description: Independently review one completed numbered plan and revision for completeness, correctness, ownership, simplicity, and evidence. Never modify production code.
+description: Decide whether one numbered plan is satisfied at one exact revision; block only on concrete plan-mapped defects and converge repair reviews.
 ---
 
 # Dev Review
 
-Review exactly one completed numbered plan against one revision. Never modify production code.
+Review one approved numbered plan at one exact revision. Never modify production code.
+The plan is the contract. The goal is an acceptance decision, not a general repository audit.
 
-Judge the plan, repository, diff, and evidence—not the builder's reasoning.
+## Inputs
 
-Require one exact plan path. Review `HEAD` unless another revision is supplied. `plans/` is Git-ignored workflow state.
+Require:
 
-## Main-thread boundary
+* exact plan path;
+* exact revision;
+* mode: `INITIAL` or `REPAIR`.
+  Read the matching `.build.md`. In `REPAIR`, also read the previous `CHANGES REQUIRED` `.review.md`.
+  Do not read `spec.md`, sibling plans, or unrelated history.
 
-Preserve the parent for understanding the contract, inspecting material changed code, reasoning about correctness, classifying findings, and deciding the verdict. Keep surrounding repository discovery out of its context.
+## Blocking rule
 
-The parent may directly consume only:
-- the exact numbered plan and matching build evidence;
-- applicable repository instructions;
-- compact explorer findings;
-- material human-authored changed hunks;
-- exact surrounding source needed to validate a finding;
-- focused verification results.
+A finding may block only when all are true:
 
-Do not load broad caller graphs, unchanged modules, generated diffs, large diagnostics, or repository history into the parent.
+1. it maps to an explicit plan requirement, constraint, or verified precondition;
+2. it is a missing required obligation or a defect in/directly caused by the reviewed change;
+3. it is reachable under the plan's stated assumptions;
+4. leaving it unfixed prevents the plan's acceptance.
+   If any condition fails, it is non-blocking.
+   Do not block on style, preference, optional hardening, hypothetical future behavior, unrelated pre-existing defects, or extra tests when existing evidence proves the contract.
 
-After reading the contract and changed-file inventory, identify independent evidence questions and delegate them before surrounding-repository investigation.
+## Review scope
 
-## Explorers
+For `INITIAL`:
 
-Use `explorer` as the repository context owner for review evidence.
+1. Read the plan and build evidence once.
+2. Inspect the material human-authored diff and only necessary surrounding source.
+3. Check each explicit acceptance obligation and direct regressions caused by the change.
+4. Run only focused verification needed to resolve a concrete uncertainty.
+5. Decide the verdict.
 
-Spawn with `agent_type="explorer"` and `fork_turns="none"`.
+Use at most one fresh `explorer` with `fork_turns="none"` only for one concrete repository fact required to decide acceptance.
+Never ask it to broadly review, find bugs, or propose improvements.
 
-Use the smallest useful fan-out:
-- one explorer when the change is cohesive;
-- two or three in parallel when correctness depends on independent owners/subsystems or changed surfaces.
+For `REPAIR`:
 
-Partition by coherent ownership or subsystem. Do not split "callers", "tests", and "implementation" into separate explorers when they require the same architectural context.
+1. Review the previous blocking findings against the new revision.
+2. Inspect only the repair delta and source needed to validate those fixes.
+3. Check for contract-blocking regressions directly introduced or made reachable by the repair.
+4. Do not restart broad initial review.
+5. Do not add unrelated pre-existing findings.
+   A new repair blocker is allowed only when caused by the repair delta and it satisfies the Blocking rule.
 
-Explorer questions may establish:
-- canonical ownership and surrounding architecture;
-- callers, consumers, migrations, and displaced paths;
-- lifecycle, cleanup, failure, ordering, concurrency, validation, and security relationships;
-- relevant tests and fixtures;
-- unchanged code whose behavior can invalidate the patch;
-- completeness risks and large/generated diff facts.
+## Replanning
 
-Require each explorer to return concise factual conclusions with `path::symbol` evidence and material uncertainty.
+Use `REQUIRES REPLANNING` only when the approved contract itself must change: a material precondition is false, requirements conflict, or acceptance requires a consequential decision absent from the plan.
+Implementation difficulty is not replanning.
 
-Explorers report directly to the parent. Do not add a synthesis agent. Do not ask them to review the patch generally, find bugs without a concrete scope, classify severity, propose fixes, or decide the verdict.
+## Verdict
 
-The parent judges. Do not duplicate explorer discovery in the parent; inspect only material changed hunks and exact cited source needed to reason about a concern.
+Use exactly:
 
-If explorers are unavailable, use only narrow direct reads required to continue. Broad parent-side discovery is not an allowed fallback.
+* `ACCEPTED` — contract satisfied; advance.
+* `CHANGES REQUIRED` — one or more blocking findings remain.
+* `REQUIRES REPLANNING` — contract must change.
+  Acceptance means this plan is complete, not that the subsystem is perfect.
 
-## Workflow
+## Handoff
 
-1. **Establish**
-   * Read the exact plan and matching `.build.md` once.
-   * Inspect version-control state and the changed-file inventory.
-   * Partition independent surrounding-repository questions and run useful explorers concurrently.
-   * Inspect material human-authored diff hunks directly; avoid dumping large generated or mechanical diffs into the parent.
-   * Do not reread `spec.md`, sibling plans, or broadly rediscover the repository.
-
-   Build evidence records claimed work and verification; it is never the verdict.
-
-   If repository reality invalidates the approved plan: `REQUIRES REPLANNING`.
-
-2. **Review**
-   Check only what can affect the plan's contract:
-   * scope and acceptance are complete;
-   * required callers and migrations are handled;
-   * relevant success, failure, validation, lifecycle, cleanup, ordering, concurrency, compatibility, integrity, security, and performance behavior is correct;
-   * responsibility remains in the canonical owner;
-   * no duplicated policy/state or unnecessary abstraction, dependency, configuration, compatibility, or public surface was added;
-   * verification applies to the reviewed revision and proves the contract.
-
-   Keep reasoning about changed code in the parent. Turn surrounding-repository questions into concrete explorer follow-ups. Continue the same explorer only for the same coherent scope; delegate independent concerns separately. Stop when each concern is proved or disproved.
-
-3. **Classify**
-   * `BLOCKER` — requires changing the contract, architecture, acceptance boundary, or a fundamental correctness/security/integrity decision.
-   * `ISSUE` — concrete in-scope defect or unnecessary mechanism that must be corrected.
-
-   Do not report taste, speculative improvements, or unrelated cleanup.
-
-4. **Verify**
-   * Run only checks needed to establish the verdict.
-   * Do not rerun expensive successful build checks without a concrete reason.
-   * Delegate large-output inspection and non-local failure tracing to explorers.
-   * Never accept solely because build evidence reports success.
-
-5. **Handoff**
-
-Write `plans/<project>/<NN>-<outcome>.review.md`.
-
-Accepted:
+Write the matching `.review.md`:
 
 ```markdown
 # Review
 Plan: <path>
 Revision: <revision>
-Verdict: ACCEPTED
+Mode: INITIAL | REPAIR
+Verdict: ACCEPTED | CHANGES REQUIRED | REQUIRES REPLANNING
 ```
 
-Otherwise:
+For `CHANGES REQUIRED`, add:
 
 ```markdown
-# Review
-Plan: <path>
-Revision: <revision>
-Verdict: CHANGES REQUIRED | REQUIRES REPLANNING
-
-## Findings
-| ID | Severity | Location | Finding | Required outcome |
+## Blocking findings
+| ID | Requirement | Evidence | Impact | Required outcome |
 |---|---|---|---|---|
-| R1 | ISSUE | `<path>::<symbol>` | <defect> | <required state> |
+| R1 | <plan item> | `<path>::<symbol>` — <fact> | <contract failure> | <required state> |
 ```
 
-State what is wrong and the required outcome, not how to implement the fix.
-
-Report the verdict and material findings. Then stop.
+Every blocking finding must contain every field. Omit non-blocking observations.
+For `REQUIRES REPLANNING`, state the exact contract conflict and concrete evidence.
+Report the verdict and blocking findings only. Then stop.
