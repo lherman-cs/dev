@@ -16,6 +16,7 @@ Require one exact plan path. `plans/` is Git-ignored workflow state.
 Preserve the parent for understanding the contract, implementation decisions, source editing, focused verification, and final handoff. Keep repository orientation and tracing out of its context.
 
 The parent may directly consume only:
+
 - the exact numbered plan and applicable repository instructions;
 - current review findings when present;
 - compact explorer findings;
@@ -34,12 +35,14 @@ Use `explorer` as the repository context owner for implementation support.
 Spawn with `agent_type="explorer"` and `fork_turns="none"`.
 
 Use the smallest useful fan-out:
+
 - one explorer for one cohesive implementation surface;
 - two or three in parallel when the plan crosses independent owners/subsystems that can be investigated without substantial overlap.
 
 Partition by coherent ownership boundary, not by "implementation", "callers", and "tests" for the same subsystem.
 
 Explorer questions may cover:
+
 - exact edit surfaces and surrounding invariants;
 - canonical implementation patterns;
 - callers/consumers that must move with the change;
@@ -57,52 +60,72 @@ For debugging, keep the hypothesis and fix decision in the parent. Continue an e
 
 If explorers are unavailable, use only narrow direct reads required to continue. Broad parent-side discovery is not an allowed fallback.
 
+## Implementation discipline
+
+For every change, stop at the first solution that fully satisfies the plan:
+
+1. Do not build behavior the plan does not require.
+2. Reuse an existing repository mechanism, helper, or pattern when it already fits.
+3. Prefer the standard library.
+4. Prefer a native language, framework, protocol, or platform capability.
+5. Prefer an already-installed dependency over adding one.
+6. Prefer the simplest direct expression when it remains clear.
+7. Only then write the minimum new code necessary.
+
+Understand the actual code path and invariants before choosing the solution.
+Minimize the solution, not the investigation required to make it correct.
+
+Do not trade away correctness, validation, error handling, security,
+accessibility, lifecycle guarantees, or required observability for fewer lines.
+
 ## Workflow
 
 1. **Establish**
-   * Read the exact plan and applicable repository instructions once.
-   * Inspect version-control state.
-   * Start from verified preconditions and the repository handoff.
-   * Do not reread `spec.md`, sibling plans, or dependency plans.
-   * Do not revalidate settled facts without contradictory evidence.
-   * Partition and delegate non-local repository questions before investigating them in the parent.
+   - Read the exact plan and applicable repository instructions once.
+   - Inspect version-control state.
+   - Start from verified preconditions and the repository handoff.
+   - Do not reread `spec.md`, sibling plans, or dependency plans.
+   - Do not revalidate settled facts without contradictory evidence.
+   - Partition and delegate non-local repository questions before investigating them in the parent.
 
    If a verified precondition or material assumption is false: `REQUIRES REPLANNING`.
 
    If a matching `.review.md` targets current `HEAD` with `CHANGES REQUIRED`, treat its findings as additional acceptance obligations.
 
 2. **Implement**
-   * Build the minimum complete solution.
-   * Use explorer findings to narrow reads to source regions that must change.
-   * Follow only required callers, failure paths, cleanup, tests, and displaced in-scope code.
-   * Batch related reads, edits, and checks.
-   * Avoid adjacent cleanup and speculative machinery.
-   * Do not repeat unchanged searches, reads, or commands.
-   * Keep repository tracing in explorers; keep edits and implementation decisions in the parent.
+   - Build the minimum complete solution. Apply the implementation discipline above to every material addition.
+   - Use explorer findings to narrow reads to source regions that must change.
+   - Follow only required callers, failure paths, cleanup, tests, and displaced in-scope code.
+   - Batch related reads, edits, and checks.
+   - Prefer deletion, reuse, and existing capabilities over new abstractions or machinery.
+   - Avoid adjacent cleanup, speculative machinery, speculative configurability, and code for hypothetical future requirements.
+   - Do not introduce a new abstraction merely to make a small change look architecturally complete.
+   - Do not repeat unchanged searches, reads, or commands.
+   - Keep repository tracing in explorers; keep edits and implementation decisions in the parent.
 
    If implementation requires a consequential decision absent from the plan: `REQUIRES REPLANNING`.
 
 3. **Debug**
-   * Use `reproduce → hypothesis → evidence → root cause → fix`.
-   * Run the smallest discriminating check first.
-   * Delegate cross-file diagnosis or large output to the appropriate explorer.
-   * Stop when root cause is established.
-   * Do not repeat unchanged failures or apply speculative patches.
-   * For environment/tooling failures, use only an obvious local correction; otherwise: `BLOCKED`.
-   * Never create alternate clones/worktrees or replace authoritative generated output to bypass a blocker.
+   - Use `reproduce → hypothesis → evidence → root cause → fix`.
+   - Run the smallest discriminating check first.
+   - Delegate cross-file diagnosis or large output to the appropriate explorer.
+   - Stop when root cause is established.
+   - Do not repeat unchanged failures or apply speculative patches.
+   - For environment/tooling failures, use only an obvious local correction; otherwise: `BLOCKED`.
+   - Never create alternate clones/worktrees or replace authoritative generated output to bypass a blocker.
 
 4. **Verify**
-   * Prove every acceptance item and current review finding.
-   * Prefer focused, quiet checks while iterating.
-   * Run required final acceptance/completeness checks once on the final tree.
-   * Delegate noisy failure-output analysis and non-local completeness tracing to explorers.
-   * Inspect human-authored changed hunks directly; delegate large/generated diff completeness checks when they would add bulk context without improving parent judgment.
-   * Run `git diff --check` or equivalent.
-   * Repeat a successful check only if later changes could invalidate it.
+   - Review the final diff for unnecessary new code, abstractions, dependencies, configuration, and duplicated existing capability.
+   - Prefer focused, quiet checks while iterating.
+   - Run required final acceptance/completeness checks once on the final tree.
+   - Delegate noisy failure-output analysis and non-local completeness tracing to explorers.
+   - Inspect human-authored changed hunks directly; delegate large/generated diff completeness checks when they would add bulk context without improving parent judgment.
+   - Run `git diff --check` or equivalent.
+   - Repeat a successful check only if later changes could invalidate it.
 
 5. **Commit**
-   * If code changed, create one coherent Conventional Commit containing only this plan.
-   * Describe the repository change, not workflow state.
+   - If code changed, create one coherent Conventional Commit containing only this plan.
+   - Describe the repository change, not workflow state.
 
 6. **Handoff**
 
