@@ -26,6 +26,10 @@ model = "gpt-5.6-sol"
 model_reasoning_effort = "high"
 skill = "dev-plan"
 
+[profiles.project]
+model = "gpt-5.6-sol"
+model_reasoning_effort = "high"
+skill = "dev-project"
 
 [profiles.build]
 model = "gpt-5.6-sol"
