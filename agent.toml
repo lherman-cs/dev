@@ -6,6 +6,7 @@ model_reasoning_summary = "concise"
 
 approval_policy = "on-request"
 sandbox_mode = "workspace-write"
+approvals_reviewer = "auto_review"
 model_auto_compact_token_limit = 200000
 model_auto_compact_token_limit_scope = "total"
 
