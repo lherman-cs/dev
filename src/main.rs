@@ -2134,7 +2134,18 @@ fn exec_codex(profile: AgentProfileName, prompt: Vec<String>) -> Result<()> {
     let mut command = Command::new("codex");
     command.args(&args);
     if !prompt.is_empty() {
-        command.arg(prompt.join(" "));
+        let skill = match profile {
+            AgentProfileName::Plan => Some("$dev-plan"),
+            AgentProfileName::Build => Some("$dev-build"),
+            AgentProfileName::Review => Some("$dev-review"),
+            _ => None,
+        };
+        let prompt = prompt.join(" ");
+
+        command.arg(match skill {
+            Some(skill) => format!("{skill} {prompt}"),
+            None => prompt,
+        });
     }
 
     info!(
@@ -4149,11 +4160,7 @@ fn delegation_grade(
     }
 }
 
-fn delegated_thread_label(
-    thread: &AgentThreadStats,
-    index: usize,
-    total: usize,
-) -> String {
+fn delegated_thread_label(thread: &AgentThreadStats, index: usize, total: usize) -> String {
     let base = thread
         .agent_role
         .as_deref()
