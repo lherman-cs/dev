@@ -210,6 +210,8 @@ enum AgentAction {
         prompt: Vec<String>,
     },
 
+    Resume,
+
     /// Show Codex usage statistics from local rollout JSONL files
     Stats {
         /// Number of most recent sessions to show
@@ -2101,29 +2103,31 @@ fn agent_profile<'a>(
     })
 }
 
-fn agent_codex_overrides(
-    config: &AgentConfig,
-    profile: AgentProfileName,
-) -> Result<Vec<(String, String)>> {
+fn agent_codex_overlay_args(config: &AgentConfig) -> Result<Vec<String>> {
     let mut overrides = Vec::new();
     flatten_codex_table("", &config.codex, &mut overrides)?;
 
-    let profile = agent_profile(config, profile)?;
-    overrides.push(("model".to_string(), format!("{:?}", profile.model)));
-    overrides.push((
-        "model_reasoning_effort".to_string(),
-        format!("{:?}", profile.model_reasoning_effort),
-    ));
-
-    Ok(overrides)
-}
-
-fn agent_codex_args(config: &AgentConfig, profile: AgentProfileName) -> Result<Vec<String>> {
     let mut args = Vec::new();
-    for (key, value) in agent_codex_overrides(config, profile)? {
+    for (key, value) in overrides {
         args.push("-c".to_string());
         args.push(format!("{key}={value}"));
     }
+
+    Ok(args)
+}
+
+fn agent_codex_args(config: &AgentConfig, profile: AgentProfileName) -> Result<Vec<String>> {
+    let mut args = agent_codex_overlay_args(config)?;
+
+    let profile = agent_profile(config, profile)?;
+    args.push("-c".to_string());
+    args.push(format!("model={:?}", profile.model));
+    args.push("-c".to_string());
+    args.push(format!(
+        "model_reasoning_effort={:?}",
+        profile.model_reasoning_effort
+    ));
+
     Ok(args)
 }
 
@@ -2170,12 +2174,38 @@ fn exec_codex(profile: AgentProfileName, prompt: Vec<String>) -> Result<()> {
     }
 }
 
+fn exec_codex_resume() -> Result<()> {
+    let config = load_agent_config()?;
+    let args = agent_codex_overlay_args(&config)?;
+
+    let mut command = Command::new("codex");
+    command.args(&args);
+    command.arg("resume");
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        let error = command.exec();
+        Err(error).context("Failed to exec codex resume")
+    }
+
+    #[cfg(not(unix))]
+    {
+        let status = command.status().context("Failed to launch codex resume")?;
+        if !status.success() {
+            bail!("codex resume exited with status {status}");
+        }
+        Ok(())
+    }
+}
+
 fn cmd_agent(action: Option<AgentAction>) -> Result<()> {
     match action {
         None => exec_codex(AgentProfileName::Default, Vec::new()),
         Some(AgentAction::Plan { prompt }) => exec_codex(AgentProfileName::Plan, prompt),
         Some(AgentAction::Build { prompt }) => exec_codex(AgentProfileName::Build, prompt),
         Some(AgentAction::Review { prompt }) => exec_codex(AgentProfileName::Review, prompt),
+        Some(AgentAction::Resume) => exec_codex_resume(),
         Some(AgentAction::Stats { last, file, json }) => cmd_agent_stats(last, file, json),
         Some(AgentAction::Config { profile, args }) => cmd_agent_config(profile, args),
         Some(AgentAction::Transcript {
