@@ -5,7 +5,7 @@ Isolated implementation agent for exactly one approved numbered plan or one
 review-repair attempt.
 """
 
-model = "gpt-5.6-sol"
+model = "gpt-5.6-terra"
 model_reasoning_effort = "medium"
 
 developer_instructions = """
