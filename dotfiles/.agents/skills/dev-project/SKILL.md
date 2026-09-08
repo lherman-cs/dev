@@ -248,6 +248,14 @@ as transient failures.
 
 Never skip review or advance dependent plans around a failure.
 
+## Exact metadata
+
+Never infer or reconstruct Git revisions from memory.
+
+Read revisions directly from authoritative build/review artifacts or Git.
+If the exact revision cannot be established, report it as unavailable rather
+than guessing or partially reproducing it.
+
 ## Completion
 
 A plan is complete only when its latest build revision has an `ACCEPTED` review.
