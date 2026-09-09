@@ -1,100 +1,56 @@
 ---
 name: dev-plan
-description: Define one bounded software project through rigorous user alignment, resolve consequential decisions, gather necessary repository evidence, and write executable numbered plans. Never implement.
+description: Work directly with the user to turn a software goal into a bounded implementation slice using rigorous alignment and compact repository evidence. Never implement.
 ---
+
 # Dev Plan
-Define one bounded project. Never modify production code.
-`plans/` is Git-ignored workflow state. Access exact paths directly.
-Read `references/context.md` before investigation; its main-thread boundary and explorer ownership rules apply throughout.
 
-## Workflow
+Work directly with the user. Never modify production code.
+The user owns product, architecture, scope, and acceptance decisions.
+Planning should reduce uncertainty without turning ordinary work into process.
 
-1. **Align**
-   - Treat alignment as an interactive design interview, not requirements transcription.
-   - Do not explore the repository or write a plan until the intended direction is sufficiently clear to make repository discovery targeted.
-   - Interrogate the request for hidden assumptions, underspecified behavior, conflicting goals, unnecessary complexity, and decisions the user may not realize they are making.
-   - Challenge weak premises and proposed solutions when a simpler, more coherent, or more canonical direction may exist.
-   - Work backward from the desired outcome and public behavior before discussing implementation.
-   - Cover consequential ambiguity in outcome, behavior, ownership, lifecycle, compatibility, non-goals, acceptance, migration, failure semantics, and risk where relevant.
-   - Ask related questions in small coherent batches rather than one at a time or as an exhaustive questionnaire.
-   - For each meaningful choice, explain the tradeoff concisely and recommend a default when justified. Do not make the user invent an answer the planner can responsibly recommend.
-   - Follow answers wherever they expose another consequential ambiguity. Continue until remaining uncertainty is either immaterial or explicitly delegated to repository discovery.
-   - Periodically restate the emerging contract and actively look for disagreement: "If we build exactly this, is anything important wrong or missing?"
-   - Do not accept vague agreement when materially different implementations would still satisfy the stated requirements.
+## Alignment
 
-2. **Discover**
-   - Translate the aligned direction into specific repository questions before spawning explorers.
-   - Identify only repository facts that can change the contract, design, acceptance, or plan boundaries.
-   - Partition independent repository questions and run useful explorers concurrently.
-   - Discovery answers repository questions; it must not silently decide unresolved product or design questions.
-   - Ask the user follow-ups whenever evidence exposes a consequential choice that was not settled during alignment.
-   - Verify relevant toolchain availability, baseline checks, input suppliers, ownership, and integration points; use targeted disposable probes for consequential uncertainty, never production implementation.
-   - Stop when decision-relevant evidence is sufficient. Repository facts go to discovery; consequential behavior choices go back to the user, not to a builder.
+Start from the requested outcome, not repository archaeology.
+Challenge weak premises and expose consequential tradeoffs clearly.
+Ask only questions whose answers materially change behavior, architecture, scope, or acceptance; batch related questions.
+Do not ask the user for repository facts that can be investigated.
+Separate binding user decisions from nonbinding implementation guidance.
 
-3. **Design**
-   - Resolve the design from approved requirements and distilled evidence.
-   - Prefer canonical owners and existing mechanisms.
-   - Add only what the outcome requires.
-   - Avoid speculative abstraction, state, configuration, compatibility, dependencies, and future-proofing.
-   - Challenge the emerging design once more for unnecessary machinery, duplicated ownership, ambiguous lifecycle, and accidental compatibility commitments.
-   - Return to the user if evidence exposes a consequential undecided choice.
+## Repository evidence
 
-4. **Confirm**
-   - Present the proposed contract concisely in terms of outcome, externally meaningful behavior, key design decisions, non-goals, and acceptance.
-   - Explicitly distinguish binding decisions from implementation guidance. Do not conceal an unresolved consequential decision in an assumption.
-   - Before approval, have an independent reviewer challenge design, input/ownership completeness, feasibility evidence, dependency order, and executable acceptance; resolve findings and return new consequential choices to the user.
-   - Ask for correction or confirmation when the contract contains consequential choices not already explicitly approved.
-   - Do not finalize numbered plans until consequential decisions are resolved; a clearly marked draft may support independent challenge.
-   - Confirmation is a gate, not a summary ritual.
+Delegate non-local discovery and tracing to the configured `explorer`; keep bulk repository context out of the planning thread.
+Use the smallest useful fan-out and avoid overlapping scopes.
 
-5. **Write**
-   - Create or update `plans/<project>/spec.md`: binding contract, explicit non-goals, confirmed decisions, and acceptance. Reuse existing wording and numbering; IDs are optional.
-   - Document concrete final checks, including required manual evidence: inputs, commands/procedure, and expected outcomes. Distinguish achievable preparation work from unresolved feasibility blockers.
-   - Create ordered `plans/<project>/<NN>-<outcome>.md` as the smallest practical verifiable outcomes, including required integration and failure-path checks rather than deferring them all to the end.
-   - Write each numbered plan so a builder can execute it without recovering intent, making consequential design choices, or consulting sibling artifacts.
-   - Read only exact existing sections needed for a surgical edit; do not reload whole plan sets after discovery.
-   - Verify structure and changed sections without rereading unchanged artifacts.
-
-Use these sections for new plans; equivalent existing sections are valid. Preserve accepted plans unchanged; missing template fields are not a reason to replan.
-
-```markdown
-# <Milestone>
-
-## Outcome
-<one coherent result>
-
-## Scope
-<complete milestone-specific behavior>
-
-## Constraints
-<only consequential constraints>
-
-## Implementation guidance
-<nonbinding approach; binding architecture belongs in Constraints>
-
-## Verified preconditions
-- <fact already verified in the current repository, with evidence; not a future plan output>
-
-## Repository handoff
-- Canonical owner: `<path>::<symbol>`
-- Starting points: `<paths/symbols>`
-- Direct callers / consumers: `<paths/symbols or None>`
-- Relevant tests: `<tests or None>`
-- Completeness checks: `<scoped checks or None>`
-
-## Acceptance
-- <owned binding obligation and exact milestone-specific verification evidence>
-
-## Dependencies
-- `plans/<project>/<NN>-<prerequisite>.md` — <consumed output>; use None when empty
+```text
+spawn_agent(task_name="explore_<topic>_<n>", agent_type="explorer", fork_turns="none",
+    message="<one self-contained repository question; include anchors, known facts, why it matters, and a stopping condition; require concise path::symbol evidence and explicit uncertainty; do not edit files>")
 ```
 
-The numbered plan is the complete build/review contract. A builder must be able to execute it without recovering intent, making consequential design decisions, consulting `spec.md` or sibling plans, or performing broad repository discovery.
+Use only fields exposed by the runtime. Do not override the explorer's model or effort.
+Continue the same explorer for same-scope follow-ups; release it when answered.
+If explorers are unavailable, use only narrow direct reads necessary to proceed.
 
-After normal planning, ask an independent reviewer to evaluate the actual written plans for READINESS; use existing readiness evidence where it still applies.
-Challenge design, feasibility, dependencies, obligation ownership, and verification coverage; record the result in `readiness.review.md` or the existing equivalent.
-Resolve consequential readiness findings before reporting READY; review material plan changes, not cosmetic edits. Do not repeat grilling or completed discovery without new evidence.
-For MAINTAIN, propose only the necessary guidance, boundary, or dependency change in a note or diff; preserve approved behavior and accepted plan text.
-Explain why and where each affected obligation, finding, and check will live. The parent obtains independent review before applying the proposal; no special directory or hash is needed.
-Binding outcomes, interfaces, ownership, behavior, constraints, and explicitly approved architecture require user approval to change; implementation guidance may adapt without changing them.
-Report `Project: <exact-project-directory>` and `Status: READY`, the approved outcome, decisions, files, and first plan path. Then stop; execution requires a separate project invocation.
+## Planning discipline
+
+Work backward from observable behavior and developer/user experience.
+Identify existing mechanisms worth reusing before proposing new abstractions.
+Resolve consequential feasibility uncertainty before presenting a slice as ready.
+For runtime-dependent work, establish how the critical behavior can actually be exercised; distinguish project requirements from local environment limitations.
+Keep implementation choices flexible unless correctness or an approved decision requires otherwise.
+Prefer one primary verification loop per slice.
+
+## Output
+
+Return a compact proposal directly to the user:
+
+- **Outcome** — one observable result.
+- **Decisions** — only consequential choices already made or still needing the user.
+- **Evidence** — relevant repository facts and constraints.
+- **Slice** — smallest coherent implementation boundary worth building next.
+- **Proof** — how the builder can demonstrate the behavior actually works.
+- **Risks** — unresolved material uncertainty only.
+
+Do not create specs, numbered plans, handoffs, or workflow state unless the user asks for an artifact.
+Do not prescribe exact file edits when the builder can choose them safely from evidence.
+Stop after presenting the proposal or the smallest necessary user decision.

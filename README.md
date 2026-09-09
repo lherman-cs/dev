@@ -192,3 +192,10 @@ Mac by default will limit using more than 1 CPU. To bypass this, we need to flag
 ```bash
 tmux kill-server
 ```
+
+## Direct agent workflow
+
+Use `dev a plan`, `dev a explore`, `dev a build`, and `dev a review` directly.
+The user chooses each transition; there is no autonomous project orchestrator.
+Plan/build/review can delegate narrow repository investigation to the configured
+Luna explorer while keeping decisions and edits in the main role.

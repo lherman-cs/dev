@@ -172,7 +172,7 @@ const AGENT_CONFIG_TOML: &str = include_str!("../agent.toml");
 enum AgentProfileName {
     Default,
     Plan,
-    Project,
+    Explore,
     Build,
     Review,
 }
@@ -182,7 +182,7 @@ impl AgentProfileName {
         match self {
             Self::Default => "default",
             Self::Plan => "plan",
-            Self::Project => "project",
+            Self::Explore => "explore",
             Self::Build => "build",
             Self::Review => "review",
         }
@@ -198,8 +198,9 @@ enum AgentAction {
         prompt: Vec<String>,
     },
 
-    #[command(alias = "pr")]
-    Project {
+    /// Start a fresh Luna/medium repository exploration session
+    #[command(alias = "e")]
+    Explore {
         /// Optional initial Codex prompt
         prompt: Vec<String>,
     },
@@ -2148,7 +2149,7 @@ fn exec_codex(profile: AgentProfileName, prompt: Vec<String>) -> Result<()> {
     if !prompt.is_empty() {
         let skill = match profile {
             AgentProfileName::Plan => Some("$dev-plan"),
-            AgentProfileName::Project => Some("$dev-project"),
+            AgentProfileName::Explore => Some("$dev-explore"),
             AgentProfileName::Build => Some("$dev-build"),
             AgentProfileName::Review => Some("$dev-review"),
             _ => None,
@@ -2212,7 +2213,7 @@ fn cmd_agent(action: Option<AgentAction>) -> Result<()> {
     match action {
         None => exec_codex(AgentProfileName::Default, Vec::new()),
         Some(AgentAction::Plan { prompt }) => exec_codex(AgentProfileName::Plan, prompt),
-        Some(AgentAction::Project { prompt }) => exec_codex(AgentProfileName::Project, prompt),
+        Some(AgentAction::Explore { prompt }) => exec_codex(AgentProfileName::Explore, prompt),
         Some(AgentAction::Build { prompt }) => exec_codex(AgentProfileName::Build, prompt),
         Some(AgentAction::Review { prompt }) => exec_codex(AgentProfileName::Review, prompt),
         Some(AgentAction::Resume) => exec_codex_resume(),

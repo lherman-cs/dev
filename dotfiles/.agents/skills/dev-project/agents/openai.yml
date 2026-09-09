@@ -1,7 +1,0 @@
-interface:
-  display_name: "Dev Project"
-  short_description: "Drive approved plans through isolated build and review"
-  default_prompt: "Use $dev-project with an exact planned project directory."
-
-policy:
-  allow_implicit_invocation: false
