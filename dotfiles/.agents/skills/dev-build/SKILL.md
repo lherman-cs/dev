@@ -1,66 +1,100 @@
 ---
 name: dev-build
-description: Work directly with the user to implement one requested software slice with production-quality code, focused exploration, and behavioral proof.
+description: Implement exactly one approved numbered plan with the minimum necessary code, verify it, and produce one clean reviewable commit
 ---
 
 # Dev Build
 
-Implement the user's current requested slice. The user is the technical lead.
-Do not silently expand scope, redesign approved behavior, or make consequential product/architecture decisions for them.
+Implement exactly one:
 
-## Repository context
+`plans/<project>/<ordered-numbered-plan>.md`
 
-Own implementation decisions and source edits in the main thread; delegate non-local discovery and tracing to `explorer`.
+The plan is the implementation contract. `spec.md` provides the project-wide invariants.
 
-```text
-spawn_agent(task_name="explore_<topic>_<n>", agent_type="explorer", fork_turns="none",
-    message="<one self-contained repository question; include anchors, known facts, why it matters, and a stopping condition; require concise path::symbol evidence and explicit uncertainty; do not edit files>")
-```
+Tenets, in order:
 
-Use the smallest useful fan-out. Reuse same-scope explorers instead of rescanning.
-Read directly only the source regions needed to edit or verify behavior.
-If explorers are unavailable, use narrow direct investigation rather than broad dumps.
+1. Robustness first.
+2. Simple by design.
+3. Performance without cleverness.
 
-## Implementation discipline
+Do not continue into another numbered plan.
 
-For every material change:
+## Context
 
-1. Reuse an existing repository mechanism or pattern when it already fits.
-2. Prefer standard/native language, framework, protocol, or platform capabilities.
-3. Prefer an existing dependency over adding one.
-4. Choose the simplest maintainable direct solution that fully satisfies the requested behavior.
-5. Add only the code and configuration the product actually needs.
+Read the supplied plan, relevant `spec.md`, and applicable repository instructions.
 
-Minimize mechanisms, not readability or correctness.
-Do not compress unrelated logic merely to reduce line count.
-Preserve validation, errors, security, accessibility, lifecycle guarantees, cleanup, and required observability.
-Never commit sandbox, host, worktree, cache, permission, `/tmp`, `$HOME`, local-browser, or machine-specific workarounds as repository policy unless the user explicitly approves that policy.
-Execution-environment workarounds may be used locally without leaking into source.
+Use explorers only when repository discovery is required.
 
-## Build loop
+* `fork_turn = false` / no fork.
+* Multiple explorers are allowed.
+* Give each explorer one narrowly scoped question.
+* Prefer parallel explorers for independent questions.
+* Require compact conclusions with paths/symbols and evidence.
+* Do not broadly rediscover the repository.
 
-Establish the relevant invariant and current behavior before editing.
-For a new or substantially changed mechanism, prove one representative end-to-end behavior before expanding it.
-Use `reproduce → hypothesis → evidence → root cause → fix` for failures.
-Run the smallest discriminating check first; do not repeat unchanged failures or speculative patches.
-If implementation reaches a consequential unapproved choice, surface it to the user before crossing that boundary.
+Preserve the existing design unless the plan requires changing it.
 
-## Evidence
+## Implementation
 
-Tests and checks must observe behavior, not assign or mirror the expected answer.
-Ask: **what incorrect implementation would make this proof fail?** If there is no concrete answer, improve the proof.
-Review the final diff for unnecessary abstraction, duplication, environment leakage, generated churn, and unreadable code.
-Run focused checks while iterating and the relevant final checks once the slice is stable.
-Use `git diff --check` or the repository equivalent when applicable.
-Do not create a commit unless the user asks or the current request clearly requires one.
+For every piece of code, apply this order:
 
-## Return to the user
+1. Does this need to exist? Speculative need means skip it. YAGNI.
+2. Does the codebase already contain the helper, utility, abstraction, or pattern? Reuse it.
+3. Does the standard library solve it? Use it.
+4. Does a native platform feature solve it? Use it.
+5. Does an already-installed dependency solve it? Use it. Do not add another.
+6. Can the behavior be expressed directly and clearly in one line? Prefer that.
+7. Only then write the minimum new code that works.
 
-Report only:
+Do not narrate this checklist mechanically. Apply it.
 
-- **Outcome** — what now works.
-- **Changed** — important files/areas and why.
-- **Proof** — exact checks/observations and outcomes.
-- **Decisions/limits** — anything the user should decide or know.
+Prefer explicit, boring, local code over clever abstractions.
 
-Do not write mandatory build handoffs, workflow metadata, or project state files.
+Do not introduce complexity for hypothetical performance. Respect measured or explicitly specified performance requirements.
+
+Do not fix unrelated issues unless they directly block the slice. Report them instead.
+
+## Plan mismatch
+
+If implementation reveals a discrepancy:
+
+* resolve trivial local details yourself;
+* make narrow adaptations that preserve the approved contract;
+* stop and report `REPLAN` if correctness requires changing product behavior, public API, architecture, ownership, invariants, or acceptance criteria.
+
+Do not silently redesign the project.
+
+## Verification
+
+Run the narrowest meaningful verification that proves the slice.
+
+Prefer:
+
+targeted tests → affected package/crate tests → broader suites when warranted.
+
+Run canonical formatting or lint commands relevant to the touched code.
+
+Tests must prove the intended behavior, not merely execute code.
+
+Do not commit known-broken work.
+
+## Commit
+
+A successful numbered plan produces exactly one isolated reviewable commit unless the user explicitly requests otherwise.
+
+Follow the repository's Git conventions and Conventional Commits.
+
+Keep the subject concise and scoped when appropriate.
+
+Include generated or mechanical files in the same commit when required for the vertical slice to remain correct.
+
+Before committing, inspect the final diff for accidental, unrelated, generated-noise, or over-engineered changes.
+
+Finish with:
+
+* what changed;
+* what was verified;
+* commit revision;
+* any material caveat or unrelated issue discovered.
+
+Then stop.

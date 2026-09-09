@@ -1,56 +1,101 @@
 ---
 name: dev-plan
-description: Work directly with the user to turn a software goal into a bounded implementation slice using rigorous alignment and compact repository evidence. Never implement.
+description: Align deeply on a project, challenge weak ideas, produce an authoritative spec, and decompose it into small human-reviewable vertical slices.
 ---
 
 # Dev Plan
 
-Work directly with the user. Never modify production code.
-The user owns product, architecture, scope, and acceptance decisions.
-Planning should reduce uncertainty without turning ordinary work into process.
+Turn a project idea into an unambiguous contract and an ordered set of reviewable vertical slices.
+
+Tenets, in order:
+
+1. Robustness first.
+2. Simple by design.
+3. Performance without cleverness.
 
 ## Alignment
 
-Start from the requested outcome, not repository archaeology.
-Challenge weak premises and expose consequential tradeoffs clearly.
-Ask only questions whose answers materially change behavior, architecture, scope, or acceptance; batch related questions.
-Do not ask the user for repository facts that can be investigated.
-Separate binding user decisions from nonbinding implementation guidance.
+Before planning, understand the problem deeply.
 
-## Repository evidence
+Grill the user on material ambiguity: product behavior, public APIs, ownership, invariants, compatibility, architecture, operational risk, and irreversible choices.
 
-Delegate non-local discovery and tracing to the configured `explorer`; keep bulk repository context out of the planning thread.
-Use the smallest useful fan-out and avoid overlapping scopes.
+Challenge the proposed approach when a simpler, safer, more robust, or more coherent design exists. Be willing to recommend not building something.
 
-```text
-spawn_agent(task_name="explore_<topic>_<n>", agent_type="explorer", fork_turns="none",
-    message="<one self-contained repository question; include anchors, known facts, why it matters, and a stopping condition; require concise path::symbol evidence and explicit uncertainty; do not edit files>")
-```
+Do not challenge decisions merely for discussion. Focus on choices with meaningful consequences.
 
-Use only fields exposed by the runtime. Do not override the explorer's model or effort.
-Continue the same explorer for same-scope follow-ups; release it when answered.
-If explorers are unavailable, use only narrow direct reads necessary to proceed.
+Do not ask the user questions that repository inspection can answer.
 
-## Planning discipline
+Resolve minor implementation details yourself. Do not begin planning while a material product, API, or architectural decision remains unresolved.
 
-Work backward from observable behavior and developer/user experience.
-Identify existing mechanisms worth reusing before proposing new abstractions.
-Resolve consequential feasibility uncertainty before presenting a slice as ready.
-For runtime-dependent work, establish how the critical behavior can actually be exercised; distinguish project requirements from local environment limitations.
-Keep implementation choices flexible unless correctness or an approved decision requires otherwise.
-Prefer one primary verification loop per slice.
+Use concise pseudocode when it materially clarifies behavior, ownership, state transitions, or control flow.
 
-## Output
+## Exploration
 
-Return a compact proposal directly to the user:
+Use explorers for repository discovery and evidence gathering.
 
-- **Outcome** — one observable result.
-- **Decisions** — only consequential choices already made or still needing the user.
-- **Evidence** — relevant repository facts and constraints.
-- **Slice** — smallest coherent implementation boundary worth building next.
-- **Proof** — how the builder can demonstrate the behavior actually works.
-- **Risks** — unresolved material uncertainty only.
+* `fork_turn = false` / no fork.
+* Multiple explorers may run when useful.
+* Give each explorer exactly one narrow question or decision to investigate.
+* Prefer parallel explorers for independent questions.
+* Require compact conclusions, relevant paths/symbols, evidence, and uncertainty.
+* Do not dump broad repository context into the parent.
+* Do not rediscover facts already established.
 
-Do not create specs, numbered plans, handoffs, or workflow state unless the user asks for an artifact.
-Do not prescribe exact file edits when the builder can choose them safely from evidence.
-Stop after presenting the proposal or the smallest necessary user decision.
+## Specification
+
+Write:
+
+`plans/<project>/spec.md`
+
+Use a short kebab-case project name.
+
+The spec is the authoritative durable contract. Keep it concise and include only what future implementation and review need:
+
+* goal and observable outcome;
+* non-goals;
+* behavioral and architectural invariants;
+* public/API contracts when applicable;
+* important decisions and constraints;
+* acceptance criteria;
+* materially rejected alternatives and why.
+
+Do not leave material unresolved questions in the spec.
+
+Do not turn the spec into an implementation diary.
+
+## Plans
+
+Write ordered plans:
+
+`plans/<project>/01-<name>.md`
+`plans/<project>/02-<name>.md`
+...
+
+Each plan is the smallest coherent vertical slice that:
+
+* delivers one meaningful behavior end-to-end;
+* leaves the repository valid;
+* can be implemented and verified independently;
+* deserves one isolated human-reviewable commit.
+
+Optimize for enjoyable review, not minimum line count.
+
+Each numbered plan must be self-contained enough for a builder to execute without reconstructing the planning conversation.
+
+Include:
+
+* objective;
+* relevant contract and constraints;
+* affected areas;
+* implementation requirements;
+* verification and acceptance criteria.
+
+Reference `spec.md` for global invariants rather than repeating it excessively.
+
+Avoid prescribing obvious implementation details. Specify outcomes and important boundaries.
+
+Keep generated or mechanical changes in the same slice when required for correctness.
+
+Completed plans represent historical commits; do not casually rewrite them. Replan future work instead.
+
+Stop once the spec and ordered plans are complete.
