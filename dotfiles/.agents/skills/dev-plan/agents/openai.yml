@@ -1,6 +1,7 @@
 interface:
   display_name: "Dev Plan"
-  short_description: "Align and verify a project before implementation"
-  default_prompt: "Use $dev-plan with the exact project or plan path supplied."
+  short_description: "Plan one bounded change into executable milestones"
+  default_prompt: "Use $dev-plan to define and plan one bounded software change."
+
 policy:
   allow_implicit_invocation: false

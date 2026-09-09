@@ -11,7 +11,7 @@ model_auto_compact_token_limit = 200000
 model_auto_compact_token_limit_scope = "total"
 
 
-# Native interactive agents only. Managed project sessions disable native spawning; dev owns their lifecycle.
+# One root agent + at most one repository explorer.
 [codex.agents]
 enabled = true
 max_concurrent_threads_per_session = 3
@@ -23,20 +23,26 @@ model_reasoning_effort = "medium"
 
 
 [profiles.plan]
-agent = "planner"
+model = "gpt-5.6-sol"
+model_reasoning_effort = "high"
 skill = "dev-plan"
 
 [profiles.project]
-agent = "orchestrator"
+model = "gpt-5.6-terra"
+model_reasoning_effort = "medium"
 skill = "dev-project"
 
 [profiles.build]
-agent = "builder"
+model = "gpt-5.6-terra"
+model_reasoning_effort = "medium"
 skill = "dev-build"
 
+
 [profiles.review]
-agent = "reviewer"
+model = "gpt-5.6-sol"
+model_reasoning_effort = "high"
 skill = "dev-review"
+
 
 [stats]
 warn_model_calls = 80

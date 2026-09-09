@@ -1,6 +1,7 @@
 interface:
   display_name: "Dev Build"
-  short_description: "Implement and diagnose one approved plan"
-  default_prompt: "Use $dev-build with the exact project or plan path supplied."
+  short_description: "Implement one approved plan and record evidence"
+  default_prompt: "Use $dev-build with an exact numbered plan path."
+
 policy:
   allow_implicit_invocation: false
