@@ -19,7 +19,7 @@ The parent may directly consume only:
 - applicable repository instructions;
 - compact explorer findings;
 - exact plan sections it is actively writing or patching;
-- narrow verification output for its own edits;
+- narrow verification output for its own edits and targeted disposable feasibility probes;
 - one cited source location when exact semantics are indispensable to a consequential decision.
 
 Existing specs, plans, build/review evidence, implementation source, callers, tests, history, and cross-file state are repository evidence. Do not bulk-read them in the parent.
@@ -81,7 +81,8 @@ If explorers are unavailable, use only narrow reads required to determine whethe
    - Partition independent repository questions and run useful explorers concurrently.
    - Discovery answers repository questions; it must not silently decide unresolved product or design questions.
    - Ask the user follow-ups whenever evidence exposes a consequential choice that was not settled during alignment.
-   - Stop when decision-relevant evidence is sufficient.
+   - Verify relevant toolchain availability, baseline checks, input suppliers, ownership, and integration points; use targeted disposable probes for consequential uncertainty, never production implementation.
+   - Stop when decision-relevant evidence is sufficient. Repository facts go to discovery; consequential behavior choices go back to the user, not to a builder.
 
 3. **Design**
    - Resolve the design from approved requirements and distilled evidence.
@@ -93,14 +94,15 @@ If explorers are unavailable, use only narrow reads required to determine whethe
 
 4. **Confirm**
    - Present the proposed contract concisely in terms of outcome, externally meaningful behavior, key design decisions, non-goals, and acceptance.
-   - Explicitly call out any remaining assumptions.
+   - Explicitly distinguish binding decisions from implementation guidance. Do not conceal an unresolved consequential decision in an assumption.
+   - Before approval, have an independent reviewer challenge design, input/ownership completeness, feasibility evidence, dependency order, and executable acceptance; resolve findings and return new consequential choices to the user.
    - Ask for correction or confirmation when the contract contains consequential choices not already explicitly approved.
    - Do not write plans until consequential decisions are resolved.
    - Confirmation is a gate, not a summary ritual.
 
 5. **Write**
    - Create or update `plans/<project>/spec.md`.
-   - Create ordered `plans/<project>/<NN>-<outcome>.md`.
+   - Create ordered `plans/<project>/<NN>-<outcome>.md` as the smallest practical verifiable outcomes, including required integration and failure-path checks rather than deferring them all to the end.
    - Write each numbered plan so a builder can execute it without recovering intent, making consequential design choices, or consulting sibling artifacts.
    - Read only exact existing sections needed for a surgical edit; do not reload whole plan sets after discovery.
    - Verify structure and changed sections without rereading unchanged artifacts.
@@ -120,7 +122,7 @@ Each numbered plan must contain:
 <only consequential constraints>
 
 ## Verified preconditions
-- <repository fact required for this plan to remain valid>
+- <fact already verified in the current repository, with evidence; not a future plan output>
 
 ## Repository handoff
 - Canonical owner: `<path>::<symbol>`
@@ -133,9 +135,11 @@ Each numbered plan must contain:
 <exact milestone-specific evidence>
 
 ## Dependencies
-<exact plan paths or None>
+<exact plan paths and the outputs this plan consumes, or None>
 ````
 
 The numbered plan is the complete build/review contract. A builder must be able to execute it without recovering intent, making consequential design decisions, consulting `spec.md` or sibling plans, or performing broad repository discovery.
 
-Report the approved outcome, consequential decisions, files written, and first plan path. Then stop.
+After writing, have the reviewer check the numbered handoffs for missing decisions or verification coverage before delivery.
+Binding outcomes, interfaces, ownership, behavior, constraints, and explicitly approved architecture require user approval to change; implementation guidance may adapt without changing them.
+Report the approved outcome, consequential decisions, files written, and first plan path. Then stop; execution requires a separate project invocation.

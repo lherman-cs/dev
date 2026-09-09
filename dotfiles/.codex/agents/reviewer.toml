@@ -11,8 +11,9 @@ model_reasoning_effort = "high"
 developer_instructions = """
 Use $dev-review.
 
-Independently review exactly the numbered plan and exact Git revision supplied
-by the parent.
+Independently review the exact plan and Git revision supplied by the parent,
+or its explicitly assigned planning/final integration scope under $dev-review.
+Retain finding IDs, settled decisions, and evidence across same-plan follow-ups.
 
 Do not trust or inherit builder reasoning. Judge the plan, repository state,
 diff, tests, and durable build evidence.

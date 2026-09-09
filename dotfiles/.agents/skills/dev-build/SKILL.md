@@ -7,7 +7,7 @@ description: Implement exactly one approved numbered plan, address current revie
 
 Implement exactly one supplied numbered plan. The plan is the contract.
 
-Do not redesign the project, continue into another plan, or broadly rediscover the repository.
+Do not change approved outcomes, interfaces, ownership, behavior, constraints, or binding architecture; nonbinding implementation guidance may adapt. Do not continue into another plan or broadly rediscover the repository.
 
 Require one exact plan path. `plans/` is Git-ignored workflow state.
 
@@ -88,9 +88,9 @@ accessibility, lifecycle guarantees, or required observability for fewer lines.
    - Do not revalidate settled facts without contradictory evidence.
    - Partition and delegate non-local repository questions before investigating them in the parent.
 
-   If a verified precondition or material assumption is false: `REQUIRES REPLANNING`.
+   Resolve false preconditions within the approved contract when possible; only a necessary binding-contract change or consequential unapproved decision requires `REQUIRES REPLANNING`.
 
-   If a matching `.review.md` targets current `HEAD` with `CHANGES REQUIRED`, treat its findings as additional acceptance obligations.
+   For the current matching `CHANGES REQUIRED` review supplied by the parent, fix unresolved findings or record concrete counterevidence by finding ID. The reviewer decides closure; findings do not silently expand the contract.
 
 2. **Implement**
    - Build the minimum complete solution. Apply the implementation discipline above to every material addition.
@@ -109,9 +109,9 @@ accessibility, lifecycle guarantees, or required observability for fewer lines.
    - Use `reproduce → hypothesis → evidence → root cause → fix`.
    - Run the smallest discriminating check first.
    - Delegate cross-file diagnosis or large output to the appropriate explorer.
-   - Stop when root cause is established.
-   - Do not repeat unchanged failures or apply speculative patches.
-   - For environment/tooling failures, use only an obvious local correction; otherwise: `BLOCKED`.
+   - Stop diagnosis when root cause is established; apply the smallest supported fix, then verify it.
+   - Do not repeat unchanged failures or apply speculative patches. If a claimed repair fails again, record what it disproved and use a discriminating check before another fix.
+   - For environment/tooling failures, attempt feasible task-scoped recovery within repository policy; use `BLOCKED` only for a concrete unavailable prerequisite, with attempted remedies.
    - Never create alternate clones/worktrees or replace authoritative generated output to bypass a blocker.
 
 4. **Verify**
@@ -148,4 +148,4 @@ Status: COMPLETED | NO CHANGE | BLOCKED | REQUIRES REPLANNING
 None.
 ```
 
-Keep it factual and compact. Report status and stop.
+Keep it factual and compact. For repairs, record each finding ID, fix or rebuttal, and verification evidence; evidence-only progress needs no empty commit. Report status and finish this assigned turn.

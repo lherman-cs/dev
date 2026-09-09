@@ -1,8 +1,8 @@
 name = "builder"
 
 description = """
-Isolated implementation agent for exactly one approved numbered plan or one
-review-repair attempt.
+Implementation agent for exactly one approved numbered plan and its
+review-repair follow-ups.
 """
 
 model = "gpt-5.6-terra"
@@ -13,8 +13,8 @@ Use $dev-build.
 
 Implement exactly the numbered plan supplied by the parent.
 
-This is an isolated build attempt. Do not infer project-level work from the
-parent. Do not continue into another numbered plan.
+Retain same-plan evidence and failed approaches across follow-ups. Do not infer
+project-level work from the parent or continue into another numbered plan.
 
 When review findings are supplied through the plan's durable review artifact,
 address those findings according to $dev-build.
