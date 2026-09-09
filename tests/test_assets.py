@@ -1,24 +1,24 @@
-"""Asset and adapter contract checks; these do not replace Rust compilation or live Codex tests."""
-import ast
+"""Lightweight repository checks, not a runtime gate or proof of agent behavior."""
 from pathlib import Path
 import re
 import tomllib
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
+SKILLS = ROOT / "dotfiles/.agents/skills"
 
 
 class Assets(unittest.TestCase):
     def test_four_skills_within_physical_line_budget(self):
         for name in ("dev-plan", "dev-build", "dev-review", "dev-project"):
-            text = (ROOT / "dotfiles/.agents/skills" / name / "SKILL.md").read_text()
+            text = (SKILLS / name / "SKILL.md").read_text()
             self.assertLessEqual(len(text.splitlines()), 100, name)
             self.assertTrue(text.startswith("---\n"), name)
             self.assertIn(f"\nname: {name}\n", text)
             self.assertRegex(text.split("---", 2)[1], r"\ndescription: .+")
 
     def test_referenced_policy_files_exist(self):
-        for file in (ROOT / "dotfiles/.agents/skills").glob("*/SKILL.md"):
+        for file in SKILLS.glob("*/SKILL.md"):
             for ref in re.findall(r"`([^`]*references/[^`]+\.md)`", file.read_text()):
                 self.assertTrue((file.parent / ref).is_file(), f"{file}: {ref}")
 
@@ -30,28 +30,25 @@ class Assets(unittest.TestCase):
             self.assertEqual(role["name"], path.stem)
             self.assertTrue(role["developer_instructions"].strip())
             if path.stem in names:
-                profile = config["profiles"][names[path.stem]]
                 for key in ("model", "model_reasoning_effort"):
-                    self.assertEqual(role[key], profile[key], f"{path}: {key}")
+                    self.assertEqual(role[key], config["profiles"][names[path.stem]][key])
 
-    def test_python_is_valid_without_external_imports(self):
-        allowed = {"__future__", "contextlib", "fcntl", "hashlib", "json", "os", "pathlib", "re", "subprocess", "sys", "tempfile", "uuid"}
-        module = ast.parse((ROOT / "scripts/workflow_gate.py").read_text())
-        for node in ast.walk(module):
-            if isinstance(node, ast.Import):
-                self.assertTrue(all(n.name in allowed for n in node.names))
-            elif isinstance(node, ast.ImportFrom):
-                self.assertIn(node.module, allowed)
-
-    def test_gate_embedded_and_no_custom_scheduler(self):
+    def test_no_custom_workflow_hook_or_runtime_gate(self):
         source = (ROOT / "src/main.rs").read_text()
-        self.assertIn('include_str!("../scripts/workflow_gate.py")', source)
-        self.assertIn('args.extend(workflow_hook_args()?)', source)
-        self.assertIn('workflow_gate("prepare")', source)
-        self.assertIn('workflow_gate("finish")', source)
-        self.assertNotIn('mod project;', source)
-        self.assertNotIn('dangerously-bypass-hook-trust', source)
+        for token in ("workflow_gate", "workflow_hook_args", "_workflow-hook", "DEV_WORKFLOW_", "mod project;"):
+            self.assertNotIn(token, source)
+        self.assertFalse((ROOT / "scripts/workflow_gate.py").exists())
         self.assertFalse((ROOT / "src/project").exists())
+
+    def test_project_prompt_is_forwarded_without_metadata_preflight(self):
+        source = (ROOT / "src/main.rs").read_text()
+        body = source.split("fn exec_codex(profile:", 1)[1].split("\nfn ", 1)[0]
+        self.assertIn('Command::new("codex")', body)
+        self.assertIn('prompt.join(" ")', body)
+        self.assertIn('Some(skill) => format!("{skill} {prompt}")', body)
+        self.assertNotIn("read_to_string", body)
+        self.assertNotIn("canonicalize", body)
+        self.assertNotIn("python", body)
 
     def test_resume_does_not_select_a_profile(self):
         source = (ROOT / "src/main.rs").read_text()
@@ -60,7 +57,13 @@ class Assets(unittest.TestCase):
         self.assertNotIn("AgentProfileName::", body)
         self.assertNotIn("agent_codex_args(", body)
         self.assertIn('command.arg("resume")', body)
-        self.assertIn('env_remove("DEV_WORKFLOW_PHASE")', body)
+
+    def test_no_obsolete_injected_protocol_in_instructions(self):
+        paths = list(SKILLS.rglob("*.md")) + list((ROOT / "dotfiles/.codex/agents").glob("*.toml"))
+        for path in paths:
+            text = path.read_text()
+            for token in ("gate-injected", "injected Attempt", "Snapshot:", "Attempt:", "exact-snapshot", "hook-observed", "`.proposal/`"):
+                self.assertNotIn(token, text, str(path))
 
     def test_justfile_keeps_install_binary_only(self):
         text = (ROOT / "justfile").read_text()

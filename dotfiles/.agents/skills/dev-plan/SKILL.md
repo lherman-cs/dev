@@ -48,14 +48,14 @@ Read `references/context.md` before investigation; its main-thread boundary and 
    - Confirmation is a gate, not a summary ritual.
 
 5. **Write**
-   - Create or update `plans/<project>/spec.md`: binding contract, explicit non-goals, confirmed decisions, and `## Acceptance` with stable `- [O1] ...` obligation IDs.
-   - Include `## Final checks` with one `- ` followed by a backtick-quoted executable command per line; define inputs and required outcomes, not merely a test wish list.
+   - Create or update `plans/<project>/spec.md`: binding contract, explicit non-goals, confirmed decisions, and acceptance. Reuse existing wording and numbering; IDs are optional.
+   - Document concrete final checks, including required manual evidence: inputs, commands/procedure, and expected outcomes. Distinguish achievable preparation work from unresolved feasibility blockers.
    - Create ordered `plans/<project>/<NN>-<outcome>.md` as the smallest practical verifiable outcomes, including required integration and failure-path checks rather than deferring them all to the end.
    - Write each numbered plan so a builder can execute it without recovering intent, making consequential design choices, or consulting sibling artifacts.
    - Read only exact existing sections needed for a surgical edit; do not reload whole plan sets after discovery.
    - Verify structure and changed sections without rereading unchanged artifacts.
 
-Each numbered plan must contain:
+Use these sections for new plans; equivalent existing sections are valid. Preserve accepted plans unchanged; missing template fields are not a reason to replan.
 
 ```markdown
 # <Milestone>
@@ -83,7 +83,7 @@ Each numbered plan must contain:
 - Completeness checks: `<scoped checks or None>`
 
 ## Acceptance
-- [O1] <owned binding obligation and exact milestone-specific verification evidence>
+- <owned binding obligation and exact milestone-specific verification evidence>
 
 ## Dependencies
 - `plans/<project>/<NN>-<prerequisite>.md` — <consumed output>; use None when empty
@@ -91,10 +91,10 @@ Each numbered plan must contain:
 
 The numbered plan is the complete build/review contract. A builder must be able to execute it without recovering intent, making consequential design decisions, consulting `spec.md` or sibling plans, or performing broad repository discovery.
 
-After normal planning, dispatch an independent reviewer with `Plan: <project-directory>` and `Mode: READINESS`; follow `../dev-project/references/handoffs.md`.
-It must inspect the actual written snapshot, challenge design and feasibility, check every obligation has an owner and executable coverage, and record `readiness.review.md`.
-Resolve every OPEN readiness finding before declaring `Status: READY`; a changed snapshot needs fresh readiness evidence. Never make production edits to obtain readiness.
-For an explicit MAINTAIN assignment, use the same design discipline on `<project>/.proposal/`, leaving live plans and accepted work unchanged.
-Copy the approved spec unchanged, map obligations/findings in `maintenance.md`, write the injected MAINTAIN handoff and finish; the parent commissions review and activates, not this worker.
+After normal planning, ask an independent reviewer to evaluate the actual written plans for READINESS; use existing readiness evidence where it still applies.
+Challenge design, feasibility, dependencies, obligation ownership, and verification coverage; record the result in `readiness.review.md` or the existing equivalent.
+Resolve consequential readiness findings before reporting READY; review material plan changes, not cosmetic edits. Do not repeat grilling or completed discovery without new evidence.
+For MAINTAIN, propose only the necessary guidance, boundary, or dependency change in a note or diff; preserve approved behavior and accepted plan text.
+Explain why and where each affected obligation, finding, and check will live. The parent obtains independent review before applying the proposal; no special directory or hash is needed.
 Binding outcomes, interfaces, ownership, behavior, constraints, and explicitly approved architecture require user approval to change; implementation guidance may adapt without changing them.
-Report the approved outcome, consequential decisions, files written, and first plan path. Then stop; execution requires a separate project invocation.
+Report `Project: <exact-project-directory>` and `Status: READY`, the approved outcome, decisions, files, and first plan path. Then stop; execution requires a separate project invocation.

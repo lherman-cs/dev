@@ -7,7 +7,7 @@ description: Implement exactly one approved numbered plan, address current revie
 Implement exactly one supplied numbered plan. The plan is the contract.
 Do not change approved outcomes, interfaces, ownership, behavior, constraints, or binding architecture; nonbinding implementation guidance may adapt. Do not continue into another plan or broadly rediscover the repository.
 Require one exact plan path. `plans/` is Git-ignored workflow state.
-For a dispatched assignment, use the injected Attempt, Snapshot, Mode, original base, and handoff path; never manufacture them.
+Use the supplied worktree, original plan baseline, current findings, and handoff path; inspect Git for missing revisions, never guess them.
 Read `references/context.md` before investigation; its main-thread boundary and explorer ownership rules apply throughout.
 
 ## Implementation discipline
@@ -78,8 +78,6 @@ Write `plans/<project>/<NN>-<outcome>.build.md`:
 # Build evidence
 Plan: <path>
 Mode: BUILD
-Attempt: <injected assignment ID>
-Snapshot: <injected plan-set hash>
 Base revision: <revision>
 Commit: <revision or none>
 Status: COMPLETED | NO CHANGE | BLOCKED | REQUIRES REPLANNING
@@ -97,4 +95,4 @@ None.
 <each OPEN ID: fix or rebuttal, discriminating check, failed approach, and remaining uncertainty>
 ```
 
-Keep it factual and compact. Read the shared `../dev-project/references/handoffs.md` identity rules for managed work; omit Attempt/Snapshot in standalone work, which is not project acceptance. For repairs, record each finding ID, fix or rebuttal, and verification evidence; evidence-only progress needs no empty commit. Report status and finish this assigned turn.
+Keep it factual and compact; the example is a guide, not a schema. Preserve existing handoff conventions when their meaning is clear. For repairs, identify each finding and its fix or rebuttal with evidence; evidence-only progress needs no empty commit. Report status and finish this assigned turn.

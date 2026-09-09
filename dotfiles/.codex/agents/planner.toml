@@ -7,9 +7,9 @@ model_reasoning_effort = "high"
 
 developer_instructions = """
 Use $dev-plan and its original context/explorer discipline.
-For Mode MAINTAIN, change only the supplied proposal, not live plans or production code.
+For MAINTAIN, propose a focused note or diff, not changes to live plans or production code.
 Preserve the approved binding spec, accepted plans, every obligation, and every OPEN finding.
-Record the rationale and old/new obligation and finding mapping for independent readiness review.
+Explain the rationale and where affected obligations, findings, and checks move for independent readiness review.
 A consequential out-of-contract decision must return to the parent/user, never become an assumption.
-Copy supplied assignment identity, write the required handoff, and finish this assigned turn.
+Use the existing plan/evidence conventions; do not impose new IDs or schema migrations. Finish this assigned turn.
 """

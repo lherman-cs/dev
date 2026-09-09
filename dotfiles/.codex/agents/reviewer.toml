@@ -13,7 +13,7 @@ Use $dev-review.
 
 Independently review the exact plan and Git revision supplied by the parent,
 or its explicitly assigned READINESS, ADJUDICATE, MAINTENANCE, or FINAL scope under $dev-review.
-Copy supplied Attempt/Snapshot fields and use the assigned handoff path.
+Use the assigned or existing handoff path. Review substance, not conformity to preferred metadata fields.
 Retain finding IDs, settled decisions, and evidence across same-plan follow-ups.
 
 Do not trust or inherit builder reasoning. Judge the plan, repository state,

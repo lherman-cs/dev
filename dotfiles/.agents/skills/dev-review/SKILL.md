@@ -8,9 +8,9 @@ Never implement fixes, alter tests, or change approved plans to make them pass.
 Nonbinding implementation guidance may adapt without changing approved commitments.
 
 ## Inputs
-Require an exact Plan path and Mode; code reviews also require the exact current Git Revision.
-Read `../dev-project/references/handoffs.md` for dispatch identity and evidence formats.
-Copy gate-injected Attempt/Snapshot; never reuse an earlier identity. Standalone review omits them and cannot certify managed acceptance.
+Identify the assigned plan/project, review purpose, and exact candidate revision for code review. Infer omitted labels from the assignment and evidence.
+Use `../dev-project/references/handoffs.md` for compact evidence examples; equivalent existing wording is valid.
+Judge the actual work, not template compliance. Missing IDs, hashes, or preferred headings are not defects; resolve material evidence gaps narrowly.
 Modes are `READINESS`, `INITIAL`, `REPAIR`, `ADJUDICATE`, `MAINTENANCE`, and `FINAL`.
 For INITIAL/REPAIR, read the exact numbered plan, matching build, prior findings, and applicable instructions.
 Do not read `spec.md`, sibling plans, unrelated history, or broad unchanged modules for a single-plan review.
@@ -60,11 +60,11 @@ For READINESS, inspect the supplied written spec and numbered plans without requ
 Challenge consequential decisions, design simplicity, ownership/input suppliers, lifecycle, failures, and compatibility.
 Check actual toolchain/baseline evidence, risk-proportional feasibility probes, and integration surfaces.
 Distinguish verified repository facts, predecessor outputs, and work the current plan must establish.
-Check a valid dependency order, one owner per binding obligation, executable checks, and self-contained builder handoffs.
+Check dependency order, clear responsibility for every obligation, concrete automated/manual verification, and self-contained builder handoffs.
 No consequential choice may be concealed in an assumption, TBD, or a builder instruction to choose behavior.
-For MAINTENANCE, inspect `.proposal/`, its rationale and old/new obligation/finding mapping, and the unchanged binding spec.
+For MAINTENANCE, inspect the proposed note/diff and rationale against the approved contract; check where affected obligations and findings move.
 Accepted plans must remain unchanged; every unfinished obligation and OPEN finding must retain an owner and verification.
-Review the exact proposed snapshot before activation; readiness acceptance is not implementation acceptance.
+Review the substantive proposal before it is applied; no hash or schema migration is required. Readiness acceptance is not implementation acceptance.
 
 ## Final integration
 For FINAL, inspect the approved project contract, accepted handoffs, and actual integrated revision.
@@ -80,8 +80,8 @@ CHANGES REQUIRED needs concrete actionable correctness/design blockers, not sugg
 BLOCKED needs an unavailable prerequisite and attempted feasible remedies; missing evidence is not acceptance.
 REQUIRES REPLANNING needs conflicting binding commitments or a consequential unapproved decision.
 Explain why no conforming local implementation resolves the conflict; wrong paths or fixable assumptions are insufficient.
-Write the injected Handoff path atomically with identity, obligation coverage, verification, and stable finding IDs.
+Write the assigned or existing handoff path with scope, revision, verdict, verification, and open findings; preserve IDs where used, otherwise use stable descriptive labels.
 Keep `## Blocking findings` for OPEN findings only and `## Resolutions` for evidenced RESOLVED/REFUTED IDs.
 Retain `## Decisions` for settled design and closure history across replacements.
-For FINAL, the Verification table must name each approved command, exact Revision, Result, and Evidence.
+For FINAL, record required check commands/procedures, revision, results, and evidence, including manual checks; tables and exact field names are optional.
 Report the verdict, evidence path, and remaining IDs; finish this turn and retain context for same-scope follow-ups.
