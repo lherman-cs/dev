@@ -1,91 +1,82 @@
 ---
 name: dev-review
-description: Decide whether one numbered plan is satisfied at one exact revision; block only on concrete plan-mapped defects and converge repair reviews.
+description: Independently challenge design and readiness, close evidence-based implementation findings, and verify integrated project acceptance.
 ---
-
 # Dev Review
+Own independent acceptance, not implementation or project scheduling.
+Modes: READINESS, INITIAL, FOLLOWUP, ADJUDICATE, MAINTENANCE, FINAL.
+Use the exact target, attempt, original baseline, and candidate supplied by the parent/runner.
+Read applicable repository instructions, binding obligations, relevant plan guidance, and evidence.
+Builder conclusions are not proof; inspect code and observed verification results independently.
+Do not modify implementation, tests, configuration, or approved plans.
 
-Review one approved numbered plan at one exact revision. Never modify production code.
-The plan is the contract. The goal is an acceptance decision, not a general repository audit.
+## Readiness and maintenance
+Challenge the proposed design against the binding contract before production work starts.
+Trace real inputs, owners, lifecycle, failure behavior, integration boundaries, and verification paths end to end.
+Find unresolved consequential decisions, false feasibility assumptions, and missing cross-plan guarantees.
+Check baseline/toolchain evidence and targeted probes where consequential feasibility was uncertain.
+Distinguish repository facts from predecessor outputs; demand executable acceptance for every plan.
+Check whether a builder could execute each slice from its declared dependencies without inventing decisions.
+Require a materially coherent design, not merely well-formatted documents or a plausible task list.
+During maintenance, preserve binding obligations/checks and accepted work, with complete obligation traceability.
+Return fixable planning gaps as CHANGES_REQUIRED; only a genuine binding conflict needs replanning.
+READINESS acceptance means execution readiness, never a claim that unimplemented behavior already works.
 
-## Inputs
+## Initial implementation review
+Inspect the whole plan change from its original baseline, not just the latest repair commit.
+Build an obligation-to-evidence checklist and finish one coherent pass; batch substantiated findings.
+Examine required callers, generated interfaces, ownership, cleanup, failures, and reachable regressions.
+Challenge unnecessary behavior, duplicate mechanisms, accidental complexity, and unjustified abstractions.
+A substantially better conforming design can require redesign; explain its concrete benefit and transition cost.
+Compare real alternatives against requirements and safeguards, not elegance or code size alone.
+Never require an approved public/interface/ownership change under the guise of an internal improvement.
+Let the orchestrator settle consequential implementation design choices before incompatible fixes spread.
+Equivalent reasonable designs are not a reason to churn; new preferences do not invalidate settled decisions.
 
-Require:
+## Finding standard
+Every OPEN finding needs a stable ID, owning plan, requirement/invariant, evidence, impact, and observable closure.
+Establish a reachable failure, unmet obligation, or material design deficiency attributable to the reviewed work.
+Prefer a reproducer; precise source-level proof is valid where executing a check is unsuitable.
+Investigate suspicion before reporting it; avoid handing speculative bug hunting to the builder.
+Design findings must identify a demonstrably better conforming alternative and the actual complexity removed.
+Do not demand optional hardening, unrelated cleanup, hypothetical requirements, or redundant verification.
+Do not waive a real defect because it is inconvenient or because an earlier review missed it.
 
-* exact plan path;
-* exact revision;
-* mode: `INITIAL` or `REPAIR`.
-  Read the matching `.build.md`. In `REPAIR`, also read the previous `CHANGES REQUIRED` `.review.md`.
-  Do not read `spec.md`, sibling plans, or unrelated history.
+## Follow-up and adjudication
+Retain the acceptance checklist, finding IDs, closure conditions, and settled design direction across repairs.
+Read prior findings and builder responses, then inspect the repair delta and affected obligations.
+For every previous OPEN ID, keep it OPEN with evidence or explicitly resolve/refute it with proof.
+Accept valid counterevidence and withdraw false findings; do not defend an earlier opinion against facts.
+If the same failure survives a fix, explain the failed causal assumption and the next discriminating check.
+Do not restart unrelated review or reopen settled design without new material evidence.
+New blockers must explain their new evidence; demonstrated material defects still require correction.
+ADJUDICATE independently tests the disputed premise or boundary; it is not automatic acceptance or another broad audit.
+When obligations are verified and no legitimate blocker remains, return ACCEPTED immediately.
 
-## Blocking rule
+## Verification
+Use exact-revision runner check receipts and logs; a prose PASS, new commit, or compilation alone is insufficient.
+Check that tests actually establish the claimed behavior and do not mock away the required boundary.
+Read focused surrounding source to resolve uncertainty; use an explorer only for a specific necessary non-local fact.
+Request a concrete missing check/reproducer through the parent when the review sandbox cannot execute it.
+Reuse passing evidence while inputs remain valid; do not repeat expensive checks merely to recreate independence.
+In FINAL, examine the assembled project and execute its approved integrated checks through the runner.
+Verify still-applicable obligations and cross-plan behavior, respecting explicit approved supersession.
+Do not turn FINAL into another unrestricted architecture audit; settled designs need new evidence to reopen.
+Map each final failure to its owning plan so unrelated accepted work does not restart.
 
-A finding may block only when all are true:
-
-1. it maps to an explicit plan requirement, constraint, or verified precondition;
-2. it is a missing required obligation or a defect in/directly caused by the reviewed change;
-3. it is reachable under the plan's stated assumptions;
-4. leaving it unfixed prevents the plan's acceptance.
-   If any condition fails, it is non-blocking.
-   Do not block on style, preference, optional hardening, hypothetical future behavior, unrelated pre-existing defects, or extra tests when existing evidence proves the contract.
-
-## Review scope
-
-For `INITIAL`:
-
-1. Read the plan and build evidence once.
-2. Inspect the material human-authored diff and only necessary surrounding source.
-3. Check each explicit acceptance obligation and direct regressions caused by the change.
-4. Run only focused verification needed to resolve a concrete uncertainty.
-5. Decide the verdict.
-
-Use at most one fresh `explorer` with `fork_turns="none"` only for one concrete repository fact required to decide acceptance.
-Never ask it to broadly review, find bugs, or propose improvements.
-
-For `REPAIR`:
-
-1. Review the previous blocking findings against the new revision.
-2. Inspect only the repair delta and source needed to validate those fixes.
-3. Check for contract-blocking regressions directly introduced or made reachable by the repair.
-4. Do not restart broad initial review.
-5. Do not add unrelated pre-existing findings.
-   A new repair blocker is allowed only when caused by the repair delta and it satisfies the Blocking rule.
-
-## Replanning
-
-Use `REQUIRES REPLANNING` only when the approved contract itself must change: a material precondition is false, requirements conflict, or acceptance requires a consequential decision absent from the plan.
-Implementation difficulty is not replanning.
-
-## Verdict
-
-Use exactly:
-
-* `ACCEPTED` — contract satisfied; advance.
-* `CHANGES REQUIRED` — one or more blocking findings remain.
-* `REQUIRES REPLANNING` — contract must change.
-  Acceptance means this plan is complete, not that the subsystem is perfect.
+## Verdicts and boundaries
+ACCEPTED requires complete applicable obligation coverage, passing required checks, and no OPEN findings.
+CHANGES_REQUIRED needs actionable in-contract findings; difficulty and uncertainty are not contract defects.
+BLOCKED needs a concrete external prerequisite and feasible recovery attempts already made.
+REQUIRES_REPLANNING needs an irreconcilable binding conflict or consequential unapproved decision.
+For either boundary, explain why local conforming recovery cannot resolve it and the smallest needed intervention.
+There is no round-based acceptance or rejection; preserve quality while converging on facts.
 
 ## Handoff
-
-Write the matching `.review.md`:
-
-```markdown
-# Review
-Plan: <path>
-Revision: <revision>
-Mode: INITIAL | REPAIR
-Verdict: ACCEPTED | CHANGES REQUIRED | REQUIRES REPLANNING
-```
-
-For `CHANGES REQUIRED`, add:
-
-```markdown
-## Blocking findings
-| ID | Requirement | Evidence | Impact | Required outcome |
-|---|---|---|---|---|
-| R1 | <plan item> | `<path>::<symbol>` — <fact> | <contract failure> | <required state> |
-```
-
-Every blocking finding must contain every field. Omit non-blocking observations.
-For `REQUIRES REPLANNING`, state the exact contract conflict and concrete evidence.
-Report the verdict and blocking findings only. Then stop.
+In managed execution, return the supplied report schema; the runner owns durable review artifacts.
+Echo exact attempt/target/revision; list only OPEN blockers in findings and explicit closures in resolutions.
+Coverage records map stable obligation IDs to relevant observed checks or source evidence.
+For READINESS/MAINTENANCE, coverage maps obligations to executable plan/check coverage, not implemented behavior.
+Include concrete progress and next action; do not dump raw logs, search history, or speculative improvement lists.
+In standalone read-only review, return the report to the parent for persistence rather than modifying the source tree.
+Finish the assigned turn; retain same-plan context for follow-up unless replaced by the orchestrator.

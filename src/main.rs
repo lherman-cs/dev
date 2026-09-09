@@ -1,3 +1,6 @@
+mod agent_roles;
+mod project;
+
 use anyhow::{Context, Result, anyhow, bail};
 use clap::{Parser, Subcommand, ValueEnum};
 use regex::Regex;
@@ -200,8 +203,20 @@ enum AgentAction {
 
     #[command(alias = "pr")]
     Project {
-        /// Optional initial Codex prompt
+        /// Exact project directory (an existing prompt containing that path also works)
         prompt: Vec<String>,
+        /// Run independent readiness validation without starting implementation
+        #[arg(long, conflicts_with = "status")]
+        check: bool,
+        /// Print authoritative state without launching agents
+        #[arg(long, conflicts_with_all = ["check", "approve"])]
+        status: bool,
+        /// Explicitly approve the exact displayed package digest (non-interactive use)
+        #[arg(long)]
+        approve: Option<String>,
+        /// Optional per-invocation agent-turn budget; exhaustion pauses, never rejects a plan
+        #[arg(long)]
+        max_turns: Option<u64>,
     },
 
     /// Start a fresh Terra/medium build session
@@ -284,8 +299,10 @@ struct AgentConfig {
 
 #[derive(Debug, Deserialize)]
 struct AgentProfileConfig {
-    model: String,
-    model_reasoning_effort: String,
+    model: Option<String>,
+    model_reasoning_effort: Option<String>,
+    agent: Option<String>,
+    skill: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -2128,13 +2145,27 @@ fn agent_codex_args(config: &AgentConfig, profile: AgentProfileName) -> Result<V
     let mut args = agent_codex_overlay_args(config)?;
 
     let profile = agent_profile(config, profile)?;
-    args.push("-c".to_string());
-    args.push(format!("model={:?}", profile.model));
-    args.push("-c".to_string());
-    args.push(format!(
-        "model_reasoning_effort={:?}",
-        profile.model_reasoning_effort
-    ));
+    let role = profile
+        .agent
+        .as_deref()
+        .map(agent_roles::load)
+        .transpose()?;
+    let model = profile
+        .model
+        .as_deref()
+        .or_else(|| role.as_ref().map(|r| r.model.as_str()))
+        .context("profile needs a model or a configured agent role")?;
+    let effort = profile
+        .model_reasoning_effort
+        .as_deref()
+        .or_else(|| role.as_ref().map(|r| r.model_reasoning_effort.as_str()))
+        .context("profile needs reasoning effort or a configured agent role")?;
+    args.extend([
+        "-c".into(),
+        format!("model={model:?}"),
+        "-c".into(),
+        format!("model_reasoning_effort={effort:?}"),
+    ]);
 
     Ok(args)
 }
@@ -2143,20 +2174,22 @@ fn exec_codex(profile: AgentProfileName, prompt: Vec<String>) -> Result<()> {
     let config = load_agent_config()?;
     let args = agent_codex_args(&config, profile)?;
 
+    // A prompted planning session returns to the host for independent readiness;
+    // other interactive launches retain the existing exec/resume behavior.
+    let planning = matches!(profile, AgentProfileName::Plan) && !prompt.is_empty();
+    let before = if planning {
+        project::planning_snapshot()?
+    } else {
+        Default::default()
+    };
     let mut command = Command::new("codex");
     command.args(&args);
     if !prompt.is_empty() {
-        let skill = match profile {
-            AgentProfileName::Plan => Some("$dev-plan"),
-            AgentProfileName::Project => Some("$dev-project"),
-            AgentProfileName::Build => Some("$dev-build"),
-            AgentProfileName::Review => Some("$dev-review"),
-            _ => None,
-        };
+        let skill = agent_profile(&config, profile)?.skill.as_deref();
         let prompt = prompt.join(" ");
 
         command.arg(match skill {
-            Some(skill) => format!("{skill} {prompt}"),
+            Some(skill) => format!("${} {prompt}", skill.trim_start_matches('$')),
             None => prompt,
         });
     }
@@ -2165,6 +2198,16 @@ fn exec_codex(profile: AgentProfileName, prompt: Vec<String>) -> Result<()> {
         "Starting fresh Codex session with '{}' profile",
         profile.as_str()
     );
+
+    if planning {
+        let status = command
+            .status()
+            .context("Failed to launch planning session")?;
+        if !status.success() {
+            bail!("planning session exited with {status}; no readiness claim was issued");
+        }
+        return project::finish_planning(before);
+    }
 
     #[cfg(unix)]
     {
@@ -2212,7 +2255,25 @@ fn cmd_agent(action: Option<AgentAction>) -> Result<()> {
     match action {
         None => exec_codex(AgentProfileName::Default, Vec::new()),
         Some(AgentAction::Plan { prompt }) => exec_codex(AgentProfileName::Plan, prompt),
-        Some(AgentAction::Project { prompt }) => exec_codex(AgentProfileName::Project, prompt),
+        Some(AgentAction::Project {
+            prompt,
+            check,
+            status,
+            approve,
+            max_turns,
+        }) => {
+            if prompt.is_empty() && !check && !status && approve.is_none() && max_turns.is_none() {
+                exec_codex(AgentProfileName::Project, prompt)
+            } else {
+                project::run(project::Options {
+                    prompt,
+                    check,
+                    status,
+                    approve,
+                    max_turns,
+                })
+            }
+        }
         Some(AgentAction::Build { prompt }) => exec_codex(AgentProfileName::Build, prompt),
         Some(AgentAction::Review { prompt }) => exec_codex(AgentProfileName::Review, prompt),
         Some(AgentAction::Resume) => exec_codex_resume(),
