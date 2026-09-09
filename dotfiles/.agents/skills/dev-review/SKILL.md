@@ -19,15 +19,18 @@ Do not modify code unless explicitly asked.
 
 ## Exploration
 
-Use explorers when additional repository context is needed.
+Use `spawn_agent` with an `explorer` agent when additional repository context is needed for review.
 
-* `fork_turn = false` / no fork.
-* Multiple explorers are allowed.
-* Give each explorer one narrow review question.
-* Prefer parallel explorers for independent concerns.
-* Require compact conclusions, evidence, and exact paths/symbols.
-* Do not dump broad repository context.
-* Do not repeat already-established exploration.
+* Spawn every explorer with `fork_turns = "none"`; never rely on inherited parent context.
+* Give each explorer exactly one self-contained, narrowly scoped review question.
+* Include only the context required to answer that question in the spawn prompt.
+* Multiple explorers may run when useful.
+* Spawn independent review questions in parallel.
+* Reuse an existing explorer for closely related follow-up work when practical.
+* Require compact output: conclusion, supporting evidence, and exact paths/symbols.
+* Do not ask explorers to broadly inspect or rediscover the repository.
+* Do not repeat exploration already established by the parent or another explorer.
+* Keep repository discovery out of the parent context except for compact returned findings.
 
 ## Review
 

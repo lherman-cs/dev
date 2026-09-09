@@ -23,14 +23,16 @@ Do not continue into another numbered plan.
 
 Read the supplied plan, relevant `spec.md`, and applicable repository instructions.
 
-Use explorers only when repository discovery is required.
+Use `spawn_agent` for repository discovery when additional context is required.
 
-* `fork_turn = false` / no fork.
-* Multiple explorers are allowed.
-* Give each explorer one narrowly scoped question.
-* Prefer parallel explorers for independent questions.
-* Require compact conclusions with paths/symbols and evidence.
-* Do not broadly rediscover the repository.
+* Spawn an `explorer` with `fork_turns = "none"`; never rely on the default.
+* Give each explorer one self-contained, narrowly scoped repository question.
+* Include all context needed to answer that question in the spawn prompt.
+* Spawn independent explorers in parallel when useful.
+* Reuse an existing explorer for closely related follow-up work when practical.
+* Require compact output: conclusion, evidence, and relevant paths/symbols.
+* Do not ask explorers to broadly inspect or rediscover the repository.
+* Keep exploration out of the parent context except for the compact returned findings.
 
 Preserve the existing design unless the plan requires changing it.
 

@@ -31,15 +31,18 @@ Use concise pseudocode when it materially clarifies behavior, ownership, state t
 
 ## Exploration
 
-Use explorers for repository discovery and evidence gathering.
+Use `spawn_agent` with an `explorer` agent for repository discovery and evidence gathering.
 
-* `fork_turn = false` / no fork.
+* Spawn every explorer with `fork_turns = "none"`; never rely on inherited parent context.
+* Give each explorer exactly one self-contained, narrowly scoped question or decision to investigate.
+* Include only the context required to answer that question in the spawn prompt.
 * Multiple explorers may run when useful.
-* Give each explorer exactly one narrow question or decision to investigate.
-* Prefer parallel explorers for independent questions.
-* Require compact conclusions, relevant paths/symbols, evidence, and uncertainty.
-* Do not dump broad repository context into the parent.
-* Do not rediscover facts already established.
+* Spawn independent explorer questions in parallel.
+* Reuse an existing explorer for a closely related follow-up when practical.
+* Require compact output: conclusion, evidence, relevant paths/symbols, and material uncertainty.
+* Do not ask explorers to broadly inspect or rediscover the repository.
+* Do not rediscover facts already established in the parent or prior explorer findings.
+* Keep repository discovery out of the parent context except for compact returned findings.
 
 ## Specification
 
