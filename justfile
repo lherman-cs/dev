@@ -14,7 +14,10 @@ test:
 build:
     cargo build --locked
 
-verify: check test
+workflow-test:
+    python3 -m unittest discover -s tests -p 'test_*.py'
+
+verify: workflow-test check test
 
 install:
     cargo install --path . --locked

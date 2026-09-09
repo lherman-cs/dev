@@ -4,66 +4,14 @@ description: Implement exactly one approved numbered plan, address current revie
 ---
 
 # Dev Build
-
 Implement exactly one supplied numbered plan. The plan is the contract.
-
 Do not change approved outcomes, interfaces, ownership, behavior, constraints, or binding architecture; nonbinding implementation guidance may adapt. Do not continue into another plan or broadly rediscover the repository.
-
 Require one exact plan path. `plans/` is Git-ignored workflow state.
-
-## Main-thread boundary
-
-Preserve the parent for understanding the contract, implementation decisions, source editing, focused verification, and final handoff. Keep repository orientation and tracing out of its context.
-
-The parent may directly consume only:
-
-- the exact numbered plan and applicable repository instructions;
-- current review findings when present;
-- compact explorer findings;
-- exact source regions it must modify;
-- focused verification results;
-- human-authored diff hunks needed to validate its changes.
-
-Do not make the parent reconstruct architecture, caller graphs, patterns, lifecycle paths, or test surfaces from raw repository reads.
-
-After reading the exact plan, identify independent evidence questions from its handoff and delegate them before broad repository orientation.
-
-## Explorers
-
-Use `explorer` as the repository context owner for implementation support.
-
-Spawn with `agent_type="explorer"` and `fork_turns="none"`.
-
-Use the smallest useful fan-out:
-
-- one explorer for one cohesive implementation surface;
-- two or three in parallel when the plan crosses independent owners/subsystems that can be investigated without substantial overlap.
-
-Partition by coherent ownership boundary, not by "implementation", "callers", and "tests" for the same subsystem.
-
-Explorer questions may cover:
-
-- exact edit surfaces and surrounding invariants;
-- canonical implementation patterns;
-- callers/consumers that must move with the change;
-- lifecycle, failure, cleanup, and concurrency paths;
-- relevant tests, fixtures, and verification commands;
-- contradictions between the plan and current tree.
-
-Require each explorer to return compact factual conclusions with `path::symbol` evidence, important relationships, and material uncertainty.
-
-Explorers report directly to the parent. Do not add a synthesis agent. Do not ask them to choose product behavior, architecture, or implementation strategy.
-
-The parent implements. Do not duplicate explorer tracing in the parent; read only returned source regions required to edit or verify behavior.
-
-For debugging, keep the hypothesis and fix decision in the parent. Continue an existing explorer for same-scope tracing; use a separate explorer for an independent failure surface.
-
-If explorers are unavailable, use only narrow direct reads required to continue. Broad parent-side discovery is not an allowed fallback.
+For a dispatched assignment, use the injected Attempt, Snapshot, Mode, original base, and handoff path; never manufacture them.
+Read `references/context.md` before investigation; its main-thread boundary and explorer ownership rules apply throughout.
 
 ## Implementation discipline
-
 For every change, stop at the first solution that fully satisfies the plan:
-
 1. Do not build behavior the plan does not require.
 2. Reuse an existing repository mechanism, helper, or pattern when it already fits.
 3. Prefer the standard library.
@@ -71,15 +19,12 @@ For every change, stop at the first solution that fully satisfies the plan:
 5. Prefer an already-installed dependency over adding one.
 6. Prefer the simplest direct expression when it remains clear.
 7. Only then write the minimum new code necessary.
-
 Understand the actual code path and invariants before choosing the solution.
 Minimize the solution, not the investigation required to make it correct.
-
 Do not trade away correctness, validation, error handling, security,
 accessibility, lifecycle guarantees, or required observability for fewer lines.
 
 ## Workflow
-
 1. **Establish**
    - Read the exact plan and applicable repository instructions once.
    - Inspect version-control state.
@@ -87,9 +32,7 @@ accessibility, lifecycle guarantees, or required observability for fewer lines.
    - Do not reread `spec.md`, sibling plans, or dependency plans.
    - Do not revalidate settled facts without contradictory evidence.
    - Partition and delegate non-local repository questions before investigating them in the parent.
-
    Resolve false preconditions within the approved contract when possible; only a necessary binding-contract change or consequential unapproved decision requires `REQUIRES REPLANNING`.
-
    For the current matching `CHANGES REQUIRED` review supplied by the parent, fix unresolved findings or record concrete counterevidence by finding ID. The reviewer decides closure; findings do not silently expand the contract.
 
 2. **Implement**
@@ -117,7 +60,7 @@ accessibility, lifecycle guarantees, or required observability for fewer lines.
 4. **Verify**
    - Review the final diff for unnecessary new code, abstractions, dependencies, configuration, and duplicated existing capability.
    - Prefer focused, quiet checks while iterating.
-   - Run required final acceptance/completeness checks once on the final tree.
+   - Run required final acceptance/completeness checks on the final tree; report commands, outcomes, and actual evidence. Never weaken tests to obtain acceptance.
    - Delegate noisy failure-output analysis and non-local completeness tracing to explorers.
    - Inspect human-authored changed hunks directly; delegate large/generated diff completeness checks when they would add bulk context without improving parent judgment.
    - Run `git diff --check` or equivalent.
@@ -134,6 +77,9 @@ Write `plans/<project>/<NN>-<outcome>.build.md`:
 ```markdown
 # Build evidence
 Plan: <path>
+Mode: BUILD
+Attempt: <injected assignment ID>
+Snapshot: <injected plan-set hash>
 Base revision: <revision>
 Commit: <revision or none>
 Status: COMPLETED | NO CHANGE | BLOCKED | REQUIRES REPLANNING
@@ -146,6 +92,9 @@ Status: COMPLETED | NO CHANGE | BLOCKED | REQUIRES REPLANNING
 
 ## Deviations
 None.
+
+## Repair evidence
+<each OPEN ID: fix or rebuttal, discriminating check, failed approach, and remaining uncertainty>
 ```
 
-Keep it factual and compact. For repairs, record each finding ID, fix or rebuttal, and verification evidence; evidence-only progress needs no empty commit. Report status and finish this assigned turn.
+Keep it factual and compact. Read the shared `../dev-project/references/handoffs.md` identity rules for managed work; omit Attempt/Snapshot in standalone work, which is not project acceptance. For repairs, record each finding ID, fix or rebuttal, and verification evidence; evidence-only progress needs no empty commit. Report status and finish this assigned turn.

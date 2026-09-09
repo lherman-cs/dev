@@ -1,112 +1,88 @@
 ---
 name: dev-project
-description: Drive one approved multi-plan project through evidence-based build/review and recovery, advancing immediately after each accepted plan.
+description: Execute one approved project with native agents, evidence-driven technical recovery, stable decisions, and independently verified final integration.
 ---
-
 # Dev Project
-
-Drive one approved project directory under `plans/` to completion. Numbered plans carry the approved contract; nonbinding execution guidance may adapt.
+Drive one exact approved directory under `plans/` to completion; do not stop after one plan or child.
+Numbered plans carry the binding contract; nonbinding execution guidance may adapt.
+Read `references/handoffs.md` before dispatching work. Native hooks validate supported transitions and handoffs.
+Do not call the hook validator yourself, edit its `.workflow.json` journal, or substitute prose for accepted evidence.
 
 ## Role
+Own dependency order, worker sequencing, exact revisions, progress, and technical recovery.
+Do not implement production code or self-approve a technical resolution.
+Use scoped explorers for repository context and narrow direct inspection when essential to a recovery/design decision.
+Challenge unsupported findings, compare conforming approaches, and commission independent adjudication where needed.
+Never change approved outcomes, interfaces, ownership, behavior, constraints, or binding architecture without user approval.
 
-Own dependency order, child sequencing, exact revisions, handoffs, retries, and advancement.
-Do not implement production code or self-approve it. Use compact explorer evidence and narrow source inspection when necessary to settle a technical question or choose a recovery strategy; do not broadly rediscover the repository.
-Create an independent `builder`/`reviewer` pair per plan with `fork_turns="none"`; continue them for same-plan repairs using the runtime's supported continuation tool. Replace unavailable or stuck workers from durable handoffs, preserving failed approaches and settled decisions.
-Run one build/review turn at a time; retire the pair after acceptance. Keep repository investigation in scoped explorers within available agent capacity.
+## State and workers
+Reconstruct on start/resume from exact plans, hook-observed assignments, handoffs, and necessary Git metadata.
+During normal execution, update only the active plan; do not repeatedly audit historical commits or bulk-read the repository.
+Keep `project.progress.md` compact: accepted work, original bases, worker IDs, OPEN findings, settled decisions, failed approaches, next action.
+The hook journal owns mechanical identities; progress notes own engineering context, not acceptance certificates.
+Choose the lowest-numbered ready incomplete plan; ready means all declared dependencies are accepted.
+Execute one numbered plan at a time, with one build/review turn active in the designated worktree.
+Start one independent builder/reviewer pair per plan with no inherited conversation (`fork_turns="none"` when exposed).
+Reuse that pair across repairs using the runtime's actual turn-starting continuation tool; plain send_message is not continuation.
+Replace unavailable, context-degraded, or entrenched workers with settled decisions, findings, and failed approaches preserved.
+Do not reuse a worker across numbered plans. Retire the pair after acceptance.
+Use the smallest useful explorer fan-out within actual capacity; release explorers instead of evicting useful same-plan workers.
+A wait timeout is not failure; never launch a duplicate while the original attempt is live.
 
-## State
+## Dispatch
+Use native spawn/continuation tools and their exposed schemas; retain configured models and effort.
+Each assignment message starts with exact `Plan: <path>` and `Mode: <mode>` headers.
+Code-review assignments also include `Revision: <full current revision>`; pass artifact paths, not rewritten findings.
+Use BUILD for the builder, INITIAL for first review, and REPAIR for follow-ups including evidence-only repairs.
+The hook injects Attempt, Snapshot, original base, assignment base, and Handoff path; workers must copy the identity fields.
+Inspect the observed task identity when continuing a worker; do not guess aliases or hashes.
+Repair handoffs with the same worker when only fields are missing; do not repeat completed engineering work.
 
-At start or session resume:
+## Main loop
+- No successful current build: run builder with `$dev-build` for exactly the selected plan.
+- Successful build without current review: run reviewer with `$dev-review` before another build.
+- COMPLETED/NO CHANGE: use exact Commit, or Base revision when no commit exists, and review that candidate.
+- ACCEPTED: retain the accepted revision and immediately select the next ready plan.
+- CHANGES REQUIRED: give every OPEN finding to the same builder, then return to the same reviewer.
+- BLOCKED/REQUIRES REPLANNING: examine the boundary claim and choose recovery; never merely forward a stop verdict.
+The current assignment matters even when the revision is unchanged; an old review cannot certify new evidence.
+Earlier acceptance need not equal HEAD; reopen only for concrete evidence of a broken applicable obligation.
 
-1. enumerate numbered plans, excluding `spec.md`, `*.build.md`, and `*.review.md`;
-2. read declared dependencies and validate the graph;
-3. reconstruct state from matching handoffs and exact revisions.
-   Prefer the lowest-numbered ready incomplete plan. Ready means every dependency is accepted.
-   After startup, update only the current plan; do not repeatedly rescan the project or historical Git state.
+## Convergence and quality
+There is no repair-round cutoff and no budget-based acceptance. Continue actionable conforming work.
+Progress is an obligation verified, a finding resolved/refuted, or a causal uncertainty removed with evidence.
+If a claimed repair leaves the same failure, require reproduction, a discriminating check, and a changed causal explanation before another patch.
+Distinguish a bad finding, missing verification, ineffective fix, unsuitable design, unavailable prerequisite, or degraded context.
+Choose a specific next action: focused diagnosis, explorer investigation, counterexample, conforming redesign, or worker replacement.
+For an unresolved evidence dispute, use an independent reviewer in ADJUDICATE mode; do not add adjudication routinely.
+Prefer demonstrated design improvements, not endless alternative abstractions; preserve settled directions unless new material evidence changes them.
+The reviewer may demand a materially better conforming design and may withdraw a disproven finding; neither response changes the contract.
+Retry an obvious transient runtime failure once; preserve recoverable state if service remains unavailable.
+Actual interruption permits recovery; an unchanged failed approach or another commit is not a recovery strategy.
 
-States:
+## Contract-preserving maintenance
+Commission a planner with Mode MAINTAIN when guidance, plan boundaries, or dependency order needs correction.
+It writes `.proposal/` with the identical approved spec, proposed numbered plans, and `maintenance.md` mapping old/new obligations and OPEN findings.
+Keep live plans and accepted work unchanged while a fresh reviewer evaluates Mode MAINTENANCE.
+Only after exact-snapshot acceptance, apply exactly the reviewed numbered documents and remove only superseded unfinished plans.
+The next transition validates activation; incomplete application must be completed to the accepted snapshot, not treated as a new contract.
+Do not discard pending findings or verification; pass their original artifacts and new owners to replacement workers.
+A binding change requires the smallest necessary user decision, updated planning/readiness, and a new explicit execution invocation.
 
-* `BUILD` — no successful current build.
-* `REVIEW` — latest build is `COMPLETED` or `NO CHANGE` without a matching review.
-* `REPAIR` — matching review says `CHANGES REQUIRED`.
-* `ACCEPTED` — matching review of the latest build revision says `ACCEPTED`.
-  A review applies only to its exact revision. Later `HEAD` movement alone never reopens accepted work; concrete evidence of a broken applicable obligation can.
-Preserve the original plan baseline and prior review before each repair; advance from fresh handoffs, not stale artifacts or remembered hashes. Evidence-only repairs at the same revision still need review.
+## Legitimate stops
+Independently validate a proposed technical stop with ADJUDICATE review; fixable work returns to the builder.
+BLOCKED requires a genuinely unavailable prerequisite, attempted feasible remedies, and a concrete next action.
+REQUIRES REPLANNING requires a binding conflict or consequential decision that no conforming implementation resolves.
+Wrong symbols, ordinary engineering choices, fixable assumptions, and elapsed review rounds are not replanning.
+For runtime interruption/service failure or a user-imposed budget, use PAUSED with Reason and Next action; never claim technical impossibility.
 
-## Build
-
-For `BUILD`, create the plan's builder using the initial-spawn example below; for `REPAIR`, continue that same builder with the current review path instead of spawning again:
-
-```text
-spawn_agent(task_name="<plan>-build-<n>", agent_type="builder", fork_turns="none",
-message="Use $dev-build. Plan: <exact-plan-path>. Execute exactly this plan.
-If its current review says CHANGES REQUIRED, address its blocking findings without expanding scope.
-Write the authoritative build handoff and stop.")
-```
-
-Wait for completion and read `.build.md`.
-
-* `COMPLETED` / `NO CHANGE` -> use `Commit`, or `Base revision` when no commit exists, then `REVIEW`.
-* `BLOCKED` / `REQUIRES REPLANNING` -> validate the reason and choose recovery under Convergence; do not automatically terminate.
-
-## Review
-
-Create the plan's independent reviewer against the exact build revision; continue it for subsequent reviews, supplying the original baseline and current findings:
-
-```text
-spawn_agent(task_name="<plan>-review-<n>", agent_type="reviewer", fork_turns="none",
-message="Use $dev-review. Plan: <exact-plan-path>. Revision: <exact-revision>.
-Mode: <INITIAL for first review; REPAIR for follow-ups, including evidence-only repairs>.
-Write the authoritative review handoff and stop.")
-```
-
-Wait for completion and read `.review.md`. Require exact plan, revision, mode, and recognized verdict.
-
-* `ACCEPTED` -> record revision and immediately advance to the next ready plan.
-* `CHANGES REQUIRED` -> `REPAIR`.
-* `BLOCKED` / `REQUIRES REPLANNING` -> validate the boundary claim under Convergence.
-Do not rewrite findings into new requirements; resolve disputed facts or design directions with evidence and independent review.
-
-## Convergence
-
-There is no repair-round cutoff. Continue actionable in-contract repairs without lowering acceptance or repeating an unchanged failed approach.
-If a claimed repair leaves the same failure, require reproduction, a discriminating check, and a changed evidence-backed approach before another patch. Progress is a verified obligation, resolved finding, or causal uncertainty removed, not another commit.
-For disputed findings or stalled diagnosis, commission a focused independent review; replace a stuck worker with failed approaches preserved. Do not make every normal review an adjudication.
-Resolve implementation choices within the contract. Preserve settled design unless new material evidence justifies reopening it.
-Maintain nonbinding guidance, plan boundaries, or dependency order only with independent readiness review and preservation of every obligation and accepted result; never silently change binding commitments.
-Validate a proposed technical stop independently: fixable defects return to the builder; unavailable prerequisites need attempted feasible remedies; binding conflicts need the smallest necessary user decision.
-Retry an obvious transient launch/runtime failure once; preserve evidence if service remains unavailable. Runtime failure is not a plan defect.
-Do not spawn a duplicate while a child is live; a wait timeout alone is not a failed attempt.
-
-## Integrity
-
-Never guess revisions. Use exact revisions from authoritative handoffs or Git.
-A `CHANGES REQUIRED` review is valid only with at least one blocking finding containing Requirement, Evidence, Impact, and Required outcome.
-Have the same child correct a malformed handoff without repeating completed work; do not route invalid findings to a builder.
-Resolve missing or cyclic execution dependencies with independently checked contract-preserving maintenance; escalate only if binding commitments must change.
-
-## Completion
-
-Continue until terminal; never return merely because one child finished.
-After all plans pass, request a fresh reviewer for final integration against the approved project contract at exact current HEAD. Require the documented project checks and `<project>/project.review.md`; this is not a fresh architecture audit.
-Route concrete final failures to their owning plans at current HEAD; supply the final-review path and owning finding IDs for their repair/review, then repeat affected integration checks with the same final reviewer. Report completion only after final acceptance at the resulting revision.
-Success:
-
-```text
-Project: <path>
-Status: COMPLETED
-Final revision: <revision>
-Accepted: <plan/revision list>
-```
-
-Stop:
-
-```text
-Project: <path>
-Status: BLOCKED | REQUIRES REPLANNING
-Plan: <current-plan>
-Revision: <revision-if-applicable>
-Reason: <compact-authoritative-reason>
-```
-
-Then stop.
+## Finish line
+After all active plans pass, create a fresh reviewer with Mode FINAL, the project path, and exact current HEAD.
+Use the approved final commands and `<project>/project.review.md`, not a new architecture audit.
+Map failures to the smallest responsible plan; preserve unrelated accepted work and pass the final finding IDs into repairs.
+Review those repairs and continue the same FINAL worker against the integrated candidate; retain all unresolved final findings.
+Completion requires all plans accepted, exact-snapshot FINAL acceptance at current HEAD, and every required final check recorded as passing.
+The hook checks identity/coverage/receipts, not truth or test adequacy; independent verification remains mandatory.
+On success report Project, `Status: COMPLETED`, exact Final revision, final evidence path, and accepted plan/revision list.
+On a technical stop report Project, Status, Plan, Revision or unavailable, Reason, and Next action from validated evidence.
+Do not return merely because a child finished; execute the next transition until the finish line or a legitimate stop.

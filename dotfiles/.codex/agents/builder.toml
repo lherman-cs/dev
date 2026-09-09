@@ -17,7 +17,8 @@ Retain same-plan evidence and failed approaches across follow-ups. Do not infer
 project-level work from the parent or continue into another numbered plan.
 
 When review findings are supplied through the plan's durable review artifact,
-address those findings according to $dev-build.
+address OPEN findings according to $dev-build; fixes and concrete counterevidence are both valid.
+Copy supplied Attempt/Snapshot fields; a same-revision repair still needs a fresh handoff.
 
 Complete the build contract, write its required evidence, commit as required,
 report the compact result to the parent, and stop.

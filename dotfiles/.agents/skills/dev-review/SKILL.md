@@ -1,97 +1,87 @@
 ---
 name: dev-review
-description: Decide whether one numbered plan is satisfied at one exact revision; block only on concrete plan-mapped defects and converge repair reviews.
+description: Independently decide readiness, plan acceptance, or final integration; preserve finding identity and settle design without reopening unrelated work.
 ---
-
 # Dev Review
-
-Review one approved numbered plan at one exact revision. Never modify production code.
-The plan is the contract. The goal is an acceptance decision, not a general repository audit. Nonbinding implementation guidance may adapt without changing approved commitments.
+Review the assigned approved outcome and constraints, not the entire repository.
+Never implement fixes, alter tests, or change approved plans to make them pass.
+Nonbinding implementation guidance may adapt without changing approved commitments.
 
 ## Inputs
-
-For a single-plan code review, require:
-
-* exact plan path;
-* exact revision;
-* mode: `INITIAL` or `REPAIR`.
-  Read the matching `.build.md`. In `REPAIR`, also read the previous `CHANGES REQUIRED` `.review.md`.
-  Do not read `spec.md`, sibling plans, or unrelated history during a single-plan code review.
-For an explicitly assigned planning review, take the supplied project path and draft contract/plans instead; inspect design, ownership, feasibility, dependency, and verification gaps. No build handoff is required.
-For an explicitly assigned final integration review, inspect the project contract and accepted handoffs, run its required integrated checks at the supplied revision, and map failures to their owning plans. Do not invent requirements or reopen settled design without new material evidence.
-Use `<project>/project.review.md` for these project-level reviews; identify the assigned scope in the handoff. Planning acceptance is not implementation acceptance.
+Require an exact Plan path and Mode; code reviews also require the exact current Git Revision.
+Read `../dev-project/references/handoffs.md` for dispatch identity and evidence formats.
+Copy gate-injected Attempt/Snapshot; never reuse an earlier identity. Standalone review omits them and cannot certify managed acceptance.
+Modes are `READINESS`, `INITIAL`, `REPAIR`, `ADJUDICATE`, `MAINTENANCE`, and `FINAL`.
+For INITIAL/REPAIR, read the exact numbered plan, matching build, prior findings, and applicable instructions.
+Do not read `spec.md`, sibling plans, unrelated history, or broad unchanged modules for a single-plan review.
+Use the original plan baseline for full change coverage, not merely the last repair commit.
+Inspect only material changes and surrounding source needed to answer concrete acceptance questions.
+Use at most one fresh explorer for a necessary non-local repository fact, not a general bug hunt.
+Start it without inherited turns, use narrow anchors, and release it after its scoped answer.
 
 ## Blocking rule
+There are two legitimate kinds of blocker; neither is an invitation to demand perfection.
+**CORRECTNESS** requires all of these:
+1. A specific approved obligation or established invariant is identified.
+2. A required obligation is missing, or the change causes a material defect/regression.
+3. The failure is reachable under the approved operating model, not a hypothetical future requirement.
+4. Evidence establishes the consequence and an observable closure condition.
+**DESIGN** may independently block initial/readiness review for a substantially better conforming approach.
+Identify the concrete alternative, approved outcome it serves, material benefit, and replacement cost.
+A working implementation is not exempt, but taste, a different equally good pattern, or speculative generality is insufficient.
+Resolve disputed design with the technical lead and independent evidence; record the settled direction.
+Reopening a settled direction requires new material evidence, including during worker replacement.
+Do not block on unrelated existing defects, optional hardening, or extra tests when current evidence proves the obligation.
+Do not remove correctness, security, error handling, lifecycle guarantees, or observability merely to reduce code.
 
-A finding may block only when all are true:
+## Initial review
+1. Read the plan and build evidence once; establish obligation-to-evidence coverage.
+2. Inspect the material human-authored change and required integration/failure paths.
+3. Check generated interfaces or additional callers only when relevant to an actual acceptance question.
+4. Verify that tests exercise required behavior rather than merely mirror the implementation.
+5. Run the smallest checks needed to resolve uncertainty; reuse applicable successful evidence.
+6. Batch all substantiated blockers in one coherent pass, not one defect per round.
+Accept immediately when obligations are verified and no legitimate blocker remains.
+A builder's PASS assertion alone is not proof; inspect the evidence and check questionable claims.
 
-1. it maps to an explicit plan requirement, constraint, or verified precondition;
-2. it is a missing required obligation or a defect in/directly caused by the reviewed change;
-3. it is reachable under the plan's stated assumptions;
-4. leaving it unfixed prevents the plan's acceptance or leaves a demonstrated material regression.
-   If any condition fails, it is non-blocking.
-   Do not block on style, preference, optional hardening, hypothetical future behavior, unrelated pre-existing defects, or extra tests when existing evidence proves the contract.
-Initial design review may also require a substantially better conforming approach: identify the concrete alternative, approved outcome it serves, material benefit, and replacement cost. Settle disputed design with the parent; reopening it requires new material evidence, not a different preference.
+## Repair and adjudication
+Preserve finding IDs, closure conditions, resolutions, and settled decisions before replacing the review artifact.
+For each prior OPEN finding, retain it with evidence, mark RESOLVED, or mark REFUTED with counterevidence.
+A builder may disprove a finding; withdraw it instead of defending the earlier verdict.
+Inspect the repair delta and affected obligations; do not restart unrelated initial discovery.
+A same-revision repair can supply new verification or a factual rebuttal; it still needs this fresh assignment's review.
+If a claimed fix fails, identify what remains wrong and the next discriminating check.
+Do not hide a demonstrated material defect merely because an earlier pass missed it; state the new evidence and impact.
+In ADJUDICATE, independently resolve the assigned dispute or proposed technical stop, not another broad audit.
+Do not count elapsed rounds, new commits, or repeated discussion as evidence of either correctness or failure.
 
-## Review scope
+## Planning and maintenance readiness
+For READINESS, inspect the supplied written spec and numbered plans without requiring a build handoff.
+Challenge consequential decisions, design simplicity, ownership/input suppliers, lifecycle, failures, and compatibility.
+Check actual toolchain/baseline evidence, risk-proportional feasibility probes, and integration surfaces.
+Distinguish verified repository facts, predecessor outputs, and work the current plan must establish.
+Check a valid dependency order, one owner per binding obligation, executable checks, and self-contained builder handoffs.
+No consequential choice may be concealed in an assumption, TBD, or a builder instruction to choose behavior.
+For MAINTENANCE, inspect `.proposal/`, its rationale and old/new obligation/finding mapping, and the unchanged binding spec.
+Accepted plans must remain unchanged; every unfinished obligation and OPEN finding must retain an owner and verification.
+Review the exact proposed snapshot before activation; readiness acceptance is not implementation acceptance.
 
-For `INITIAL`:
+## Final integration
+For FINAL, inspect the approved project contract, accepted handoffs, and actual integrated revision.
+Run the documented final commands and check cross-plan behavior, interfaces, failures, and still-applicable obligations.
+Do not reopen settled design without new integration evidence or invent a new acceptance wish list.
+Map each concrete failure to its exact owning plan; keep all known owners/findings together.
+On follow-up, verify repairs and affected integration checks with the same final-review worker.
+Only pass when the required checks pass at this exact revision and no OPEN blocker remains.
 
-1. Read the plan and build evidence once.
-2. Inspect the full plan change from its original baseline, not just its latest repair commit, and only necessary surrounding source.
-3. Check each explicit acceptance obligation and direct regressions caused by the change.
-4. Run only focused verification needed to resolve a concrete uncertainty.
-5. Batch all substantiated blockers in this pass; accept immediately when obligations are verified and none remain.
-
-Use at most one fresh `explorer` with `fork_turns="none"` only for one concrete repository fact required to decide acceptance.
-Never ask it to broadly review, find bugs, or propose improvements.
-
-For `REPAIR`:
-
-1. Retain finding IDs and closure conditions; check fixes and counterevidence against the exact supplied revision, which may be unchanged for evidence-only repairs.
-2. Inspect only the repair delta and source needed to validate those fixes.
-3. Check for contract-blocking regressions directly introduced or made reachable by the repair.
-4. Do not restart broad initial review.
-5. Do not add unrelated pre-existing findings or reopen settled design without new material evidence.
-Do not hide a demonstrated material defect merely because the initial review missed it; explain the new evidence and contract impact. Record resolved/refuted IDs with evidence, withdraw disproven findings, and explain why any claimed fix remains insufficient.
-
-## Replanning
-
-Use `REQUIRES REPLANNING` only when binding requirements conflict or acceptance requires a consequential unapproved decision; show why no conforming implementation resolves it. A false implementation assumption alone is not replanning.
-Use `BLOCKED` for a concrete unavailable verification prerequisite, recording feasible remedies attempted; never substitute acceptance for missing required evidence.
-Implementation difficulty is not replanning.
-
-## Verdict
-
-Use exactly:
-
-* `ACCEPTED` — contract satisfied; advance.
-* `CHANGES REQUIRED` — one or more blocking findings remain.
-* `REQUIRES REPLANNING` — contract must change.
-* `BLOCKED` — required verification is prevented by an unavailable prerequisite.
-  Acceptance means this plan is complete, not that the subsystem is perfect.
-
-## Handoff
-
-Write the matching `.review.md`:
-
-```markdown
-# Review
-Plan: <path>
-Revision: <revision>
-Mode: INITIAL | REPAIR
-Verdict: ACCEPTED | CHANGES REQUIRED | REQUIRES REPLANNING | BLOCKED
-```
-
-For `CHANGES REQUIRED`, add:
-
-```markdown
-## Blocking findings
-| ID | Requirement | Evidence | Impact | Required outcome |
-|---|---|---|---|---|
-| R1 | <plan item> | `<path>::<symbol>` — <fact> | <contract failure> | <required state> |
-```
-
-Every blocking finding must contain every field. Omit non-blocking observations.
-For `REQUIRES REPLANNING`, state the exact contract conflict and concrete evidence.
-Report the verdict, evidence path, and unresolved finding IDs. Finish this assigned turn; retain established evidence for same-plan follow-ups.
+## Verdict and handoff
+Use `ACCEPTED`, `CHANGES REQUIRED`, `BLOCKED`, or `REQUIRES REPLANNING`.
+CHANGES REQUIRED needs concrete actionable correctness/design blockers, not suggestions.
+BLOCKED needs an unavailable prerequisite and attempted feasible remedies; missing evidence is not acceptance.
+REQUIRES REPLANNING needs conflicting binding commitments or a consequential unapproved decision.
+Explain why no conforming local implementation resolves the conflict; wrong paths or fixable assumptions are insufficient.
+Write the injected Handoff path atomically with identity, obligation coverage, verification, and stable finding IDs.
+Keep `## Blocking findings` for OPEN findings only and `## Resolutions` for evidenced RESOLVED/REFUTED IDs.
+Retain `## Decisions` for settled design and closure history across replacements.
+For FINAL, the Verification table must name each approved command, exact Revision, Result, and Evidence.
+Report the verdict, evidence path, and remaining IDs; finish this turn and retain context for same-scope follow-ups.

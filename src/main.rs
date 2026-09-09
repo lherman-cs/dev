@@ -191,6 +191,9 @@ impl AgentProfileName {
 
 #[derive(Subcommand)]
 enum AgentAction {
+    /// Internal native Codex hook entry point (not an agent-invoked validator).
+    #[command(name = "_workflow-hook", hide = true)]
+    WorkflowHook,
     /// Start a fresh Sol/high planning session
     #[command(alias = "p")]
     Plan {
@@ -2121,7 +2124,58 @@ fn agent_codex_overlay_args(config: &AgentConfig) -> Result<Vec<String>> {
         args.push(format!("{key}={value}"));
     }
 
+    args.extend(workflow_hook_args()?);
     Ok(args)
+}
+
+// Reuse Codex's native tool/lifecycle interception; do not replace its agent runner.
+fn workflow_hook_args() -> Result<Vec<String>> {
+    let exe = std::env::current_exe().context("Cannot locate dev for workflow hooks")?;
+    let quoted = format!("'{}'", exe.to_string_lossy().replace('\'', "'\"'\"'"));
+    let command = format!("{quoted} agent _workflow-hook");
+    let mut args = vec!["-c".into(), "features.hooks=true".into()];
+    for event in [
+        "SessionStart",
+        "UserPromptSubmit",
+        "PreToolUse",
+        "PostToolUse",
+        "SubagentStart",
+        "SubagentStop",
+        "Stop",
+    ] {
+        let matcher = if matches!(event, "PreToolUse" | "PostToolUse") {
+            r#"matcher = "spawn_agent|followup_task|send_input|send_message|close_agent|interrupt_agent|resume_agent", "#
+        } else {
+            ""
+        };
+        args.extend([
+            "-c".into(),
+            format!(
+                "hooks.{event}=[{{{matcher}hooks=[{{type=\"command\",command={command:?},timeout=60}}]}}]"
+            ),
+        ]);
+    }
+    Ok(args)
+}
+
+fn workflow_gate(action: &str) -> Command {
+    let mut command = Command::new("python3");
+    command.args(["-c", include_str!("../scripts/workflow_gate.py")]);
+    if !action.is_empty() {
+        command.arg(action);
+    }
+    command
+}
+
+fn workflow_run_id() -> String {
+    format!(
+        "{}-{}",
+        std::process::id(),
+        SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos()
+    )
 }
 
 fn agent_codex_args(config: &AgentConfig, profile: AgentProfileName) -> Result<Vec<String>> {
@@ -2143,8 +2197,37 @@ fn exec_codex(profile: AgentProfileName, prompt: Vec<String>) -> Result<()> {
     let config = load_agent_config()?;
     let args = agent_codex_args(&config, profile)?;
 
+    let project = if matches!(profile, AgentProfileName::Project) && !prompt.is_empty() {
+        let output = workflow_gate("prepare")
+            .args(&prompt)
+            .stderr(Stdio::inherit())
+            .output()
+            .context("Workflow validation requires Python 3 (standard library only)")?;
+        if !output.status.success() {
+            bail!("Project readiness/approval gate failed; source is unchanged");
+        }
+        Some(String::from_utf8(output.stdout)?.trim().to_owned())
+    } else {
+        None
+    };
+    let run = workflow_run_id();
     let mut command = Command::new("codex");
-    command.args(&args);
+    command.args(&args).env("DEV_WORKFLOW_RUN", &run);
+    command.env(
+        "DEV_WORKFLOW_PHASE",
+        if project.is_some() {
+            "project"
+        } else if matches!(profile, AgentProfileName::Plan) {
+            "plan"
+        } else {
+            "standalone"
+        },
+    );
+    // Do not inherit an enclosing project's scope into a separately launched session.
+    command.env_remove("DEV_WORKFLOW_PROJECT");
+    if let Some(project) = &project {
+        command.env("DEV_WORKFLOW_PROJECT", project);
+    }
     if !prompt.is_empty() {
         let skill = match profile {
             AgentProfileName::Plan => Some("$dev-plan"),
@@ -2165,6 +2248,19 @@ fn exec_codex(profile: AgentProfileName, prompt: Vec<String>) -> Result<()> {
         "Starting fresh Codex session with '{}' profile",
         profile.as_str()
     );
+
+    if let Some(project) = &project {
+        let status = command.status().context("Failed to launch codex")?;
+        let checked = workflow_gate("finish")
+            .env("DEV_WORKFLOW_PROJECT", project)
+            .env("DEV_WORKFLOW_RUN", &run)
+            .status()
+            .context("Cannot validate project exit")?;
+        if !status.success() || !checked.success() {
+            bail!("Codex or workflow validation failed; state is preserved. Inspect the reported next action");
+        }
+        return Ok(());
+    }
 
     #[cfg(unix)]
     {
@@ -2190,6 +2286,9 @@ fn exec_codex_resume() -> Result<()> {
     let mut command = Command::new("codex");
     command.args(&args);
     command.arg("resume");
+    command.env_remove("DEV_WORKFLOW_PROJECT");
+    command.env_remove("DEV_WORKFLOW_PHASE");
+    command.env("DEV_WORKFLOW_RUN", workflow_run_id());
 
     #[cfg(unix)]
     {
@@ -2210,6 +2309,16 @@ fn exec_codex_resume() -> Result<()> {
 
 fn cmd_agent(action: Option<AgentAction>) -> Result<()> {
     match action {
+        Some(AgentAction::WorkflowHook) => {
+            // Inherit hook stdin/stdout unchanged; exit 2 is Codex's blocking-hook status.
+            match workflow_gate("").status() {
+                Ok(status) => std::process::exit(status.code().unwrap_or(2)),
+                Err(error) => {
+                    eprintln!("Workflow hook unavailable; Python 3 is required: {error}");
+                    std::process::exit(2);
+                }
+            }
+        }
         None => exec_codex(AgentProfileName::Default, Vec::new()),
         Some(AgentAction::Plan { prompt }) => exec_codex(AgentProfileName::Plan, prompt),
         Some(AgentAction::Project { prompt }) => exec_codex(AgentProfileName::Project, prompt),
