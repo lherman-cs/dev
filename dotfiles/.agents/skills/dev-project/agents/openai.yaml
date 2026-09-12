@@ -1,0 +1,6 @@
+interface:
+  display_name: "Dev Project"
+  short_description: "Coordinate named role agents, human input, durable state, and bo"
+  default_prompt: "Use $dev-project for the requested workflow stage."
+policy:
+  allow_implicit_invocation: false

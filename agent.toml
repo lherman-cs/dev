@@ -1,5 +1,5 @@
-# Toolbox-owned Codex profile overlay. The user invokes each role directly.
-
+# Runtime policy and command-to-role routing ONLY.
+# Models/reasoning live exclusively in dotfiles/.codex/agents/<role>.toml.
 [codex]
 model_verbosity = "low"
 model_reasoning_summary = "concise"
@@ -12,30 +12,23 @@ model_auto_compact_token_limit_scope = "total"
 [codex.agents]
 enabled = true
 max_concurrent_threads_per_session = 3
+interrupt_message = true
 
+# Default is a no-task interactive/trust session, not automatic orchestration.
 [profiles.default]
-model = "gpt-5.6-sol"
-model_reasoning_effort = "medium"
-
+role = "orchestrator"
+[profiles.spec]
+role = "specifier"
 [profiles.plan]
-model = "gpt-5.6-sol"
-model_reasoning_effort = "high"
-skill = "dev-plan"
-
+role = "planner"
 [profiles.explore]
-model = "gpt-5.6-luna"
-model_reasoning_effort = "medium"
-skill = "dev-explore"
-
+role = "explorer"
 [profiles.build]
-model = "gpt-5.6-sol"
-model_reasoning_effort = "medium"
-skill = "dev-build"
-
+role = "builder"
 [profiles.review]
-model = "gpt-5.6-sol"
-model_reasoning_effort = "high"
-skill = "dev-review"
+role = "reviewer"
+[profiles.project]
+role = "orchestrator"
 
 [stats]
 warn_model_calls = 80

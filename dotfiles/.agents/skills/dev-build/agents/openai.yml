@@ -1,7 +1,0 @@
-interface:
-  display_name: "Dev Build"
-  short_description: "Implement one user-directed slice with behavioral proof"
-  default_prompt: "Use $dev-build to implement the software slice I give you."
-
-policy:
-  allow_implicit_invocation: false

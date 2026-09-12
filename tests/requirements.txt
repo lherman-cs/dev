@@ -1,0 +1,2 @@
+# Developer-only asset validation. The Rust launcher has no new dependencies.
+PyYAML>=6,<7

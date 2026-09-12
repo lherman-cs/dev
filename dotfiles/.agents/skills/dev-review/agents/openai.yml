@@ -1,7 +1,0 @@
-interface:
-  display_name: "Dev Review"
-  short_description: "Independently review a user-supplied software change"
-  default_prompt: "Use $dev-review to independently review the change I give you."
-
-policy:
-  allow_implicit_invocation: false

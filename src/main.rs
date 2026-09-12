@@ -1,3 +1,7 @@
+mod agent_roles;
+#[cfg(test)]
+mod agent_workflow_tests;
+
 use anyhow::{Context, Result, anyhow, bail};
 use clap::{Parser, Subcommand, ValueEnum};
 use regex::Regex;
@@ -155,7 +159,7 @@ enum Commands {
     /// Runs a tui to play a lofi radio
     Radio,
 
-    /// Launch Codex with toolbox-owned model profiles
+    /// Launch interactive Codex workflow roles using canonical agent definitions
     #[command(alias = "a")]
     Agent {
         #[command(subcommand)]
@@ -171,55 +175,81 @@ const AGENT_CONFIG_TOML: &str = include_str!("../agent.toml");
 #[derive(Debug, Clone, Copy, ValueEnum)]
 enum AgentProfileName {
     Default,
+    Spec,
     Plan,
     Explore,
     Build,
     Review,
+    Project,
 }
 
 impl AgentProfileName {
     fn as_str(self) -> &'static str {
         match self {
             Self::Default => "default",
+            Self::Spec => "spec",
             Self::Plan => "plan",
             Self::Explore => "explore",
             Self::Build => "build",
             Self::Review => "review",
+            Self::Project => "project",
         }
     }
 }
 
 #[derive(Subcommand)]
 enum AgentAction {
-    /// Start a fresh Sol/high planning session
+    /// Align with the human and propose a behavioral spec
+    #[command(alias = "s", visible_alias = "specifier")]
+    Spec {
+        /// Initial intent or existing spec path; omitted starts alignment interactively
+        prompt: Vec<String>,
+    },
+
+    /// Coordinate an existing project, or route missing specification/planning work
+    #[command(visible_alias = "pr", aliases = ["orchestrate", "orchestrator"])]
+    Project {
+        /// Project path and optional direction; omitted asks for the project
+        prompt: Vec<String>,
+    },
+
+    /// Plan an accepted specification into vertical slices
     #[command(alias = "p")]
     Plan {
         /// Optional initial Codex prompt
         prompt: Vec<String>,
     },
 
-    /// Start a fresh Luna/medium repository exploration session
+    /// Explore one repository question read-only
     #[command(alias = "e")]
     Explore {
         /// Optional initial Codex prompt
         prompt: Vec<String>,
     },
 
-    /// Start a fresh Terra/medium build session
+    /// Implement one executable plan and commit
     #[command(alias = "b")]
     Build {
         /// Optional initial Codex prompt
         prompt: Vec<String>,
     },
 
-    /// Start a fresh Sol/high review session
+    /// Review one exact candidate or explicit integration scope
     #[command(alias = "r")]
     Review {
         /// Optional initial Codex prompt
         prompt: Vec<String>,
     },
 
-    Resume,
+    /// Resume without replacing the saved root model, role prompt, or sandbox
+    Resume {
+        /// Explicit session ID; omit to use the Codex session picker
+        #[arg(conflicts_with = "last")]
+        session: Option<String>,
+        /// Resume the last session instead of opening the picker
+        #[arg(long)]
+        last: bool,
+    },
 
     /// Show Codex usage statistics from local rollout JSONL files
     Stats {
@@ -284,9 +314,9 @@ struct AgentConfig {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct AgentProfileConfig {
-    model: String,
-    model_reasoning_effort: String,
+    role: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -2060,12 +2090,35 @@ fn match_json_path(value: &Value, path: &str, pattern: &Regex) -> bool {
 }
 
 fn load_agent_config() -> Result<AgentConfig> {
-    toml::from_str::<AgentConfig>(AGENT_CONFIG_TOML).context("Failed to parse embedded agent.toml")
+    parse_agent_config(AGENT_CONFIG_TOML)
+}
+
+fn parse_agent_config(source: &str) -> Result<AgentConfig> {
+    let config: AgentConfig = toml::from_str(source)
+        .context("Failed to parse embedded agent.toml")?;
+    reject_duplicate_model_policy(&config.codex)?;
+    for profile in config.profiles.values() {
+        agent_roles::load(&profile.role)?;
+    }
+    Ok(config)
+}
+
+fn reject_duplicate_model_policy(table: &toml::Table) -> Result<()> {
+    for (key, value) in table {
+        if matches!(key.as_str(), "model" | "model_reasoning_effort"
+            | "default_subagent_model" | "default_subagent_reasoning_effort") {
+            bail!("{key} belongs only in dotfiles/.codex/agents/<role>.toml");
+        }
+        if let toml::Value::Table(child) = value {
+            reject_duplicate_model_policy(child)?;
+        }
+    }
+    Ok(())
 }
 
 fn toml_scalar(value: &toml::Value) -> Result<String> {
     match value {
-        toml::Value::String(value) => Ok(format!("{:?}", value)),
+        toml::Value::String(value) => Ok(toml::Value::String(value.clone()).to_string()),
         toml::Value::Integer(value) => Ok(value.to_string()),
         toml::Value::Float(value) => Ok(value.to_string()),
         toml::Value::Boolean(value) => Ok(value.to_string()),
@@ -2127,84 +2180,107 @@ fn agent_codex_overlay_args(config: &AgentConfig) -> Result<Vec<String>> {
 
 fn agent_codex_args(config: &AgentConfig, profile: AgentProfileName) -> Result<Vec<String>> {
     let mut args = agent_codex_overlay_args(config)?;
-
-    let profile = agent_profile(config, profile)?;
-    args.push("-c".to_string());
-    args.push(format!("model={:?}", profile.model));
-    args.push("-c".to_string());
-    args.push(format!(
-        "model_reasoning_effort={:?}",
-        profile.model_reasoning_effort
-    ));
-
+    let selected = agent_profile(config, profile)?;
+    let role = agent_roles::load(&selected.role)?;
+    for (key, value) in [
+        ("model", role.model),
+        ("model_reasoning_effort", role.model_reasoning_effort),
+    ] {
+        args.push("-c".into());
+        args.push(format!("{key}={}", toml::Value::String(value)));
+    }
+    // Default is intentionally a no-task/trust session, not an active Orchestrator.
+    if !matches!(profile, AgentProfileName::Default) {
+        args.push("-c".into());
+        args.push(format!("sandbox_mode={}", toml::Value::String(role.sandbox_mode)));
+        if selected.role == "explorer" {
+            args.push("-c".into());
+            args.push("agents.enabled=false".into());
+        }
+    }
     Ok(args)
+}
+
+fn agent_prompt(
+    config: &AgentConfig,
+    profile: AgentProfileName,
+    prompt: &[String],
+    dir: &Path,
+) -> Result<Option<String>> {
+    if matches!(profile, AgentProfileName::Default) {
+        return Ok((!prompt.is_empty()).then(|| prompt.join(" ")));
+    }
+    let selected = agent_profile(config, profile)?;
+    let asset = agent_roles::asset(&selected.role)?;
+    let role = agent_roles::load(&selected.role)?;
+    let skill = agent_roles::skill_path(dir, &selected.role)?;
+    let skill = skill.to_str().context("Codex requires UTF-8 workflow asset paths")?;
+    let request = if prompt.is_empty() {
+        "No assignment supplied yet. Ask the human for this role's input; do not infer a task.".to_owned()
+    } else {
+        prompt.join(" ")
+    };
+    // Supply a root role as the explicit user request. Do not replace the user's
+    // configured developer_instructions; spawned roles get their own config layer.
+    Ok(Some(format!(
+        "${}\nAct as the configured {} role. Read the exact bundled skill at {:?} before acting.\n\nRole contract:\n{}\nHuman request:\n{}",
+        asset.skill_name, role.name, skill, role.developer_instructions, request
+    )))
+}
+
+fn workflow_runtime_dir() -> Result<PathBuf> {
+    let home = codex_home()?;
+    let home = if home.is_absolute() { home } else { std::env::current_dir()?.join(home) };
+    Ok(agent_roles::runtime_dir(&home))
 }
 
 fn exec_codex(profile: AgentProfileName, prompt: Vec<String>) -> Result<()> {
     let config = load_agent_config()?;
-    let args = agent_codex_args(&config, profile)?;
-
+    let dir = workflow_runtime_dir()?;
+    agent_roles::materialize(&dir)?;
     let mut command = Command::new("codex");
-    command.args(&args);
-    if !prompt.is_empty() {
-        let skill = match profile {
-            AgentProfileName::Plan => Some("$dev-plan"),
-            AgentProfileName::Explore => Some("$dev-explore"),
-            AgentProfileName::Build => Some("$dev-build"),
-            AgentProfileName::Review => Some("$dev-review"),
-            _ => None,
-        };
-        let prompt = prompt.join(" ");
-
-        command.arg(match skill {
-            Some(skill) => format!("{skill} {prompt}"),
-            None => prompt,
-        });
+    command.args(agent_codex_args(&config, profile)?);
+    command.args(agent_roles::registration_args(&dir)?);
+    if let Some(prompt) = agent_prompt(&config, profile, &prompt, &dir)? {
+        // End options so user task text can never become a Codex CLI flag.
+        command.arg("--").arg(prompt);
     }
+    info!("Starting fresh interactive Codex session with '{}' profile", profile.as_str());
+    run_codex(command)
+}
 
-    info!(
-        "Starting fresh Codex session with '{}' profile",
-        profile.as_str()
-    );
+fn resume_args(session: Option<&str>, last: bool) -> Result<Vec<String>> {
+    if session.is_some() && last {
+        bail!("Choose an explicit session or --last, not both");
+    }
+    // No model/effort/sandbox/developer-instruction overrides: preserve the resumed role.
+    let mut args = vec!["resume".into()];
+    if last { args.push("--last".into()); }
+    if let Some(session) = session {
+        if session.trim().is_empty() { bail!("Session ID must not be empty"); }
+        args.push("--".into());
+        args.push(session.into());
+    }
+    Ok(args)
+}
 
+fn exec_codex_resume(session: Option<String>, last: bool) -> Result<()> {
+    let mut command = Command::new("codex");
+    command.args(resume_args(session.as_deref(), last)?);
+    run_codex(command)
+}
+
+fn run_codex(mut command: Command) -> Result<()> {
+    // Keep Codex attached to the terminal so every role can ask/receive human input.
     #[cfg(unix)]
     {
         use std::os::unix::process::CommandExt;
-        let error = command.exec();
-        Err(error).context("Failed to exec codex")
+        Err(command.exec()).context("Failed to exec codex")
     }
-
     #[cfg(not(unix))]
     {
         let status = command.status().context("Failed to launch codex")?;
-        if !status.success() {
-            bail!("codex exited with status {status}");
-        }
-        Ok(())
-    }
-}
-
-fn exec_codex_resume() -> Result<()> {
-    let config = load_agent_config()?;
-    let args = agent_codex_overlay_args(&config)?;
-
-    let mut command = Command::new("codex");
-    command.args(&args);
-    command.arg("resume");
-
-    #[cfg(unix)]
-    {
-        use std::os::unix::process::CommandExt;
-        let error = command.exec();
-        Err(error).context("Failed to exec codex resume")
-    }
-
-    #[cfg(not(unix))]
-    {
-        let status = command.status().context("Failed to launch codex resume")?;
-        if !status.success() {
-            bail!("codex resume exited with status {status}");
-        }
+        if !status.success() { bail!("codex exited with status {status}"); }
         Ok(())
     }
 }
@@ -2212,38 +2288,43 @@ fn exec_codex_resume() -> Result<()> {
 fn cmd_agent(action: Option<AgentAction>) -> Result<()> {
     match action {
         None => exec_codex(AgentProfileName::Default, Vec::new()),
+        Some(AgentAction::Spec { prompt }) => exec_codex(AgentProfileName::Spec, prompt),
+        Some(AgentAction::Project { prompt }) => exec_codex(AgentProfileName::Project, prompt),
         Some(AgentAction::Plan { prompt }) => exec_codex(AgentProfileName::Plan, prompt),
         Some(AgentAction::Explore { prompt }) => exec_codex(AgentProfileName::Explore, prompt),
         Some(AgentAction::Build { prompt }) => exec_codex(AgentProfileName::Build, prompt),
         Some(AgentAction::Review { prompt }) => exec_codex(AgentProfileName::Review, prompt),
-        Some(AgentAction::Resume) => exec_codex_resume(),
+        Some(AgentAction::Resume { session, last }) => exec_codex_resume(session, last),
         Some(AgentAction::Stats { last, file, json }) => cmd_agent_stats(last, file, json),
         Some(AgentAction::Config { profile, args }) => cmd_agent_config(profile, args),
-        Some(AgentAction::Transcript {
-            last,
-            file,
-            max_tool_chars,
-            json,
-        }) => cmd_agent_transcript(last, file, max_tool_chars, json),
+        Some(AgentAction::Transcript { last, file, max_tool_chars, json }) =>
+            cmd_agent_transcript(last, file, max_tool_chars, json),
     }
+}
+
+fn shell_quote(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "'\"'\"'"))
 }
 
 fn cmd_agent_config(profile: AgentProfileName, args_only: bool) -> Result<()> {
     let config = load_agent_config()?;
-    let args = agent_codex_args(&config, profile)?;
-
+    let dir = workflow_runtime_dir()?;
+    let mut args = agent_codex_args(&config, profile)?;
+    args.extend(agent_roles::registration_args(&dir)?);
+    // Inspecting config is read-only; runtime assets are created on actual launch.
     if args_only {
-        println!("{}", args.join(" "));
+        println!("{}", args.iter().map(|s| shell_quote(s)).collect::<Vec<_>>().join(" "));
         return Ok(());
     }
-
-    println!("Embedded agent overlay:\n");
-    println!("{AGENT_CONFIG_TOML}");
-    println!("Effective profile: {}\n", profile.as_str());
+    let selected = agent_profile(&config, profile)?;
+    let role = agent_roles::load(&selected.role)?;
+    println!("Embedded runtime policy and routing:\n\n{AGENT_CONFIG_TOML}");
+    println!("Profile: {} -> role: {}", profile.as_str(), role.name);
+    println!("Model source: dotfiles/.codex/agents/{}.toml", role.name);
+    println!("Model: {} / {}", role.model, role.model_reasoning_effort);
+    println!("Runtime assets (created on launch): {}", dir.display());
     println!("Codex runtime overrides:");
-    for pair in args.chunks_exact(2) {
-        println!("  {} {}", pair[0], pair[1]);
-    }
+    for pair in args.chunks_exact(2) { println!("  {} {}", pair[0], shell_quote(&pair[1])); }
     Ok(())
 }
 

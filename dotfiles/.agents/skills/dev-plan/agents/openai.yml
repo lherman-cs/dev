@@ -1,7 +1,0 @@
-interface:
-  display_name: "Dev Plan"
-  short_description: "Plan the next bounded implementation slice with the user"
-  default_prompt: "Use $dev-plan to work directly with me on the next software slice."
-
-policy:
-  allow_implicit_invocation: false

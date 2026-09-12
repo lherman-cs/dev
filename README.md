@@ -1,3 +1,31 @@
+# dev toolbox
+
+## Updated LLM development workflow
+
+This repository includes six explicit Codex roles, their concise skills, and the Rust
+launcher integration. Read [WORKFLOW.md](WORKFLOW.md) for commands, human intervention,
+model ownership, and bounded reviews; [VALIDATION.md](VALIDATION.md) states what was tested.
+
+```sh
+cargo test --locked
+cargo install --path . --locked
+# From the project you want to work on:
+dev a s "Align with me on the behavior we need."
+dev a pr "Continue the accepted project in plans/example/."
+```
+
+Models and reasoning live only in `dotfiles/.codex/agents/<role>.toml`; `agent.toml`
+references those roles. Rebuild after changing embedded configuration or instructions.
+`just install` installs only the binary. `just install-workflow /path/to/worktree`
+optionally exports the roles/skills with backups and leaves config.toml alone.
+
+**For a workflow-only update, do not run the legacy Bootstrap command below.**
+The original personal-machine notes and bootstrap scripts are retained separately from
+the new workflow. Rust compilation and live Codex behavior were not tested in the build
+environment; see the validation report before relying on the update.
+
+---
+
 ## Bootstrap
 
 ```sh
@@ -193,9 +221,3 @@ Mac by default will limit using more than 1 CPU. To bypass this, we need to flag
 tmux kill-server
 ```
 
-## Direct agent workflow
-
-Use `dev a plan`, `dev a explore`, `dev a build`, and `dev a review` directly.
-The user chooses each transition; there is no autonomous project orchestrator.
-Plan/build/review can delegate narrow repository investigation to the configured
-Luna explorer while keeping decisions and edits in the main role.
