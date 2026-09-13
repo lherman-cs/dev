@@ -36,6 +36,7 @@ description: Coordinate named role agents, human input, durable state, and bound
 * Never spawn another Orchestrator; technical roles delegate their own focused Explorer questions.
 * If the tool lacks `fork_turns`/named roles, report unsupported capability; do not silently fall back to inherited context.
 * Fresh context per new build/review/plan/repair assignment; clarification may stay in the same live assignment.
+* On resume/reconnect, use `list_agents` before treating previously active child work as live; never infer a running child from conversation recap or durable state alone. If the required child is not live, reconcile durable artifacts/Git state and route the remaining work instead of waiting.
 * Use `wait_agent` only for needed results; persist returned evidence and leave completed tasks idle.
 * Required child work is joined, not detached: never end the Orchestrator turn while a child needed for the current workflow is still running.
 * After non-overlapping work is exhausted, use `wait_agent` and remain in the same turn until the required child reaches a terminal result; a wait timeout is not child completion.
