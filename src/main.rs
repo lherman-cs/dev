@@ -2207,24 +2207,32 @@ fn agent_prompt(
     prompt: &[String],
     dir: &Path,
 ) -> Result<Option<String>> {
-    if matches!(profile, AgentProfileName::Default) {
-        return Ok((!prompt.is_empty()).then(|| prompt.join(" ")));
+    // A bare profile launch (`dev a plan`, `dev a build`, etc.) must not create
+    // a synthetic user turn. It only selects/loads the requested profile.
+    if prompt.is_empty() {
+        return Ok(None);
     }
+
+    if matches!(profile, AgentProfileName::Default) {
+        return Ok(Some(prompt.join(" ")));
+    }
+
     let selected = agent_profile(config, profile)?;
     let asset = agent_roles::asset(&selected.role)?;
     let role = agent_roles::load(&selected.role)?;
     let skill = agent_roles::skill_path(dir, &selected.role)?;
     let skill = skill.to_str().context("Codex requires UTF-8 workflow asset paths")?;
-    let request = if prompt.is_empty() {
-        "No assignment supplied yet. Ask the human for this role's input; do not infer a task.".to_owned()
-    } else {
-        prompt.join(" ")
-    };
-    // Supply a root role as the explicit user request. Do not replace the user's
-    // configured developer_instructions; spawned roles get their own config layer.
+
+    // When the human supplies an explicit request, preserve the role/skill
+    // bootstrap and attach only that real request. Never invent placeholder
+    // assignment text.
     Ok(Some(format!(
         "${}\nAct as the configured {} role. Read the exact bundled skill at {:?} before acting.\n\nRole contract:\n{}\nHuman request:\n{}",
-        asset.skill_name, role.name, skill, role.developer_instructions, request
+        asset.skill_name,
+        role.name,
+        skill,
+        role.developer_instructions,
+        prompt.join(" ")
     )))
 }
 
