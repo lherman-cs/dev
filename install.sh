@@ -46,7 +46,7 @@ fi
 log "Installing packages via Homebrew..."
 brew install \
   gcc wl-clipboard curl git git-lfs htop tmux \
-  neovim fd fzf ripgrep jq yq go nodejs npm protobuf-c
+  neovim fd fzf ripgrep jq yq go nodejs npm protobuf-c sccache
 
 # 3. Setup Workspace and Repository
 mkdir -p "$WORKSPACE_DIR"
@@ -86,7 +86,6 @@ log "Building local cargo package..."
 export PATH="$HOME/.cargo/bin:$PATH"
 
 if command -v cargo &>/dev/null; then
-  cargo install sccache cargo-cache
   # || true prevents a compilation error from killing the whole script
   cargo install --path . || error "Cargo install failed! Check compilation errors above."
 else
