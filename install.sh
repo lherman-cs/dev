@@ -86,6 +86,7 @@ log "Building local cargo package..."
 export PATH="$HOME/.cargo/bin:$PATH"
 
 if command -v cargo &>/dev/null; then
+  cargo install sccache cargo-cache
   # || true prevents a compilation error from killing the whole script
   cargo install --path . || error "Cargo install failed! Check compilation errors above."
 else
