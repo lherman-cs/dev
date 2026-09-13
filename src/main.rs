@@ -2273,7 +2273,11 @@ fn resume_args(session: Option<&str>, last: bool) -> Result<Vec<String>> {
 }
 
 fn exec_codex_resume(session: Option<String>, last: bool) -> Result<()> {
+    let config = load_agent_config()?;
     let mut command = Command::new("codex");
+    // Resume applies only the shared dev overlay. Do not replace the saved
+    // session's model, reasoning effort, sandbox, role, or prompt.
+    command.args(agent_codex_overlay_args(&config)?);
     command.args(resume_args(session.as_deref(), last)?);
     run_codex(command)
 }
