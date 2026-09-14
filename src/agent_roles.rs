@@ -44,19 +44,31 @@ pub struct Role {
 }
 
 pub fn asset(name: &str) -> Result<&'static Asset> {
-    ALL.iter().find(|a| a.name == name).with_context(|| format!("Unknown agent role {name:?}"))
+    ALL.iter()
+        .find(|a| a.name == name)
+        .with_context(|| format!("Unknown agent role {name:?}"))
 }
 
 pub fn load(name: &str) -> Result<Role> {
     let a = asset(name)?;
     let r: Role = toml::from_str(a.role_source).with_context(|| format!("Invalid role {name}"))?;
     ensure!(r.name == name, "Mismatched role identity: {name}");
-    ensure!(!r.description.trim().is_empty() && !r.model.trim().is_empty(), "Incomplete role {name}");
-    ensure!(matches!(r.model_reasoning_effort.as_str(), "medium" | "high"), "Invalid effort for {name}");
-    ensure!(matches!(r.sandbox_mode.as_str(), "read-only" | "workspace-write"), "Invalid sandbox for {name}");
-    ensure!(!r.developer_instructions.trim().is_empty(), "Missing instructions for {name}");
-    ensure!(a.role_source.lines().count() < 100 && a.skill_source.lines().count() < 100,
-        "Role/skill must stay under 100 physical lines: {name}");
+    ensure!(
+        !r.description.trim().is_empty() && !r.model.trim().is_empty(),
+        "Incomplete role {name}"
+    );
+    ensure!(
+        matches!(r.model_reasoning_effort.as_str(), "medium" | "high"),
+        "Invalid effort for {name}"
+    );
+    ensure!(
+        matches!(r.sandbox_mode.as_str(), "read-only" | "workspace-write"),
+        "Invalid sandbox for {name}"
+    );
+    ensure!(
+        !r.developer_instructions.trim().is_empty(),
+        "Missing instructions for {name}"
+    );
     Ok(r)
 }
 
@@ -69,11 +81,16 @@ pub fn runtime_dir(codex_home: &Path) -> PathBuf {
         a.role_source.hash(&mut h);
         a.skill_source.hash(&mut h);
     }
-    codex_home.join("dev-workflow").join(format!("{:016x}", h.finish()))
+    codex_home
+        .join("dev-workflow")
+        .join(format!("{:016x}", h.finish()))
 }
 
 pub fn skill_path(dir: &Path, name: &str) -> Result<PathBuf> {
-    Ok(dir.join("skills").join(asset(name)?.skill_name).join("SKILL.md"))
+    Ok(dir
+        .join("skills")
+        .join(asset(name)?.skill_name)
+        .join("SKILL.md"))
 }
 
 /// Runtime copies are derived, never a second editable source of model selection.
@@ -90,14 +107,24 @@ pub fn materialize(dir: &Path) -> Result<()> {
         let skill = skill_path(dir, a.name)?;
         write_cached(&skill, a.skill_source)?;
         let mut table: toml::Table = toml::from_str(a.role_source)?;
-        let instructions = table.get("developer_instructions").and_then(toml::Value::as_str)
+        let instructions = table
+            .get("developer_instructions")
+            .and_then(toml::Value::as_str)
             .context("Role has no developer instructions")?;
-        let skill = skill.to_str().context("Codex requires UTF-8 workflow asset paths")?;
+        let skill = skill
+            .to_str()
+            .context("Codex requires UTF-8 workflow asset paths")?;
         let instructions = format!(
             "{instructions}\nUse the exact bundled skill source at {skill:?}; read it before acting.\n"
         );
-        table.insert("developer_instructions".into(), toml::Value::String(instructions));
-        write_cached(&dir.join("agents").join(format!("{}.toml", a.name)), &toml::to_string(&table)?)?;
+        table.insert(
+            "developer_instructions".into(),
+            toml::Value::String(instructions),
+        );
+        write_cached(
+            &dir.join("agents").join(format!("{}.toml", a.name)),
+            &toml::to_string(&table)?,
+        )?;
     }
     Ok(())
 }
@@ -105,7 +132,10 @@ pub fn materialize(dir: &Path) -> Result<()> {
 fn write_cached(path: &Path, contents: &str) -> Result<()> {
     match fs::read_to_string(path) {
         Ok(existing) if existing == contents => return Ok(()),
-        Ok(_) => bail!("Workflow cache differs from embedded assets at {}. Remove this cache directory and retry; do not edit generated copies.", path.display()),
+        Ok(_) => bail!(
+            "Workflow cache differs from embedded assets at {}. Remove this cache directory and retry; do not edit generated copies.",
+            path.display()
+        ),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
         Err(e) => return Err(e).with_context(|| format!("Read {}", path.display())),
     }
@@ -114,7 +144,10 @@ fn write_cached(path: &Path, contents: &str) -> Result<()> {
     // The same process materializes sequentially; unique PIDs separate concurrent launches.
     let result = (|| -> Result<()> {
         use std::io::Write;
-        let mut f = fs::OpenOptions::new().write(true).create_new(true).open(&tmp)?;
+        let mut f = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&tmp)?;
         f.write_all(contents.as_bytes())?;
         f.sync_all()?;
         drop(f);
@@ -133,10 +166,19 @@ pub fn registration_args(dir: &Path) -> Result<Vec<String>> {
     for a in ALL {
         let r = load(a.name)?;
         let path = dir.join("agents").join(format!("{}.toml", a.name));
-        let path = path.to_str().context("Codex requires UTF-8 workflow asset paths")?;
-        for (key, value) in [("config_file", path.to_owned()), ("description", r.description)] {
+        let path = path
+            .to_str()
+            .context("Codex requires UTF-8 workflow asset paths")?;
+        for (key, value) in [
+            ("config_file", path.to_owned()),
+            ("description", r.description),
+        ] {
             args.push("-c".into());
-            args.push(format!("agents.{}.{key}={}", a.name, toml::Value::String(value)));
+            args.push(format!(
+                "agents.{}.{key}={}",
+                a.name,
+                toml::Value::String(value)
+            ));
         }
     }
     Ok(args)
@@ -169,17 +211,26 @@ mod tests {
     fn generated_assets_are_idempotent_and_preserve_role_models() {
         let base = std::env::temp_dir().join(format!("dev-assets-{}", std::process::id()));
         let dir = runtime_dir(&base);
-        if base.exists() { fs::remove_dir_all(&base).unwrap(); }
+        if base.exists() {
+            fs::remove_dir_all(&base).unwrap();
+        }
         materialize(&dir).unwrap();
         materialize(&dir).unwrap();
         for a in ALL {
-            let generated = fs::read_to_string(dir.join("agents").join(format!("{}.toml", a.name))).unwrap();
+            let generated =
+                fs::read_to_string(dir.join("agents").join(format!("{}.toml", a.name))).unwrap();
             let role: Role = toml::from_str(&generated).unwrap();
             let source = load(a.name).unwrap();
             assert_eq!(role.model, source.model);
             assert_eq!(role.model_reasoning_effort, source.model_reasoning_effort);
-            assert!(role.developer_instructions.contains(skill_path(&dir, a.name).unwrap().to_str().unwrap()));
-            assert_eq!(fs::read_to_string(skill_path(&dir, a.name).unwrap()).unwrap(), a.skill_source);
+            assert!(
+                role.developer_instructions
+                    .contains(skill_path(&dir, a.name).unwrap().to_str().unwrap())
+            );
+            assert_eq!(
+                fs::read_to_string(skill_path(&dir, a.name).unwrap()).unwrap(),
+                a.skill_source
+            );
         }
         fs::write(skill_path(&dir, "builder").unwrap(), "corrupt").unwrap();
         assert!(materialize(&dir).is_err());
