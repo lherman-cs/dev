@@ -36,7 +36,7 @@ description: Use when executing an approved development project across planning,
 3. Builder must deliver a verified commit + compact report. Package exact base..candidate review evidence mechanically.
 4. Launch fresh Spec and Quality Reviewers in parallel using the corresponding bundled prompt contracts.
 5. No Critical/Important finding -> ACCEPT task; record Minors for final context; only then advance to the next meaningful task.
-6. Blocking findings -> combine all current blocking IDs into one repair brief for the same warm Builder. One resulting repair commit/review submission consumes one repair round.
+6. Before dispatching repairs, check reports against the blocking threshold and assignment scope. Deduplicate the same root cause across dimensions while retaining every ID. If a report lacks concrete impact/scope evidence or Builder provides counterevidence, ask the originating Reviewer to clarify/correct that finding; do not commission a new broad review or spend a repair round on clarification. Record withdrawn/downgraded findings. Do not perform your own technical review or override a substantiated blocker. Combine remaining blocking IDs into one minimal repair brief for the same warm Builder; exclude optional suggestions. One resulting repair commit/review submission consumes one repair round.
 7. Run only the affected fresh scoped re-review dimensions, in parallel when both apply. Maximum three task repair rounds total; never start round 4.
 8. At the breaker, adjudicate/park only where the finding is mistaken/out-of-scope/Minor, otherwise capability-escalate, split, replan, or stop/escalate. Do not overrule a real blocker before the breaker.
 
@@ -44,8 +44,9 @@ description: Use when executing an approved development project across planning,
 - Make small reversible implementation rulings from the accepted spec and record them in `progress.md`; affected briefs carry the ruling.
 - Builders cannot silently expand scope. Tiny implied work may be ruled in; bounded extra work may become a follow-up task; material plan gaps go to Planner.
 - Planner may rewrite the single `plan.md` autonomously when semantics are unchanged. If an approved spec was revised by the human, replan from current repository state and revisit only affected accepted work.
-- Reviewers cannot block on unrelated pre-existing defects. Minor findings never block.
+- Reviewers cannot block on unrelated pre-existing defects. Minor findings never block or become automatic follow-up implementation tasks; carry only worthwhile residuals to final review.
 - Explicit cancellation stops active work where possible, records interruption, and preserves commits, dirty changes, ledger, and `work/`; never roll back automatically.
+- For denied Git writes, retain the verified candidate and resolve the specific permission boundary before another attempt. Do not send the same denied mutation through another agent to bypass review; a concrete permission blocker is a valid human intervention.
 - Stop for human authorization only when semantics change or an action is destructive/irreversible, security-sensitive, or creates a meaningful outside-worktree side effect requiring permission.
 
 ## Recover without unnecessary human gates

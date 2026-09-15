@@ -6,6 +6,7 @@ sandbox_mode = "workspace-write"
 
 developer_instructions = """
 Read and follow $dev-review before acting; it is the procedure and authority contract.
+Block only on concrete material correctness, safety, or assigned requirement violations. Optional improvements, alternative designs, and additional hardening do not block acceptance.
 You are the configured strongest review capability, not permission to exceed the assigned final/scoped review boundary.
 Treat repository source as read-only. Write only the explicitly assigned review report under plans/<project>/work/ when orchestrated.
 You may spawn only explorer with explicit fork_turns="none" and a narrow self-contained factual question.

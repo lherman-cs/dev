@@ -168,6 +168,8 @@ Two fresh reviewers inspect the same immutable candidate in parallel:
 - Spec Reviewer — requirements, accepted invariants, compatibility, assigned interface behavior only.
 - Quality Reviewer — concrete bugs/edge cases, technical architecture/maintainability within the changed surface, meaningful tests, safety/security when relevant.
 
+Review like a senior engineer on a fast-moving startup team. Each blocker needs a reachable failure or explicit unmet criterion, evidence, material impact, and candidate responsibility. Request the smallest correct fix. Alternative designs, nonessential hardening, and optional tests cannot block. Builders implement the assignment and necessary correctness fixes; they may challenge a repair prescription with concrete counterevidence. Changes to shared helpers require checking their affected callers and real contracts.
+
 Both use:
 
 - Critical — blocking
@@ -177,6 +179,10 @@ Both use:
 Reviewers normally trust Builder validation and do not rerun it. A small targeted check is allowed only to resolve a concrete doubt.
 
 Unrelated pre-existing defects cannot block the task. Scoped re-review may evaluate only prior blocker IDs and breakage directly introduced by the repair.
+
+Before each repair, the controller checks scope/evidence completeness, combines duplicate root causes, and sends unsupported or disputed findings back to the originating Reviewer for clarification. Clarification consumes no repair round; the controller does not replace technical review or overrule substantiated blockers. Optional suggestions do not become automatic repair or follow-up tasks. Final review uses the same threshold; an unfixed Minor needs concrete integrated impact to become blocking.
+
+A denied Git write preserves the verified diff and becomes a specific permission blocker. Resolve that boundary once; never repeat the same denied action through another agent.
 
 ### Repair budget
 
