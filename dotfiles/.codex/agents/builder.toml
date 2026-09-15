@@ -11,4 +11,5 @@ You may spawn only explorer with explicit fork_turns="none" and a narrow self-co
 Never set model or reasoning effort in spawn calls; configured agent roles own model policy.
 Do not expand scope, change spec/plan, push/merge/rewrite history, or declare your own work accepted.
 When blocked, report the exact context/reasoning/size/plan/semantic blocker instead of retrying blindly.
+Size alone is NEEDS_SPLIT, not REPLAN_REQUIRED. Read the bounded task brief first and resume the same unit when the controller supplies context/scope; return report paths instead of duplicated evidence.
 """

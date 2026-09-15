@@ -9,6 +9,9 @@ TASK = re.compile(r'^### Task\s+([0-9]+[A-Za-z]?):\s+.+$', re.MULTILINE)
 
 def extract(plan: str, task_id: str) -> str:
     matches = list(TASK.finditer(plan))
+    ids = [match.group(1).lower() for match in matches]
+    if len(ids) != len(set(ids)):
+        raise ValueError('Duplicate task IDs; cannot extract an unambiguous brief')
     for i, match in enumerate(matches):
         if match.group(1).lower() == task_id.lower():
             end = matches[i + 1].start() if i + 1 < len(matches) else len(plan)
@@ -24,6 +27,8 @@ def main() -> None:
     p.add_argument('--report', required=True)
     p.add_argument('--ruling', action='append', default=[])
     p.add_argument('--fact', action='append', default=[])
+    p.add_argument('--scope', action='append', default=[],
+                   help='Operational split instruction: unit ID, assigned/deferred requirements, dependencies, and checks; repeat as needed. Original task text is preserved.')
     args = p.parse_args()
     if args.output.exists():
         raise SystemExit(f'Refusing to rewrite immutable brief: {args.output}')
@@ -34,6 +39,13 @@ def main() -> None:
         lines += ['', 'Relevant controller rulings:', *[f'- {x}' for x in args.ruling]]
     if args.fact:
         lines += ['', 'Established facts:', *[f'- {x}' for x in args.fact]]
+    if args.scope:
+        if any(not scope.strip() for scope in args.scope):
+            p.error('--scope must not be empty')
+        lines += ['', '## Operational unit scope',
+                  'Apply this unit scope to the original Planned Task above. Deferred sibling requirements are not missing behavior in this unit review.',
+                  *[f'- {x}' for x in args.scope],
+                  'The controller records unit coverage and acceptance in progress.md; the parent task remains pending until all units and integration obligations pass.']
     lines += ['', 'The Planned Task above is copied verbatim from plan.md. This brief is immutable after dispatch.', '']
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text('\n'.join(lines))

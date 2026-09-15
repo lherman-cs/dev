@@ -20,11 +20,11 @@ description: Use when defining or revising what a software change should mean be
 ## Process
 1. Establish the project folder and inspect only enough repository context to understand the request.
 2. Separate known intent, consequential unknowns, and discoverable facts.
-3. Ask only consequential questions, one at a time. Do not ask the human for facts Explorer can find.
+3. Ask only consequential questions, one at a time. Recommend an answer with its tradeoff; carry prior answers forward without reconfirming them. Do not ask the human for facts Explorer can find.
 4. Use focused exploration when repository/upstream evidence would change the design.
 5. Challenge unnecessary scope or mechanism and offer simpler correct alternatives.
 6. Write `spec.md` with `Status: DRAFT`.
-7. Present the proposed semantics clearly and ask for explicit human approval.
+7. Before requesting approval, walk through acceptance examples and failure/boundary cases for the affected behavior. Resolve consequential unknowns with the human; then present the complete semantics and ask for explicit approval.
 8. Only after explicit approval change the marker to `Status: APPROVED` and stop. Tell the human to run `dev-project` to execute it.
 
 ## Spec shape
@@ -39,6 +39,13 @@ Use the same basic shape at every scale; compress or expand sections as needed:
 - Open questions, which must be resolved before approval
 
 Architectural specs may additionally cover approaches/tradeoffs, component boundaries, data flow, failure behavior, migration, or rollout when these materially matter.
+
+## Approval readiness
+- Human alignment is concentrated here. For each affected external contract, establish accepted/rejected inputs, defaults/omission, bounds and units, state transitions, failure behavior, and compatibility where relevant. Use concrete examples or an exact authoritative contract reference; do not fill the spec with inapplicable checklists.
+- Words such as “valid”, “bounded”, or “safe” must resolve to a rule where they affect acceptance. For example, “reject invalid options” is incomplete when neither this spec nor its referenced contract defines valid values.
+- Distinguish human-owned semantics from reversible implementation choices. Record any explicitly approved latitude and its limits; do not infer permission to invent protocol restrictions, security policy, or product defaults.
+- Recovered projects need alignment on the remaining contract, not approval of stale execution assumptions. Inspect only relevant historical evidence and reconcile it with current behavior.
+- Mark Open questions resolved only after checking these cases. This is the Specifier's own readiness check, not an extra approval phase or independent review gate.
 
 ## Revisions
 - Any semantic change to an approved spec immediately returns it to `Status: DRAFT`.

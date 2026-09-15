@@ -10,6 +10,18 @@ This bundle implements a Superpowers-inspired, context-efficient development wor
 
 Explorer is intentionally **not** a public skill. It is a cheap read-only leaf agent that any public role may spawn for one narrow factual question.
 
+## Upstream and adaptation rule
+
+Use [Superpowers](https://github.com/obra/superpowers) as the behavioral baseline; explicit questionnaire answers override its defaults. The local roles consolidate its procedures rather than adding new workflow phases:
+
+- [Brainstorming](https://github.com/obra/superpowers/blob/main/skills/brainstorming/SKILL.md) -> `dev-spec`: human dialogue, alternatives, section alignment and approval; Q4–6/Q64/Q77 require a durable spec at every scale and a separate human-started execution phase.
+- [Writing plans](https://github.com/obra/superpowers/blob/main/skills/writing-plans/SKILL.md) -> `dev-plan`: complete actionable tasks, verified interfaces, meaningful test cycles and self-review; Q11/Q12/Q75 preserve execution-grade detail without a rigid universal task schema or human plan gate.
+- [Subagent-driven development](https://github.com/obra/superpowers/blob/main/skills/subagent-driven-development/SKILL.md) -> `dev-project`: isolated handoffs, sequential acceptance, controller rulings and scoped repair; Q9/Q23/Q33/Q81 specify three repairs, two parallel reviewers, configured reactive escalation and operational splits.
+- [Test-driven development](https://github.com/obra/superpowers/blob/main/skills/test-driven-development/SKILL.md) and [systematic debugging](https://github.com/obra/superpowers/blob/main/skills/systematic-debugging/SKILL.md) -> `dev-build`: meaningful RED/GREEN, root cause before fixes, Q31/Q41 scoped verification without routine reviewer reruns.
+- [Verification before completion](https://github.com/obra/superpowers/blob/main/skills/verification-before-completion/SKILL.md) -> final validation and evidence-backed handoff; Q15/Q32/Q52–53 retain one integrated final fix wave, and Q16 leaves Git integration to the human.
+
+Do not import upstream defaults that conflict with these answers: no extra public skills, worktree automation, plan approval, five-round repair loop, or model names in skill policy. The human reviews the finished result after the final AI review; that handoff does not authorize integration.
+
 ## Core artifact model
 
 Every project lives under a git-ignored directory:
@@ -45,6 +57,8 @@ Every path ends in `spec.md`. It remains `DRAFT` until the human explicitly appr
 
 After approval, `dev-spec` stops. The explicit command to execute is `dev a project ...` / `dev a pr ...`.
 
+Human alignment is concentrated before that approval. For affected external contracts, resolve defaults, valid/rejected inputs, bounds/units, state transitions, failure behavior, and compatibility with concrete examples or exact contract references. “Reject invalid options” is not resolved if validity is undefined. Record implementation latitude only when actually approved. Do not reconfirm settled decisions or ask the human for discoverable repository facts.
+
 ## Planning
 
 When `dev-project` sees an approved spec but no READY plan, it automatically spawns a fresh Planner. `dev-plan` may also be used directly.
@@ -63,6 +77,8 @@ Planner:
 - self-reviews before changing `Status: DRAFT` to `Status: READY`.
 
 A material plan defect discovered later causes a fresh isolated Planner to rewrite the single `plan.md`. Human approval is not needed when semantics remain unchanged. Semantic changes stop execution and require the human to run `dev-spec` again.
+
+Check semantic prerequisites before elaborating the plan, and walk the first task through a viable initial test/candidate before READY. Keep full execution-grade coverage; avoid source dumps, repeated workflow prose, and speculative implementation detail. During a material replan preserve unaffected task text. No new independent planning gate is introduced.
 
 ## Worktree and Git ownership
 
@@ -98,6 +114,14 @@ The only intentionally warm child is the current Builder while answering a clari
 The controller passes paths and SHAs, not pasted plans/diffs/history.
 
 Task briefs are immutable after dispatch. Repair instructions get new incremental repair briefs. Review packages are exact immutable Git ranges.
+
+Read only the dispatch template needed now. Helpers write packages directly to files; controllers do not print full packages into their own context. Children return status, report path, SHA or blocker IDs rather than duplicating reports. Builders and task reviewers start with their bounded brief and owning code; historical reports and full project authorities require a specific missing fact. Final reviewers still receive whole-project context.
+
+### Operational task splits
+
+Size alone is `NEEDS_SPLIT`, not a material replan. The Builder identifies independent behavioral surfaces and a viable first candidate. The controller records unit IDs, coverage, ordering and shared interfaces in `progress.md`, leaving the Planner's text unchanged. Generate each incremental unit artifact with `package_task.py --scope` and a fresh output path; this preserves the original task text and appends assigned/deferred requirements and verification obligations.
+
+Resume the current Builder for the first unit. Each subsequent meaningful unit gets a fresh Builder, and every unit passes the normal parallel spec/quality gate. Explicitly deferred sibling work cannot block the current unit. The parent task is accepted only after all units and integration obligations pass. Splitting cannot reset a consumed repair budget. Reuse baseline evidence at unchanged HEAD; do not repeat whole-plan preflight for a size-only split. Strategy/interface redesign still requires Planner.
 
 ## Task loop
 
@@ -255,7 +279,7 @@ After all task gates are accepted:
 
 Remaining genuine Critical/Important findings mean the project is not complete. Remaining genuine Minors do not block completion and are surfaced in the final report.
 
-On success Orchestrator records final range/validation/rulings/deferred Minors, deletes `work/`, reports completion, and stops. It does not ask for or perform merge/PR/branch/worktree operations.
+On success Orchestrator records final range/validation/rulings/deferred Minors and the final reviewer verdict, deletes `work/`, and hands off for human final review. The concise handoff links the spec and retained ledger, identifies the final range, summarizes validation and material residuals, and stops. Workflow completion does not assert human acceptance. It does not ask for or perform merge/PR/branch/worktree operations.
 
 ## Human-stop conditions
 
@@ -268,6 +292,8 @@ Normal workflow transitions never ask “continue?”. Stop only for a meaningfu
 - plan/spec contradiction so severe every path would be guessing.
 
 Ordinary implementation ambiguity, review repair, moving to the next task, validation, or autonomous replanning with unchanged semantics are not human gates.
+
+Before declaring a semantic stop, check the exact approved clause, established contract, and prior rulings. Make authorized reversible implementation rulings; do not invent external validation rules or product defaults. A genuine semantic gap is handed back as one concrete decision with a recommendation/tradeoff and the `dev-spec` project path. Preserve state and settled decisions.
 
 ## Direct role usage
 
@@ -313,4 +339,4 @@ python3 scripts/install_workflow.py /path/to/worktree
 
 The exporter backs up changed workflow assets and does not replace `.codex/config.toml` or unrelated roles/skills.
 
-See `SOURCES.md` for upstream references, `EVALS.md` for behavioral pressure scenarios, and `VALIDATION.md` for what was actually executed on this bundle.
+Upstream reference: [Superpowers](https://github.com/obra/superpowers). `tests/workflow_pressure_cases.yaml` is a behavioral scenario catalog; `tests/validate_assets.py` checks its structure, not agent compliance. Use isolated agent exercises for behavioral evidence and report their limitations separately from mechanical/launcher tests.

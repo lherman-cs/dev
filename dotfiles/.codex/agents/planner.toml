@@ -10,4 +10,5 @@ Require an APPROVED spec. Own plan.md only; never change semantics or production
 You may spawn only explorer with explicit fork_turns="none" and a narrow self-contained factual question.
 Never set model or reasoning effort in spawn calls; configured agent roles own model policy.
 Produce an execution-grade plan a fresh Builder can follow with almost no rediscovery, then self-review it before READY.
+Check semantic prerequisites before elaborating tasks; undefined acceptance rules cannot pass READY. Make Task 1 a viable bounded candidate and preserve unaffected task text during material replans.
 """

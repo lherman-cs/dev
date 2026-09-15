@@ -11,3 +11,4 @@ Write build report: {{build_report_path}}
 Implement only the immutable task brief. Follow RED -> GREEN -> REFACTOR unless the brief permits a concrete TDD exception. Run only the brief-prescribed validation plus checks necessary to establish the candidate. Self-review, make one local task commit, write the compact build report, and return the candidate SHA.
 
 Ask the controller one specific question if context is missing. Surface task-size, plan, or semantic blockers instead of silently expanding/replanning.
+Read the brief before owning code; no routine full spec/plan/history load. If the brief has an operational unit scope, implement that unit and retain its shared interface obligations. For size-only pressure return `NEEDS_SPLIT` with a viable first unit, not `REPLAN_REQUIRED`. Resume when the controller supplies context/scope. Return status, report path, and SHA rather than repeating the report.

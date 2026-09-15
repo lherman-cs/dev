@@ -12,7 +12,7 @@ description: Use when implementing one assigned software task or bounded repair.
 - Never declare your own work accepted and never start the next project task.
 
 ## TDD and implementation
-1. Understand the immediate code and assigned requirements. Use Explorer only for narrow facts, never as a substitute for understanding your diff.
+1. Read the task brief first, then its owning code/contracts. Do not routinely load the full spec, plan, ledger, or historical reports. Understand the immediate requirements; use Explorer only when a narrow fact is worth a separate handoff.
 2. **RED:** write the smallest meaningful behavioral test first and run it. Confirm it fails for the expected reason, not syntax/setup noise.
 3. **GREEN:** make the minimum coherent production change that makes the behavior pass.
 4. Run the focused test and confirm GREEN.
@@ -35,9 +35,10 @@ description: Use when implementing one assigned software task or bounded repair.
 - Necessary incidental changes already implied by the task are allowed; do not opportunistically fix adjacent unrelated issues.
 - If new work appears necessary but is not clearly implied, ask the parent/controller instead of expanding scope.
 - Missing context -> return/ask `NEEDS_CONTEXT` with one specific question.
-- Task too large -> report the concrete decomposition pressure; do not silently split the review boundary yourself.
+- Task too large -> `NEEDS_SPLIT` with the independent behavioral surfaces, shared interface obligations, and smallest viable first candidate. Size alone is not `REPLAN_REQUIRED`; do not silently split the review boundary yourself.
 - Material plan defect -> `REPLAN_REQUIRED` with evidence; do not redesign around it.
-- Semantic/product hole -> stop and identify it; never invent semantics.
+- Suspected semantic/product hole -> ask the controller with the exact missing decision, requirement/reference checked, and affected behavior. The controller checks established contracts and ruling authority before escalating; never invent semantics yourself.
+- Stay available for the controller's answer and resume the same assignment. Continue independent in-scope investigation/verification only when it does not depend on that answer; do not end a task merely because a question was sent.
 
 ## Explorer
 - You may spawn only `explorer`, always with `fork_turns="none"`, for a bounded factual question.
@@ -51,7 +52,7 @@ description: Use when implementing one assigned software task or bounded repair.
 
 ## Handoff
 When an orchestrated report path is assigned, write a short structured report there; otherwise return the same facts in chat:
-- `Status: COMPLETED | NEEDS_CONTEXT | REPLAN_REQUIRED | BLOCKED`
+- `Status: COMPLETED | NEEDS_CONTEXT | NEEDS_SPLIT | REPLAN_REQUIRED | BLOCKED`
 - `Commit: <sha>` when completed
 - Implemented: concise behavior change
 - Verification: exact commands and outcomes
@@ -59,3 +60,4 @@ When an orchestrated report path is assigned, write a short structured report th
 - Notes: only material decision, TDD exception, or residual concern
 
 Do not dump search history, terminal transcripts, or a reasoning diary.
+For a file handoff, return only status, report path, candidate SHA, and any blocking question; do not repeat the report in chat. Record concise command results, not full successful test output.

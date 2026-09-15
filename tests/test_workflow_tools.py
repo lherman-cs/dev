@@ -4,6 +4,7 @@ from __future__ import annotations
 import importlib.util
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -22,6 +23,33 @@ class WorkflowToolsTests(unittest.TestCase):
         self.assertNotIn('Do B.',package_task.extract(plan,'1'))
         self.assertIn('Do B.',package_task.extract(plan,'2'))
         with self.assertRaises(ValueError): package_task.extract(plan,'3')
+
+    def test_ambiguous_task_ids_are_rejected(self):
+        with self.assertRaisesRegex(ValueError, 'Duplicate task IDs'):
+            package_task.extract('### Task 1a: First\nA\n### Task 1A: Second\nB\n', '1a')
+
+    def test_split_package_preserves_plan_and_dispatched_brief(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            plan = root/'plan.md'
+            original = '# Plan\nStatus: READY\n### Task 1: Transaction\nValidate input. Publish state.\n### Task 2: Client\nConnect.\n'
+            plan.write_text(original)
+            first, unit = root/'first.md', root/'unit-1a.md'
+            command = [sys.executable, str(TOOLS/'package_task.py'), '--plan', str(plan),
+                       '--task', '1', '--base', 'abc1234', '--report', str(root/'report.md')]
+            subprocess.run([*command, '--output', str(first)], check=True, capture_output=True)
+            dispatched = first.read_bytes()
+            scope = '1a: validate input; publication belongs to 1b. Test validation before handoff.'
+            subprocess.run([*command, '--output', str(unit), '--scope', scope], check=True, capture_output=True)
+            self.assertEqual(plan.read_text(), original)
+            self.assertEqual(first.read_bytes(), dispatched)
+            self.assertIn(package_task.extract(original, '1').rstrip(), unit.read_text())
+            self.assertIn(scope, unit.read_text())
+            self.assertNotIn('Connect.', unit.read_text())
+            before = unit.read_bytes()
+            result = subprocess.run([*command, '--output', str(unit), '--scope', 'replace'], capture_output=True)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertEqual(unit.read_bytes(), before)
 
     def test_project_ready_markers(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -45,11 +73,15 @@ class WorkflowToolsTests(unittest.TestCase):
             f=repo/'x'; f.write_text('a\n'); subprocess.run(['git','-C',repo,'add','x'],check=True); subprocess.run(['git','-C',repo,'commit','-qm','base'],check=True); base=subprocess.check_output(['git','-C',repo,'rev-parse','HEAD'],text=True).strip()
             f.write_text('b\n'); subprocess.run(['git','-C',repo,'commit','-qam','candidate'],check=True); candidate=subprocess.check_output(['git','-C',repo,'rev-parse','HEAD'],text=True).strip()
             out=repo/'package.md'
-            # Exercise the same core helpers and format used by the CLI script.
-            b=package_review.commit(repo,base); c=package_review.commit(repo,candidate); self.assertEqual((b,c),(base,candidate))
-            stat=package_review.git(repo,'diff','--stat','--find-renames',b,c); diff=package_review.git(repo,'diff','--no-ext-diff','--find-renames','--find-copies',b,c,'--')
-            out.write_text(f'Base: `{b}`\nCandidate: `{c}`\n{stat}\n{diff}')
+            command = [sys.executable, str(TOOLS/'package_review.py'), '--repo', str(repo),
+                       '--base', base, '--candidate', candidate, '--output', str(out)]
+            subprocess.run(command, check=True, capture_output=True)
             self.assertIn('-a',out.read_text()); self.assertIn('+b',out.read_text())
+            self.assertIn(base, out.read_text()); self.assertIn(candidate, out.read_text())
+            before = out.read_bytes()
+            result = subprocess.run(command, capture_output=True)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertEqual(out.read_bytes(), before)
 
     def test_review_verdict_parser(self):
         with tempfile.TemporaryDirectory() as tmp:

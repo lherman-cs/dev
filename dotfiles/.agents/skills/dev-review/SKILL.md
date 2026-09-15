@@ -13,6 +13,7 @@ description: Use when reviewing an explicit code candidate, repair, or completed
 
 ## Evidence and scope
 - Inspect the candidate diff and enough surrounding code/callers/tests to establish concrete findings.
+- Read the assigned brief/report/package first. Open full project authorities only for a specific missing requirement; final review deliberately receives the whole-project context. Do not preload historical reports or repeat discovery already supported by evidence.
 - Builder-reported required validation is workflow evidence. Do not routinely rerun it.
 - Run a small targeted check only when a **specific concrete doubt** cannot be resolved by inspection; never repeat the whole suite by reflex.
 - Candidate-caused defects and requirements the candidate must handle are in scope.
@@ -45,3 +46,4 @@ Keep reports compact and findings-first:
 - concise evidence checked
 
 For scoped re-review, report each prior ID as `RESOLVED` or `UNRESOLVED`, then any repair-introduced blocking defect, then the verdict. Do not write an essay, praise section, plan restatement, or speculative improvement list.
+After writing a report, return verdict, report path, and blocking IDs only. Evidence belongs in the report; do not duplicate it in the parent conversation.

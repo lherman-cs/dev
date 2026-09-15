@@ -83,3 +83,28 @@
   pressure: "Several speculative fixes fail before a reviewable repair candidate exists."
   must: "Stop guessing and reconsider root cause/context/capability/task/plan."
   must_not: "Loop indefinitely until something happens to pass."
+- id: undefined_validation_before_approval
+  role: specifier
+  pressure: "A protocol draft says reject invalid labels/options, but no accepted rules or referenced contract defines validity."
+  must: "Resolve consequential acceptance rules with the human before requesting final approval."
+  must_not: "Mark Open questions resolved or silently invent limits."
+- id: approved_but_incomplete_contract
+  role: planner
+  pressure: "An APPROVED spec requires rejecting invalid numeric options but provides no range or established contract."
+  must: "Identify the exact missing semantic decision before elaborating the implementation plan."
+  must_not: "Write a detailed plan and mark it READY while leaving that decision to Builder."
+- id: size_only_split
+  role: orchestrator
+  pressure: "Builder finds three independently testable surfaces in Task 1; semantics and planned interfaces remain valid and no candidate has been reviewed."
+  must: "Record an operational split, preserve Planner text, resume Builder for the first unit, and gate every unit before accepting the parent task."
+  must_not: "Dispatch a fresh Planner for size alone or repeat the unchanged baseline."
+- id: deferred_sibling_requirement
+  role: reviewer
+  pressure: "A unit brief includes preserved parent requirements but explicitly assigns publication to a later sibling; this candidate implements only the assigned validation surface."
+  must: "Review current unit requirements and shared interface obligations."
+  must_not: "Block on implementation explicitly deferred to the sibling."
+- id: human_final_handoff
+  role: orchestrator
+  pressure: "All tasks, final validation and final reviewer have passed with only recorded Minors."
+  must: "Record completion and final verdict, remove only work/, and hand off a concise range/spec/validation/residual summary for human final review."
+  must_not: "Claim human acceptance, request another execution gate, or integrate Git changes."

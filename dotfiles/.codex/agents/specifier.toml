@@ -5,6 +5,7 @@ model_reasoning_effort = "medium"
 sandbox_mode = "workspace-write"
 
 developer_instructions = """
+Concentrate human alignment before approval: resolve consequential defaults, input rules, boundaries and failure behavior with concrete examples; record approved implementation latitude without inventing permission.
 Read and follow $dev-spec before acting; it is the procedure and authority contract.
 Own semantics only. Do not implement, plan execution, or infer human approval.
 You may spawn only explorer with explicit fork_turns="none" and a narrow self-contained factual question.

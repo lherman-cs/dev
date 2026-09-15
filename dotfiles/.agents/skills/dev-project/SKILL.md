@@ -18,7 +18,7 @@ description: Use when executing an approved development project across planning,
 3. A dirty starting tree blocks a fresh project. During recovery, preserve clearly attributable active-task changes; if ownership is ambiguous, stop and report the paths. Never stash/reset/clean them.
 4. Missing/DRAFT spec -> stop: tell the human to run `dev-spec`. Never spawn Specifier.
 5. APPROVED spec with missing/DRAFT plan -> spawn fresh Planner. Mid-project material plan defects also route to fresh Planner; semantic changes stop for human-run `dev-spec`.
-6. Before Task 1, preflight the whole READY plan once for task/interface/dependency contradictions and run its defined baseline validation. Record known pre-existing failures; do not turn preflight into another repository audit. You may coalesce adjacent same-shape trivial tasks only when they clearly share one meaningful test/review surface; record that as a ruling.
+6. Before Task 1, preflight the whole READY plan once for task/interface/dependency contradictions, undefined acceptance rules, and a viable first candidate; run its defined baseline validation once. Record known pre-existing failures; do not turn preflight into another repository audit. A task split alone does not invalidate baseline evidence at unchanged HEAD. You may coalesce adjacent same-shape trivial tasks only when they clearly share one meaningful test/review surface; record that as a ruling.
 
 ## Fresh-context delegation
 - New subagents always use `fork_turns="none"`; pass paths + SHAs + only bounded new context, never accumulated conversation history.
@@ -27,10 +27,12 @@ description: Use when executing an approved development project across planning,
 - Use actual event-driven wait/resume tools. No polling loops, fake pauses, sleeps, or respawning because an agent is taking time.
 - Only you may spawn Planner/Builder/Reviewer workflow roles. Every role may use Explorer; Explorer is a leaf. Independent narrow Explorer questions may run in parallel within configured capacity.
 - Use configured capability-escalation agent types only after a concrete reasoning blocker; never infer model rankings or model names.
+- Read only the dispatch template needed now. Execute packaging helpers directly and pass output paths; do not print entire packages into your context. Read reports once and retain decisions/SHAs in the ledger rather than repeating evidence in chat.
+- Announce material progress, a changed assumption, or a real blocker in one short sentence; follow runtime-required update intervals without narrating routine tool calls. Wait using runtime events, not repeated status queries.
 
 ## Task loop
 1. Extract the next `### Task N:` verbatim into an immutable task brief using the bundled packaging utility; add only base SHA, relevant rulings/established facts, and report path.
-2. Dispatch Builder. Small missing context -> answer/rule and resume the same Builder. Semantics-preserving oversized work may be split operationally; material strategy change -> Planner.
+2. Dispatch Builder. Small missing context -> answer/rule and resume the same Builder. For `NEEDS_SPLIT`, use the operational split procedure below; material strategy change -> Planner.
 3. Builder must deliver a verified commit + compact report. Package exact base..candidate review evidence mechanically.
 4. Launch fresh Spec and Quality Reviewers in parallel using the corresponding bundled prompt contracts.
 5. No Critical/Important finding -> ACCEPT task; record Minors for final context; only then advance to the next meaningful task.
@@ -46,10 +48,17 @@ description: Use when executing an approved development project across planning,
 - Explicit cancellation stops active work where possible, records interruption, and preserves commits, dirty changes, ledger, and `work/`; never roll back automatically.
 - Stop for human authorization only when semantics change or an action is destructive/irreversible, security-sensitive, or creates a meaningful outside-worktree side effect requiring permission.
 
+## Recover without unnecessary human gates
+- Before a semantic stop, identify the exact unanswered decision and check the relevant approved clause, established repository contract, and prior rulings. A missing location or internal helper design is context/implementation work, not a product decision. Choose small reversible mechanics within the approved contract and record why; do not invent externally visible acceptance rules.
+- A genuine semantic gap requires human-run `dev-spec`. Return one concise question with the exact affected behavior, recommended choice/tradeoff, and project path. Preserve state; do not ask the human to rediscover the problem or approve unrelated settled sections.
+- Operational split: keep `plan.md` and the dispatched brief immutable. Record child units (for example 1a/1b), requirement coverage, ordering, and shared interfaces in `progress.md`. Create incremental scope instructions under `work/` using `package_task.py --scope`; preserve the original Planner text and explicitly identify requirements deferred to sibling units. No new architecture or semantics may be introduced here.
+- Resume the current Builder for the first unit with the new scope artifact; each later meaningful unit gets a fresh Builder and the normal dual review/repair gate. Review only that unit's assigned requirements; deferred sibling requirements are not omissions. Accept the original task only when every unit is accepted and its integration obligations are verified. A split never resets an existing repair count to evade the breaker.
+- Do not send a size-only problem to Planner. If a split actually requires interface/strategy redesign, send that concrete defect to Planner. Never retry a fresh agent with identical instructions.
+
 ## Completion
 1. After all tasks are accepted, run the plan-defined whole-project validation.
 2. Fix candidate-caused validation failures before final review using the smallest responsible scope; unrelated known baseline failures do not silently expand scope.
 3. Launch one strongest configured fresh final Reviewer with spec, plan, progress rulings/deferred Minors, full project diff, and validation result; do not send task-history chatter.
 4. Blocking final findings get exactly one fresh integrated Builder fix wave, focused checks, full validation again, then one fresh scoped final re-review.
 5. After that re-review adjudicate residuals once; a genuine remaining blocker means project is not complete, plan defects return to Planner, semantic holes stop for human-run `dev-spec`.
-6. On success record completion, final range, validation, rulings, and deferred Minors in `progress.md`; delete only `work/`; report concisely and stop. Never merge/rebase/squash/push/delete worktrees.
+6. On success record completion, final range, validation, rulings, deferred Minors, and final reviewer verdict in `progress.md`; delete only `work/`. Hand off for the human's final review with the spec link, final range, validation summary, and material residuals; workflow completion does not assert human acceptance. Stop without integration actions or a “continue?” question. Never merge/rebase/squash/push/delete worktrees.
