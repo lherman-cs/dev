@@ -152,7 +152,7 @@ def validate(root: Path = ROOT) -> dict:
             f"{role}: tuned model policy",
         )
         check(
-            data["default_permissions"] in (":read-only", "dev-workspace", "dev-builder"),
+            data["default_permissions"] in ("dev-explorer", "dev-workspace", "dev-builder"),
             f"{role}: permission profile",
         )
         check(

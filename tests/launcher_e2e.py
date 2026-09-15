@@ -37,7 +37,7 @@ def main() -> None:
                         'Path(os.environ["DEV_TEST_CAPTURE"]).write_text(json.dumps(sys.argv[1:]))\n')
         shim.chmod(0o755)
         env = dict(os.environ, PATH=str(bindir)+os.pathsep+os.environ.get('PATH',''),
-                   CODEX_HOME=str(home), DEV_TEST_CAPTURE=str(capture))
+                   CODEX_HOME=str(home), HOME=str(tmp / "user-home"), XDG_RUNTIME_DIR=str(tmp / "runtime"), DEV_TEST_CAPTURE=str(capture))
         def run(*args: str) -> subprocess.CompletedProcess:
             return subprocess.run([str(binary), 'a', *args], env=env, cwd=tmp,
                                   text=True, capture_output=True, check=True)
@@ -52,6 +52,10 @@ def main() -> None:
                 key, val = args[i+1].split('=', 1)
                 result[key] = tomllib.loads('value='+val)['value']; i += 2
             return result
+        run('config', '--profile', 'build', '--args')
+        assert not (tmp/'user-home').exists(), 'Config inspection created tool directories'
+        launch('explore')
+        assert not (tmp/'user-home').exists(), 'Explorer launch provisioned tool directories'
         profiles = tomllib.loads((ROOT / 'agent.toml').read_text())['profiles']
         for command in ('spec','plan','build','review','project','explore'):
             for task in ([], ['Task with spaces, "quotes", and $literal']):

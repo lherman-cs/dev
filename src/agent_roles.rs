@@ -88,7 +88,7 @@ pub fn load(name: &str) -> Result<Role> {
     ensure!(r.name == name, "Mismatched role identity: {name}");
     ensure!(!r.description.trim().is_empty() && !r.model.trim().is_empty(), "Incomplete role {name}");
     ensure!(matches!(r.model_reasoning_effort.as_str(), "low" | "medium" | "high" | "xhigh" | "max"), "Invalid effort for {name}");
-    ensure!(matches!(r.default_permissions.as_str(), ":read-only" | "dev-workspace" | "dev-builder"), "Invalid permissions for {name}");
+    ensure!(matches!(r.default_permissions.as_str(), "dev-explorer" | "dev-workspace" | "dev-builder"), "Invalid permissions for {name}");
     ensure!(!r.developer_instructions.trim().is_empty(), "Missing instructions for {name}");
     Ok(r)
 }
@@ -206,7 +206,7 @@ mod tests {
 
     #[test]
     fn explorer_is_leaf_and_reviewers_are_source_read_only_by_contract() {
-        assert_eq!(load("explorer").unwrap().default_permissions, ":read-only");
+        assert_eq!(load("explorer").unwrap().default_permissions, "dev-explorer");
         let explorer: toml::Table = toml::from_str(asset("explorer").unwrap().role_source).unwrap();
         assert_eq!(explorer["agents"]["enabled"].as_bool(), Some(false));
         for name in ["reviewer", "reviewer_strong"] {

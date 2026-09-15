@@ -2262,13 +2262,71 @@ fn exec_codex(profile: AgentProfileName, prompt: Vec<String>) -> Result<()> {
     let mut command = Command::new("codex");
     command.args(agent_codex_args(&config, profile)?);
     command.args(agent_roles::registration_args(&dir)?);
-    command.args(repository_permission_args(&std::env::current_dir()?)?);
+    command.args(development_permission_args(&std::env::current_dir()?, !matches!(profile, AgentProfileName::Explore))?);
     if let Some(prompt) = agent_prompt(&config, profile, &prompt, &dir)? {
         // End options so user task text can never become a Codex CLI flag.
         command.arg("--").arg(prompt);
     }
     info!("Starting fresh interactive Codex session with '{}' profile", profile.as_str());
     run_codex(command)
+}
+
+// Tool homes can be relocated by the shell. Grant these explicit development
+// paths without making the user's entire home or runtime directory writable.
+fn development_permission_args(cwd: &Path, prepare: bool) -> Result<Vec<String>> {
+    let config = load_agent_config()?;
+    let mut filesystem = config.codex["permissions"]["dev-workspace"]["filesystem"]
+        .as_table().context("Workspace filesystem policy missing")?.clone();
+    for (variable, subpaths) in [
+        ("XDG_CACHE_HOME", vec![""]),
+        ("CARGO_HOME", vec![""]), ("RUSTUP_HOME", vec![""]),
+        ("npm_config_cache", vec![""]), ("NPM_CONFIG_CACHE", vec![""]),
+        ("npm_config_store_dir", vec![""]), ("NPM_CONFIG_STORE_DIR", vec![""]),
+        ("PLAYWRIGHT_BROWSERS_PATH", vec![""]), ("PUPPETEER_CACHE_DIR", vec![""]),
+        ("PNPM_HOME", vec![""]), ("UV_CACHE_DIR", vec![""]),
+        ("GRADLE_USER_HOME", vec![""]), ("GOMODCACHE", vec![""]),
+        ("GOCACHE", vec![""]), ("GOPATH", vec!["pkg/mod", "bin"]),
+        ("XDG_DATA_HOME", vec!["pnpm", "uv", "containers"]),
+        ("XDG_RUNTIME_DIR", vec!["containers", "libpod"]),
+        ("XDG_STATE_HOME", vec!["pnpm"]),
+    ] {
+        if let Some(value) = std::env::var_os(variable).filter(|v| !v.is_empty()) {
+            // Playwright uses 0 for project-local browser installation.
+            if variable == "PLAYWRIGHT_BROWSERS_PATH" && value == "0" { continue; }
+            // GOPATH is the one supported variable that is a path list.
+            let bases: Vec<PathBuf> = if variable == "GOPATH" {
+                std::env::split_paths(&value).collect()
+            } else { vec![PathBuf::from(value)] };
+            for base in bases {
+                let base = if base.is_absolute() { base } else { cwd.join(base) };
+                for subpath in &subpaths {
+                    let path = base.join(subpath);
+                    filesystem.insert(path.to_str().context("Tool path is not UTF-8")?.into(), toml::Value::String("write".into()));
+                }
+                if variable == "CARGO_HOME" {
+                    for filename in ["credentials", "credentials.toml"] {
+                        filesystem.insert(base.join(filename).to_str().context("Cargo path is not UTF-8")?.into(), toml::Value::String("read".into()));
+                    }
+                }
+            }
+        }
+    }
+    // Linux sandbox mounts only existing grant targets. Prepare exact cache
+    // roots before starting Codex so first-time tool setup works too. Inspection
+    // and Explorer launches must remain read-only outside temporary assets.
+    if prepare {
+        for (path, access) in &filesystem {
+            if access.as_str() != Some("write") { continue; }
+            let path = if let Some(relative) = path.strip_prefix("~/") {
+                dirs::home_dir().context("Resolve development cache home")?.join(relative)
+            } else { PathBuf::from(path) };
+            std::fs::create_dir_all(&path)
+                .with_context(|| format!("Prepare development permission directory {}", path.display()))?;
+        }
+    }
+    let mut args = vec!["-c".into(), format!("permissions.dev-workspace.filesystem={}", toml_inline(&toml::Value::Table(filesystem))?)];
+    args.extend(repository_permission_args(cwd)?);
+    Ok(args)
 }
 
 // A linked worktree stores objects/refs outside its working directory. Grant
@@ -2352,6 +2410,7 @@ fn cmd_agent_config(profile: AgentProfileName, args_only: bool) -> Result<()> {
     let dir = workflow_runtime_dir()?;
     let mut args = agent_codex_args(&config, profile)?;
     args.extend(agent_roles::registration_args(&dir)?);
+    args.extend(development_permission_args(&std::env::current_dir()?, false)?);
     // Inspecting config is read-only; runtime assets are created on actual launch.
     if args_only {
         println!("{}", args.iter().map(|s| shell_quote(s)).collect::<Vec<_>>().join(" "));

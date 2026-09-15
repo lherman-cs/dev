@@ -8,15 +8,42 @@ approvals_reviewer = "auto_review"
 model_auto_compact_token_limit = 200000
 model_auto_compact_token_limit_scope = "total"
 
-# Named profiles retain workspace safeguards while allowing Builder commits.
+# Routine local development access; role instructions still define task authority.
 [codex.permissions.dev-workspace]
 extends = ":workspace"
+[codex.permissions.dev-workspace.filesystem]
+"~/.cache" = "write"
+"~/.cargo" = "write"
+"~/.cargo/credentials.toml" = "read"
+"~/.cargo/credentials" = "read"
+"~/.rustup" = "write"
+"~/.npm" = "write"
+"~/.gradle" = "write"
+"~/.m2" = "write"
+"~/go/pkg/mod" = "write"
+"~/go/bin" = "write"
+"~/.local/bin" = "write"
+"~/.local/lib" = "write"
+"~/.local/share/pnpm" = "write"
+"~/.local/state/pnpm" = "write"
+"~/.local/share/uv" = "write"
+"~/.local/share/containers" = "write"
+"~/.bun/install/cache" = "write"
 [codex.permissions.dev-workspace.network]
 enabled = true
 [codex.permissions.dev-builder]
 extends = "dev-workspace"
 [codex.permissions.dev-builder.filesystem]
 # The launcher adds only the current repository's resolved Git metadata path.
+
+# Explorer can research upstream and use scratch files, but cannot edit projects.
+[codex.permissions.dev-explorer]
+extends = ":read-only"
+[codex.permissions.dev-explorer.filesystem]
+":tmpdir" = "write"
+":slash_tmp" = "write"
+[codex.permissions.dev-explorer.network]
+enabled = true
 
 [codex.agents]
 enabled = true

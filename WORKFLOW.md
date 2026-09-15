@@ -184,7 +184,7 @@ Unrelated pre-existing defects cannot block the task. Scoped re-review may evalu
 
 Before each repair, the controller checks scope/evidence completeness, combines duplicate root causes, and sends unsupported or disputed findings back to the originating Reviewer for clarification. Clarification consumes no repair round; the controller does not replace technical review or overrule substantiated blockers. Optional suggestions do not become automatic repair or follow-up tasks. Final review uses the same threshold; an unfixed Minor needs concrete integrated impact to become blocking.
 
-A denied Git write preserves the verified diff and becomes a specific permission blocker. Resolve that boundary once; never repeat the same denied action through another agent.
+An initial sandbox failure uses the configured automatic tool approval path. An actual approval rejection preserves the verified diff and becomes a specific permission blocker; never route a rejected action through another agent.
 
 ### Repair budget
 
@@ -208,12 +208,23 @@ It may not overrule a real blocking finding before the breaker.
 `agent.toml` defines named Codex permission profiles (verified with CLI 0.154.0):
 
 - `dev-workspace` extends `:workspace`, retaining `.git`, `.codex`, and `.agents` protections.
-- `dev-builder` extends `dev-workspace`; the launcher grants writes only to the current repository's Git metadata. Builder, Builder escalation, and the parent Orchestrator select it; Orchestrator's workflow authority still forbids implementation. Other writing roles select `dev-workspace`; Explorer selects `:read-only`.
+- `dev-builder` extends `dev-workspace`; the launcher grants writes only to the current repository's Git metadata. Builder, Builder escalation, and the parent Orchestrator select it; Orchestrator's workflow authority still forbids implementation. Other writing roles select `dev-workspace`; Explorer selects `dev-explorer` (project read-only, network and temporary scratch access).
 - The launcher grants `dev-builder` access to the current repository's resolved Git common directory, including linked-worktree objects/refs. It does not grant the enclosing repository's source tree.
+
+All writing roles can use ordinary Rust, Node, Python, Go, Java, browser/build caches, user-local executables, and rootless container storage. Before launching a writing role, the launcher creates the exact cache directories so Linux can mount first-use grants; config inspection remains read-only. The launcher honors tool-home/cache environment overrides, including Cargo/Rustup, npm/pnpm, uv, Go, Gradle, browser caches, and XDG paths. Cargo credential files remain read-only. Explorer has scratch and upstream-research access, with no project edits or package installs. These permissions apply to both root sessions and registered children; the parent Orchestrator has the Builder ceiling.
+
+| Operation | Roles with direct access |
+| --- | --- |
+| Read source, upstream network, temporary research files, local networking | All |
+| Write assigned workspace artifacts; build/test caches; user-local tools | All except Explorer |
+| Stage and commit current repository, including linked worktrees | Builder, Builder escalation, Orchestrator ceiling |
+| Container storage and runtime state | All except Explorer |
+
+Linux container namespaces, host package installation, protected agent configuration, and paths outside these grants may still require tool escalation. `on-request` plus `auto_review` handles authorized exceptions without a separate conversational permission gate. A sandbox error alone is not `BLOCKED`; request escalation and continue if allowed. Actual policy rejection must be respected. This is broad routine development access, not a guarantee that all host operations are sandbox-compatible.
 
 Keep machine-specific roots under `[permissions.dev-workspace.workspace_roots]` and network settings under `[permissions.dev-workspace.network]`. Remove legacy `sandbox_mode` and `[sandbox_workspace_write]` settings from active config layers; legacy sandbox selection overrides named profiles. Do not use full-access mode for routine commits. Resume preserves saved session permissions; start a fresh project controller to adopt the new permissions and recover existing work.
 
-Run `python3 tests/permissions_e2e.py --binary target/debug/dev` outside an enclosing sandbox to verify actual Git access and protected paths in disposable normal/linked repositories. This executes real Codex sandboxes without model calls.
+Run `python3 tests/permissions_e2e.py --binary target/debug/dev` outside an enclosing sandbox to verify all eight roles: Git, caches, SQLite WAL writes, scratch, local networking, and protected paths in disposable normal/linked repositories; it also exercises a real frozen pnpm install when pnpm is available. This executes real Codex sandboxes without model calls.
 
 ## Capability escalation and model policy
 

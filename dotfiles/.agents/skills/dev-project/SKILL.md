@@ -18,7 +18,7 @@ description: Use when executing an approved development project across planning,
 3. A dirty starting tree blocks a fresh project. During recovery, preserve clearly attributable active-task changes; if ownership is ambiguous, stop and report the paths. Never stash/reset/clean them.
 4. Missing/DRAFT spec -> stop: tell the human to run `dev-spec`. Never spawn Specifier.
 5. APPROVED spec with missing/DRAFT plan -> spawn fresh Planner. Mid-project material plan defects also route to fresh Planner; semantic gaps use the inline decision procedure below.
-6. Before Task 1, preflight the whole READY plan once for task/interface/dependency contradictions, undefined acceptance rules, and a viable first candidate; run its defined baseline validation once. Record known pre-existing failures; do not turn preflight into another repository audit. A task split alone does not invalidate baseline evidence at unchanged HEAD. You may coalesce adjacent same-shape trivial tasks only when they clearly share one meaningful test/review surface; record that as a ruling.
+6. Before Task 1, preflight the whole READY plan once for task/interface/dependency contradictions, undefined acceptance rules, and a viable first candidate; run its defined baseline validation once. Record known pre-existing failures; distinguish source failures from recoverable environment/setup failures. Resolve routine setup under existing authority or automatic tool approval before treating required validation as unavailable; do not turn preflight into another repository audit. A task split alone does not invalidate baseline evidence at unchanged HEAD. You may coalesce adjacent same-shape trivial tasks only when they clearly share one meaningful test/review surface; record that as a ruling.
 
 ## Fresh-context delegation
 - New subagents always use `fork_turns="none"`; pass paths + SHAs + only bounded new context, never accumulated conversation history.
@@ -46,7 +46,7 @@ description: Use when executing an approved development project across planning,
 - Planner may rewrite the single `plan.md` autonomously when semantics are unchanged. If an approved spec was revised by the human, replan from current repository state and revisit only affected accepted work.
 - Reviewers cannot block on unrelated pre-existing defects. Minor findings never block or become automatic follow-up implementation tasks; carry only worthwhile residuals to final review.
 - Explicit cancellation stops active work where possible, records interruption, and preserves commits, dirty changes, ledger, and `work/`; never roll back automatically.
-- For denied Git writes, retain the verified candidate and resolve the specific permission boundary before another attempt. Do not send the same denied mutation through another agent to bypass review; a concrete permission blocker is a valid human intervention.
+- For an initial sandbox failure on authorized work, have the owning agent use the configured automatic tool approval path and continue if allowed; do not ask the human merely because sandbox execution failed. An actual approval rejection or unavailable escalation is a permission blocker: retain the verified candidate and report the exact boundary. Never route a rejected mutation through another agent.
 - Stop for human authorization only when semantics change or an action is destructive/irreversible, security-sensitive, or creates a meaningful outside-worktree side effect requiring permission.
 
 ## Recover without unnecessary human gates
@@ -61,7 +61,7 @@ description: Use when executing an approved development project across planning,
 
 ## Completion
 1. After all tasks are accepted, run the plan-defined whole-project validation.
-2. Fix candidate-caused validation failures before final review using the smallest responsible scope; unrelated known baseline failures do not silently expand scope.
+2. Fix candidate-caused validation failures before final review using the smallest responsible scope; unrelated known baseline source failures do not silently expand scope. Missing required browser/tool provisioning is an environment gap, not a passing check: recover setup and obtain the required evidence or report the exact unresolved validation blocker. Optional experiments cannot delay an otherwise accepted task.
 3. Launch one strongest configured fresh final Reviewer with spec, plan, progress rulings/deferred Minors, full project diff, and validation result; do not send task-history chatter.
 4. Blocking final findings get exactly one fresh integrated Builder fix wave, focused checks, full validation again, then one fresh scoped final re-review.
 5. After that re-review adjudicate residuals once; a genuine remaining blocker means project is not complete, plan defects return to Planner, semantic holes use the inline decision/focused alignment procedure without resetting the final fix budget.

@@ -5,6 +5,7 @@ model_reasoning_effort = "low"
 default_permissions = "dev-workspace"
 
 developer_instructions = """
+For an in-scope authorized operation blocked by the sandbox, use tool escalation through the configured automatic reviewer before reporting BLOCKED. An initial sandbox error is not an approval rejection; never bypass an actual rejection or treat filesystem access as authority to expand the task.
 Read and follow $dev-review before acting; it is the procedure and authority contract.
 Block only on concrete material correctness, safety, or assigned requirement violations. Optional improvements, alternative designs, and additional hardening do not block acceptance.
 You are the configured strongest review capability, not permission to exceed the assigned final/scoped review boundary.

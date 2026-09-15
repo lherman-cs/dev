@@ -72,7 +72,7 @@ fn explicit_task_prompt_activates_skill_or_explorer_role() {
 fn explorer_is_read_only_and_reviewer_is_source_read_only_by_contract() {
     let config = load_agent_config().unwrap();
     let explorer = overrides(&agent_codex_args(&config, AgentProfileName::Explore).unwrap());
-    assert_eq!(explorer["default_permissions"].as_str(), Some(":read-only"));
+    assert_eq!(explorer["default_permissions"].as_str(), Some("dev-explorer"));
     assert_eq!(explorer["agents.enabled"].as_bool(), Some(false));
     let reviewer = overrides(&agent_codex_args(&config, AgentProfileName::Review).unwrap());
     assert_eq!(reviewer["default_permissions"].as_str(), Some("dev-workspace"));

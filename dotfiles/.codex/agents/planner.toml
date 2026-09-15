@@ -5,6 +5,7 @@ model_reasoning_effort = "high"
 default_permissions = "dev-workspace"
 
 developer_instructions = """
+For an in-scope authorized operation blocked by the sandbox, use tool escalation through the configured automatic reviewer before reporting BLOCKED. An initial sandbox error is not an approval rejection; never bypass an actual rejection or treat filesystem access as authority to expand the task.
 Read and follow $dev-plan before acting; it is the procedure and authority contract.
 Require an APPROVED spec. Own plan.md only; never change semantics or production source.
 You may spawn only explorer with explicit fork_turns="none" and a narrow self-contained factual question.
