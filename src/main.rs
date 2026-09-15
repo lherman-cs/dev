@@ -2129,6 +2129,18 @@ fn toml_scalar(value: &toml::Value) -> Result<String> {
     }
 }
 
+fn toml_inline(value: &toml::Value) -> Result<String> {
+    match value {
+        toml::Value::Table(table) => {
+            let fields = table.iter().map(|(k, v)| {
+                Ok(format!("{} = {}", toml::Value::String(k.clone()), toml_inline(v)?))
+            }).collect::<Result<Vec<_>>>()?;
+            Ok(format!("{{ {} }}", fields.join(", ")))
+        }
+        _ => toml_scalar(value),
+    }
+}
+
 fn flatten_codex_table(
     prefix: &str,
     table: &toml::Table,
@@ -2138,13 +2150,11 @@ fn flatten_codex_table(
     entries.sort_by_key(|(key, _)| *key);
 
     for (key, value) in entries {
-        let path = if prefix.is_empty() {
-            key.clone()
-        } else {
-            format!("{}.{}", prefix, key)
-        };
-
+        let path = if prefix.is_empty() { key.clone() } else { format!("{prefix}.{key}") };
         match value {
+            // CLI dotted overrides split path keys such as .git. Pass the
+            // filesystem map as one inline TOML value instead.
+            toml::Value::Table(_) if key == "filesystem" => output.push((path, toml_inline(value)?)),
             toml::Value::Table(child) => flatten_codex_table(&path, child, output)?,
             value => output.push((path, toml_scalar(value)?)),
         }
@@ -2189,10 +2199,10 @@ fn agent_codex_args(config: &AgentConfig, profile: AgentProfileName) -> Result<V
         args.push("-c".into());
         args.push(format!("{key}={}", toml::Value::String(value)));
     }
+    args.push("-c".into());
+    args.push(format!("default_permissions={}", toml::Value::String(role.default_permissions)));
     // Default is intentionally a no-task/trust session, not an active Orchestrator.
     if !matches!(profile, AgentProfileName::Default) {
-        args.push("-c".into());
-        args.push(format!("sandbox_mode={}", toml::Value::String(role.sandbox_mode)));
         if selected.role == "explorer" {
             args.push("-c".into());
             args.push("agents.enabled=false".into());
@@ -2252,12 +2262,28 @@ fn exec_codex(profile: AgentProfileName, prompt: Vec<String>) -> Result<()> {
     let mut command = Command::new("codex");
     command.args(agent_codex_args(&config, profile)?);
     command.args(agent_roles::registration_args(&dir)?);
+    command.args(repository_permission_args(&std::env::current_dir()?)?);
     if let Some(prompt) = agent_prompt(&config, profile, &prompt, &dir)? {
         // End options so user task text can never become a Codex CLI flag.
         command.arg("--").arg(prompt);
     }
     info!("Starting fresh interactive Codex session with '{}' profile", profile.as_str());
     run_codex(command)
+}
+
+// A linked worktree stores objects/refs outside its working directory. Grant
+// only its actual Git common directory, never the enclosing repository tree.
+fn repository_permission_args(cwd: &Path) -> Result<Vec<String>> {
+    let output = Command::new("git").args(["rev-parse", "--path-format=absolute", "--git-common-dir"])
+        .current_dir(cwd).output().context("Resolve repository Git metadata")?;
+    if !output.status.success() { return Ok(Vec::new()); }
+    let path = String::from_utf8(output.stdout).context("Git metadata path is not UTF-8")?;
+    let path = path.trim();
+    anyhow::ensure!(!path.is_empty() && Path::new(path).is_absolute(), "Git returned an invalid metadata path");
+    let mut filesystem = load_agent_config()?.codex["permissions"]["dev-builder"]["filesystem"].as_table()
+        .context("Builder filesystem policy missing")?.clone();
+    filesystem.insert(path.into(), toml::Value::String("write".into()));
+    Ok(vec!["-c".into(), format!("permissions.dev-builder.filesystem={}", toml_inline(&toml::Value::Table(filesystem))?)])
 }
 
 fn resume_args(session: Option<&str>, last: bool) -> Result<Vec<String>> {

@@ -61,7 +61,8 @@ def main() -> None:
                 source = tomllib.loads((ROOT / f'dotfiles/.codex/agents/{role_name}.toml').read_text())
                 assert options['model'] == source['model']
                 assert options['model_reasoning_effort'] == source['model_reasoning_effort']
-                assert options['sandbox_mode'] == source['sandbox_mode']
+                assert options['default_permissions'] == source['default_permissions']
+                assert 'sandbox_mode' not in options
                 assert 'developer_instructions' not in options
                 if task:
                     assert args[-2] == '--' and 'Role contract:' in args[-1]
@@ -75,6 +76,8 @@ def main() -> None:
                     generated = tomllib.loads(runtime.read_text())
                     assert generated['model'] == role['model']
                     assert generated['model_reasoning_effort'] == role['model_reasoning_effort']
+                    assert generated['default_permissions'] == role['default_permissions']
+                    assert 'sandbox_mode' not in generated
                     if role['name'] == 'explorer':
                         assert 'exact bundled skill source' not in generated['developer_instructions']
                     else:
@@ -88,9 +91,11 @@ def main() -> None:
         assert '--' not in args and 'Role contract:' not in '\n'.join(args)
         for alias in ('s','p','b','r','e','pr','specifier','orchestrate'):
             assert launch(alias, 'task')[-2] == '--'
-        assert launch('resume') == ['resume']
-        assert launch('resume', '--last') == ['resume', '--last']
-        assert launch('resume', 'session-id') == ['resume', '--', 'session-id']
+        assert 'default_permissions' not in parse_overrides(launch('resume'))
+        assert 'sandbox_mode' not in parse_overrides(launch('resume'))
+        assert launch('resume')[-1:] == ['resume']
+        assert launch('resume', '--last')[-2:] == ['resume', '--last']
+        assert launch('resume', 'session-id')[-3:] == ['resume', '--', 'session-id']
         # --args is shell-quoted and parseable; config inspection must not mutate config.
         result = run('config', '--profile', 'spec', '--args')
         args = shlex.split(result.stdout)

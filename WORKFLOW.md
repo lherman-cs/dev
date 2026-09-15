@@ -203,6 +203,18 @@ If a blocker survives the third scoped re-review, Orchestrator reaches a breaker
 
 It may not overrule a real blocking finding before the breaker.
 
+## Filesystem permissions
+
+`agent.toml` defines named Codex permission profiles (verified with CLI 0.154.0):
+
+- `dev-workspace` extends `:workspace`, retaining `.git`, `.codex`, and `.agents` protections.
+- `dev-builder` extends `dev-workspace`; the launcher grants writes only to the current repository's Git metadata. Builder, Builder escalation, and the parent Orchestrator select it; Orchestrator's workflow authority still forbids implementation. Other writing roles select `dev-workspace`; Explorer selects `:read-only`.
+- The launcher grants `dev-builder` access to the current repository's resolved Git common directory, including linked-worktree objects/refs. It does not grant the enclosing repository's source tree.
+
+Keep machine-specific roots under `[permissions.dev-workspace.workspace_roots]` and network settings under `[permissions.dev-workspace.network]`. Remove legacy `sandbox_mode` and `[sandbox_workspace_write]` settings from active config layers; legacy sandbox selection overrides named profiles. Do not use full-access mode for routine commits. Resume preserves saved session permissions; start a fresh project controller to adopt the new permissions and recover existing work.
+
+Run `python3 tests/permissions_e2e.py --binary target/debug/dev` outside an enclosing sandbox to verify actual Git access and protected paths in disposable normal/linked repositories. This executes real Codex sandboxes without model calls.
+
 ## Capability escalation and model policy
 
 Skills contain **no model names**. The authoritative runtime model/effort policy lives in `.codex/agents/*.toml`; the table below only documents that policy for humans.

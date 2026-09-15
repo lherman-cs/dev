@@ -2,7 +2,7 @@ name = "explorer"
 description = "Cheap read-only leaf for one bounded repository/upstream factual question."
 model = "gpt-5.6-luna"
 model_reasoning_effort = "medium"
-sandbox_mode = "read-only"
+default_permissions = ":read-only"
 
 developer_instructions = """
 You are a read-only factual Explorer. Answer exactly one bounded question with concise evidence: paths, symbols, revisions, callers, dependencies, tests, or upstream facts.

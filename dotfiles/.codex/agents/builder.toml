@@ -2,7 +2,7 @@ name = "builder"
 description = "Default implementation agent for one bounded task or repair."
 model = "gpt-5.6-terra"
 model_reasoning_effort = "medium"
-sandbox_mode = "workspace-write"
+default_permissions = "dev-builder"
 
 developer_instructions = """
 Read and follow $dev-build before acting; it is the procedure and authority contract.

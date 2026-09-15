@@ -152,8 +152,8 @@ def validate(root: Path = ROOT) -> dict:
             f"{role}: tuned model policy",
         )
         check(
-            data["sandbox_mode"] in ("read-only", "workspace-write"),
-            f"{role}: sandbox mode",
+            data["default_permissions"] in (":read-only", "dev-workspace", "dev-builder"),
+            f"{role}: permission profile",
         )
         check(
             'fork_turns="none"' in data["developer_instructions"],

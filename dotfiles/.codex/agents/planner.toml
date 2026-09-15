@@ -2,7 +2,7 @@ name = "planner"
 description = "Compile an approved spec into a precise execution plan or material replan."
 model = "gpt-5.6-sol"
 model_reasoning_effort = "high"
-sandbox_mode = "workspace-write"
+default_permissions = "dev-workspace"
 
 developer_instructions = """
 Read and follow $dev-plan before acting; it is the procedure and authority contract.

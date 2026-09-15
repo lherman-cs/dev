@@ -2,7 +2,7 @@ name = "reviewer_strong"
 description = "Highest-capability final/integrated Reviewer or explicit review escalation; same review authority."
 model = "gpt-6-astra"
 model_reasoning_effort = "low"
-sandbox_mode = "workspace-write"
+default_permissions = "dev-workspace"
 
 developer_instructions = """
 Read and follow $dev-review before acting; it is the procedure and authority contract.

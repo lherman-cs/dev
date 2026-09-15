@@ -23,6 +23,8 @@ fn every_profile_uses_the_same_model_as_its_named_subagent() {
         assert_eq!(args["model"].as_str(), Some(role.model.as_str()));
         assert_eq!(args["model_reasoning_effort"].as_str(), Some(role.model_reasoning_effort.as_str()));
         assert!(!args.contains_key("developer_instructions"));
+        assert!(!args.contains_key("sandbox_mode"));
+        assert_eq!(args["default_permissions"].as_str(), Some(role.default_permissions.as_str()));
     }
 }
 
@@ -70,10 +72,10 @@ fn explicit_task_prompt_activates_skill_or_explorer_role() {
 fn explorer_is_read_only_and_reviewer_is_source_read_only_by_contract() {
     let config = load_agent_config().unwrap();
     let explorer = overrides(&agent_codex_args(&config, AgentProfileName::Explore).unwrap());
-    assert_eq!(explorer["sandbox_mode"].as_str(), Some("read-only"));
+    assert_eq!(explorer["default_permissions"].as_str(), Some(":read-only"));
     assert_eq!(explorer["agents.enabled"].as_bool(), Some(false));
     let reviewer = overrides(&agent_codex_args(&config, AgentProfileName::Review).unwrap());
-    assert_eq!(reviewer["sandbox_mode"].as_str(), Some("workspace-write"));
+    assert_eq!(reviewer["default_permissions"].as_str(), Some("dev-workspace"));
     assert!(agent_roles::load("reviewer").unwrap().developer_instructions.contains("repository source as read-only"));
 }
 
@@ -124,4 +126,20 @@ fn toml_string_encoding_round_trips_special_characters() {
         let decoded: toml::Table = toml::from_str(&format!("value={value}")).unwrap();
         assert_eq!(decoded["value"].as_str(), Some(text));
     }
+}
+
+#[test]
+fn filesystem_overlay_preserves_literal_path_keys() {
+    let table: toml::Table = toml::from_str(r#"[permissions.dev-builder.filesystem]
+"/repo with.dots/.git" = "write"
+[permissions.dev-builder.filesystem.":workspace_roots"]
+".git" = "write"
+"#).unwrap();
+    let mut output = Vec::new();
+    flatten_codex_table("", &table, &mut output).unwrap();
+    assert_eq!(output.len(), 1);
+    assert_eq!(output[0].0, "permissions.dev-builder.filesystem");
+    let value: toml::Table = toml::from_str(&format!("value={}", output[0].1)).unwrap();
+    assert_eq!(value["value"]["/repo with.dots/.git"].as_str(), Some("write"));
+    assert_eq!(value["value"][":workspace_roots"][".git"].as_str(), Some("write"));
 }

@@ -2,7 +2,7 @@ name = "specifier"
 description = "Human-facing semantic design and specification; no implementation planning."
 model = "gpt-6-astra"
 model_reasoning_effort = "medium"
-sandbox_mode = "workspace-write"
+default_permissions = "dev-workspace"
 
 developer_instructions = """
 Concentrate human alignment before approval: resolve consequential defaults, input rules, boundaries and failure behavior with concrete examples; record approved implementation latitude without inventing permission.
