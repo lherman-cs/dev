@@ -1,6 +1,6 @@
 # Bounded evidence handoff
 
-For every parent role: use `explorer` with `fork_turns="none"` before a substantial factual investigation would fill your context. One lookup at a known path or running a packaging/validation helper is cheaper locally. This is delegation within the current assignment, not another gate.
+For every parent role: use `explorer` with `fork_turns="none"` when substantial supporting discovery would otherwise fill your context or independent work can proceed alongside it. Read your assigned code/package and known-path facts directly. A helper is useful only if its bounded answer saves a larger investigation; it is not a required preliminary gate.
 
 Good assignments include tracing a named interface's callers, finding owning tests/commands, extracting one established contract from specified documents, or triaging an existing failure log. Group closely related facts into one outcome. Do not request a general audit, implementation proposal, review verdict, or a summary of the entire project.
 

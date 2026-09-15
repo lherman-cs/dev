@@ -25,6 +25,22 @@ def git(repo: Path, *args: str) -> str:
     return subprocess.run(['git', '-C', str(repo), *args], text=True, stdout=subprocess.PIPE,
                           stderr=subprocess.PIPE, check=True).stdout.strip()
 
+def check_task_rows(progress: Path) -> None:
+    """Detect contradictory duplicate ledger rows without judging task status."""
+    in_tasks = False
+    seen = set()
+    for line in progress.read_text().splitlines():
+        if re.match(r'^#{1,2}\s+', line):
+            in_tasks = line.strip().rstrip('#').strip().lower() == '## tasks'
+        if not in_tasks:
+            continue
+        row = re.match(r'^\s*[-*]\s+(?:Task\s+)?([0-9]+[A-Za-z]?):', line, re.IGNORECASE)
+        if row:
+            task = row[1].lower()
+            if task in seen:
+                raise ValueError(f'Duplicate task row: {task} in {progress}; reconcile from Git/reports without discarding evidence')
+            seen.add(task)
+
 def check_project(project: Path) -> dict:
     spec, plan = project/'spec.md', project/'plan.md'
     if marker(spec, STATUS, 'spec') != 'APPROVED':
@@ -34,6 +50,7 @@ def check_project(project: Path) -> dict:
     progress = project/'progress.md'
     if not progress.is_file():
         raise ValueError(f'Missing progress ledger: {progress}')
+    check_task_rows(progress)
     if not (project/'work').is_dir():
         raise ValueError(f'Missing work directory: {project / "work"}')
     return {'status':'PASS','kind':'project','project':str(project)}

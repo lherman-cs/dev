@@ -22,6 +22,13 @@ Use [Superpowers](https://github.com/obra/superpowers) as the behavioral baselin
 
 Do not import upstream defaults that conflict with these answers: no extra public skills, worktree automation, plan approval, five-round repair loop, or model names in skill policy. The human reviews the finished result after the final AI review; that handoff does not authorize integration.
 
+Additional references inform execution within those boundaries:
+
+- Addy Osmani's [context engineering](https://github.com/addyosmani/agent-skills/blob/main/skills/context-engineering/SKILL.md) informs selective task context and durable decisions; [incremental implementation](https://github.com/addyosmani/agent-skills/blob/main/skills/incremental-implementation/SKILL.md) informs small complete behavior paths and early integration evidence.
+- [Codex subagent guidance](https://developers.openai.com/codex/subagents) informs isolated bounded assignments, useful parallel investigation, and accounting for delegation overhead. Delegation is useful when its answer saves investigation; it is not a gate before reading assigned code.
+
+Keep the questionnaire's two fresh parallel reviewers, fresh scoped re-reviews, strict TDD, three-round limit, role boundaries, and final review. Optimize the work between those gates. Role configuration owns identity/capability and essential boundaries; skills own procedures, without duplicating those procedures in every role prompt.
+
 ## Core artifact model
 
 Every project lives under a git-ignored directory:
@@ -57,7 +64,7 @@ Orchestrator owns metadata and transitions; task agents own technical investigat
 
 ### Explorer delegation
 
-The existing Explorer remains the shared evidence helper, configured as Luna/medium. Every parent role now prefers it for substantial bounded fact-finding before loading that search surface itself: caller/dependency tracing, contract extraction, test/command discovery, and existing-log triage. A trivial known-path lookup or deterministic helper stays local.
+The existing Explorer remains the shared evidence helper, configured as Luna/medium. Use it for substantial supporting caller/dependency tracing, contract extraction, test discovery, or existing-log triage beyond the parent's working set. Read assigned code/packages and known-path facts directly; avoid a helper that only rereads what the parent must inspect anyway.
 
 Use `prompts/explore-facts.md` for fresh minimal dispatch and compact cited results. Start with one Explorer per parent; a second is useful only for an independent question and available capacity. Parents do independent work while waiting, reuse current findings downstream, and inspect only decisive source anchors instead of repeating discovery. Unknowns and search boundaries remain explicit.
 
@@ -97,6 +104,21 @@ Planner:
 A material plan defect discovered later causes a fresh isolated Planner to rewrite the single `plan.md`. Human approval is not needed when semantics remain unchanged. Bounded semantic questions are answered inline and recorded by Orchestrator; substantial changes reopen affected sections through `dev-spec`.
 
 Check semantic prerequisites before elaborating the plan, and walk the first task through a viable initial test/candidate before READY. Keep full execution-grade coverage; avoid source dumps, repeated workflow prose, and speculative implementation detail. During a material replan preserve unaffected task text. No new independent planning gate is introduced.
+
+Prefer a small complete behavior across layers, with the real production entrypoint or toolchain exercised early. Verify that task gates do not depend on a later cutover. If approved semantics defer activation, name a seam through the same production implementation, its owner, and its removal point. File count alone does not justify another gated task. Each extracted task carries its own binding requirements and execution facts; project-only final checks belong outside the task section.
+
+### Execution routing
+
+| Evidence | Owner and next action |
+| --- | --- |
+| Ordinary debugging or necessary local mechanics inside the assignment | Same Builder implements and verifies. |
+| Equivalent shell/PATH/filter correction or small reversible plan departure | Controller records a bounded ruling and sends the same Builder the delta. Preserve coverage, environment, authority, and immutable briefs. |
+| Independent behavior surfaces make a task too large | Controller operationally splits; each unit retains its review gate. |
+| Demonstrated reasoning gap after evidence-driven attempts | Configured capability escalation; preserve scope, findings, and repair count, with one active writer. |
+| Contradicted task dependency, shared-interface guarantee, or implementation strategy | Fresh Planner revises only affected plan content. |
+| Missing product meaning or new permission | Existing human-boundary procedure. |
+
+A failed test or exhausted repair count does not itself establish a plan defect. Equivalent validation corrections cannot weaken required proof or bypass permission boundaries. Concrete capability blockers may be escalated before the third reviewed repair; the three-round limit is a ceiling, not a quota to spend before getting help.
 
 ## Worktree and Git ownership
 
@@ -198,7 +220,7 @@ Both use:
 
 Reviewers normally trust Builder validation and do not rerun it. A small targeted check is allowed only to resolve a concrete doubt.
 
-Unrelated pre-existing defects cannot block the task. Scoped re-review may evaluate only prior blocker IDs and breakage directly introduced by the repair.
+Unrelated pre-existing defects cannot block the task. Scoped re-review may evaluate only prior blocker IDs and breakage directly introduced by the repair. Builder repair reports map IDs to corrections/proof and name other requirements/interfaces affected. The controller uses that summary to select affected fresh dimensions; a prior-PASS dimension receives only a repair-regression check when its coverage changed. Passing unaffected dimensions remain valid.
 
 Before each repair, the controller checks scope/evidence completeness, combines duplicate root causes, and sends unsupported or disputed findings back to the originating Reviewer for clarification. Clarification consumes no repair round; the controller does not replace technical review or overrule substantiated blockers. Optional suggestions do not become automatic repair or follow-up tasks. Final review uses the same threshold; an unfixed Minor needs concrete integrated impact to become blocking.
 
@@ -312,7 +334,7 @@ Current candidate: def456
 - Final: ...
 ```
 
-Detailed Builder/Reviewer reasoning belongs in disposable `work/` reports, not the ledger.
+Detailed Builder/Reviewer reasoning belongs in disposable `work/` reports, not the ledger. Replace stale rows: one current status per task, with separate IDs for operational units. `validate_workflow.py project-ready` detects duplicate task rows without choosing a winner or rewriting the ledger. Reconcile contradictions from Git/reports, retaining accepted evidence unless its relevant code or contract changed.
 
 ## Full-project validation and final review
 

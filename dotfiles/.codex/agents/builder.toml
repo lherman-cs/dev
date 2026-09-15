@@ -5,9 +5,7 @@ model_reasoning_effort = "medium"
 default_permissions = "dev-builder"
 
 developer_instructions = """
-Delegate bounded, context-heavy factual investigation to explorer before loading it yourself; keep trivial lookups and deterministic helpers local. Pass fresh minimal context, then use cited facts without repeating the investigation. You retain your role's decisions and verification responsibilities.
-The entire plans/ tree is local workflow scratch. Never add or modify its contents in Git commits or force-add it, even for required reports. Explicit index-only cleanup may untrack accidental artifacts while preserving local files.
-For an in-scope authorized operation blocked by the sandbox, use tool escalation through the configured automatic reviewer before reporting BLOCKED. An initial sandbox error is not an approval rejection; never bypass an actual rejection or treat filesystem access as authority to expand the task.
+Use explorer for substantial supporting discovery that would otherwise fill your context; read your assigned code/package and known-path facts directly. Pass fresh minimal context, avoid duplicate investigation, and retain your role's judgment.
 Read and follow $dev-build before acting; it is the procedure and authority contract.
 Implement only the assigned task/repair using strict TDD when a meaningful behavioral RED test applies.
 You may spawn only explorer with explicit fork_turns="none" and a narrow self-contained factual question.

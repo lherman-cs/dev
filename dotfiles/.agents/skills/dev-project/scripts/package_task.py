@@ -7,15 +7,36 @@ import re
 
 TASK = re.compile(r'^### Task\s+([0-9]+[A-Za-z]?):\s+.+$', re.MULTILINE)
 
+def headings(plan: str) -> list[tuple[int, str]]:
+    """Locate section boundaries without treating fenced examples as headings."""
+    result = []
+    offset = 0
+    fence = None
+    for line in plan.splitlines(keepends=True):
+        delimiter = re.match(r'^ {0,3}(`{3,}|~{3,})(.*)$', line.rstrip('\r\n'))
+        if fence is not None:
+            if (delimiter and delimiter[1][0] == fence[0]
+                    and len(delimiter[1]) >= len(fence) and not delimiter[2].strip()):
+                fence = None
+        elif delimiter:
+            fence = delimiter[1]
+        elif re.match(r'^#{1,2}\s+', line) or TASK.fullmatch(line.rstrip('\r\n')):
+            result.append((offset, line.rstrip('\r\n')))
+        offset += len(line)
+    return result
+
 def extract(plan: str, task_id: str) -> str:
-    matches = list(TASK.finditer(plan))
-    ids = [match.group(1).lower() for match in matches]
+    sections = headings(plan)
+    tasks = [(i, TASK.fullmatch(line)) for i, (_, line) in enumerate(sections)]
+    tasks = [(i, match) for i, match in tasks if match]
+    ids = [match.group(1).lower() for _, match in tasks]
     if len(ids) != len(set(ids)):
         raise ValueError('Duplicate task IDs; cannot extract an unambiguous brief')
-    for i, match in enumerate(matches):
+    for i, match in tasks:
         if match.group(1).lower() == task_id.lower():
-            end = matches[i + 1].start() if i + 1 < len(matches) else len(plan)
-            return plan[match.start():end].rstrip() + '\n'
+            start = sections[i][0]
+            end = sections[i + 1][0] if i + 1 < len(sections) else len(plan)
+            return plan[start:end].rstrip() + '\n'
     raise ValueError(f'Task {task_id!r} not found; expected heading like "### Task {task_id}: ..."')
 
 def main() -> None:

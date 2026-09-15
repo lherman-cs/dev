@@ -28,6 +28,60 @@ class WorkflowToolsTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'Duplicate task IDs'):
             package_task.extract('### Task 1a: First\nA\n### Task 1A: Second\nB\n', '1a')
 
+    def test_task_does_not_absorb_project_final_validation(self):
+        plan = '''# Plan
+Status: READY
+## Tasks
+### Task 1: Build
+Implement the behavior.
+### Implementation notes
+Keep task-local notes.
+#### Verification
+Run the focused test.
+## Final validation
+Run every project suite.
+'''
+        brief = package_task.extract(plan, '1')
+        self.assertIn('Run the focused test.', brief)
+        self.assertIn('Keep task-local notes.', brief)
+        self.assertNotIn('Final validation', brief)
+        self.assertNotIn('every project suite', brief)
+
+    def test_task_heading_examples_in_fences_are_not_boundaries(self):
+        plan = '''### Task 1: Document Markdown
+Keep this example:
+```markdown
+### Task 1: Example only
+## Example section
+```
+~~~markdown
+### Task 2: Another example
+~~~
+Still the first task.
+### Task 2: Next task
+Do next.
+'''
+        brief = package_task.extract(plan, '1')
+        self.assertIn('Still the first task.', brief)
+        self.assertIn('### Task 1: Example only', brief)
+        self.assertNotIn('Do next.', brief)
+        self.assertEqual(package_task.extract(plan, '2'), '### Task 2: Next task\nDo next.\n')
+
+    def test_duplicate_ledger_tasks_rejected_without_rewriting(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project = Path(tmp)
+            (project/'spec.md').write_text('Status: APPROVED\n')
+            (project/'plan.md').write_text('Status: READY\n')
+            (project/'work').mkdir()
+            progress = project/'progress.md'
+            text = '# Progress\n## Tasks\n- 5d: ACCEPTED [candidate=abc1234]\n- Task 5D: PENDING\n'
+            progress.write_text(text)
+            with self.assertRaisesRegex(ValueError, 'Duplicate task.*5d'):
+                validate.check_project(project)
+            self.assertEqual(progress.read_text(), text)
+            progress.write_text('# Progress\n## Tasks\n- Task 5: PENDING\n  - 5d: ACCEPTED\n## Rulings\n- 5d: verified unchanged source\n')
+            self.assertEqual(validate.check_project(project)['status'], 'PASS')
+
     def test_split_package_preserves_plan_and_dispatched_brief(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

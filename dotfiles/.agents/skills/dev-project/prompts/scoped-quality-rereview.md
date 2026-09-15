@@ -10,4 +10,4 @@ Previous candidate: {{previous_candidate}}
 New candidate: {{candidate_sha}}
 Write report: {{review_report_path}}
 
-Re-review only the listed prior `Q#` blocking findings. Mark each `RESOLVED` or `UNRESOLVED`. You may add a new blocker only for technical breakage directly introduced by this repair. Do not reopen untouched code, old Minors, or the whole task.
+Check the listed prior `Q#` blockers and technical breakage directly introduced by the exact repair. Mark prior IDs `RESOLVED` or `UNRESOLVED`. If the prior verdict was PASS, there are no old blockers: check only the affected technical behavior. Do not reopen untouched code, old Minors, or the whole task.

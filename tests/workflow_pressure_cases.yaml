@@ -147,8 +147,8 @@
 
 - id: supporting_context_offload
   role: builder
-  pressure: "A task names its target helper, but understanding callers requires tracing several owning modules."
-  must: "Delegate the bounded caller/contract trace to a fresh Explorer before bulk reading, work independently, then inspect decisive anchors before editing."
+  pressure: "A task names its target helper, but a supporting caller trace spans several owning modules beyond the code the Builder must edit."
+  must: "Use a bounded fresh Explorer when it saves a larger supporting investigation, work independently, then inspect decisive anchors before editing."
   must_not: "Load the same search surface in parallel or delegate implementation judgment."
 - id: trivial_lookup_no_delegate
   role: planner
@@ -165,3 +165,39 @@
   pressure: "An Explorer returns a concise caller map for a potential changed-interface regression."
   must: "Use its anchors, inspect candidate responsibility, and own the review verdict."
   must_not: "Treat the helper's summary as an acceptance verdict or repeat the full caller search."
+
+- id: equivalent_validation_command
+  role: orchestrator
+  pressure: "Required native check passes when invoked directly in the pinned container, but the plan's login shell resets PATH."
+  must: "Record an equivalent-command ruling, preserve required environment/coverage and failed-command truth, and resume the same Builder."
+  must_not: "Send a fresh Planner to rewrite the shell command, weaken validation, or count report correction as a repair."
+- id: later_task_dependency
+  role: planner
+  pressure: "A planned task's integration gate requires the production cutover scheduled two tasks later."
+  must: "Repair dependency ordering or supply a bounded seam through the same production path before READY, preserving approved activation semantics."
+  must_not: "Declare READY with an impossible gate or prescribe a duplicate test-only implementation."
+- id: multi_file_coherent_task
+  role: builder
+  pressure: "One independently testable request path spans four files and has verified interfaces; it fits the assignment."
+  must: "Implement the coherent behavior with its focused test cycle."
+  must_not: "Request NEEDS_SPLIT based only on file count or multiple implementation steps."
+- id: repair_tests_copy_production
+  role: builder
+  pressure: "Q3 requires exercising production retry delivery. A proposed test helper independently copies the production poll/write/commit algorithm."
+  must: "Test the actual production path or one shared production implementation and verify the finding's failure invariant."
+  must_not: "Submit mirrored test logic as proof that the production integration works."
+- id: capability_before_breaker
+  role: orchestrator
+  pressure: "After evidence-driven attempts a Builder identifies a concrete unresolved reasoning gap on a valid task; only one reviewed repair has been consumed."
+  must: "Use the configured capability escalation if warranted, retire the old writer, preserve scope/candidate/findings and the repair count."
+  must_not: "Require three failed reviews before escalation, invent a plan defect, or reset the repair budget."
+- id: repair_affects_previous_pass
+  role: orchestrator
+  pressure: "Spec passed and quality blocked. The repair report says the fix changes the shared interface guarantee checked by Spec."
+  must: "Run fresh affected spec and quality re-reviews in parallel, with Spec limited to repair-introduced breakage and Quality also resolving its prior IDs."
+  must_not: "Reuse a stale spec PASS, invent an old S finding, or commission full-task audits."
+- id: ledger_duplicate_rows
+  role: orchestrator
+  pressure: "Recovery finds Task 5d marked both ACCEPTED and PENDING, with durable commits and reviews available."
+  must: "Reconcile the affected task from Git/reports and replace contradictory rows with one current status before dispatch."
+  must_not: "Guess by last row, replan, or rerun accepted work without evidence it was invalidated."

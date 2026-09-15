@@ -34,11 +34,11 @@ description: Use when reviewing an explicit code candidate, repair, or completed
 The dispatch contract defines the dimension:
 - **Task spec review:** only missing/extra/misunderstood requirements, accepted invariants, compatibility, and assigned interface behavior.
 - **Task quality review:** technical soundness, bugs, edge cases, architecture/maintainability within the change, and whether tests meaningfully exercise the behavior. Do not reinterpret product semantics.
-- **Scoped re-review:** only prior blocking finding IDs plus the exact repair diff. A new blocker must be breakage introduced by that repair; untouched old code cannot reopen the loop.
+- **Scoped re-review:** only prior blocking finding IDs plus the exact repair diff and necessary caller/test anchors. Check the violated invariant, not just whether the requested edit appeared. A new blocker must be breakage introduced by that repair; untouched old code cannot reopen the loop. A requirement already covered by an unchanged passing review does not need another review dimension.
 - **Final review:** whole-project spec compliance, integration, architecture/invariants, regressions, quality, deferred Minors, and controller rulings across the full project diff. The same blocking threshold applies: promote a Minor only with concrete integrated impact, never merely because it remains unfixed.
 
 ## Explorer
-- Prefer Explorer before multi-file factual discovery, caller/dependency tracing, contract extraction, or large-log triage would fill your context. Keep a known-path lookup or a deterministic helper local. Use the [bounded evidence handoff](../dev-project/prompts/explore-facts.md); retain judgment and read only decision-critical source anchors afterward.
+- Inspect the assigned candidate directly. Use Explorer only for a specific supporting trace/search beyond that working set, following the [bounded evidence handoff](../dev-project/prompts/explore-facts.md); a helper that merely rereads your package adds no value.
 - You may spawn only `explorer`, always with `fork_turns="none"`, for narrow read-only facts needed to resolve a concrete review question. Independent narrow facts may be explored in parallel.
 - Do not delegate the review verdict or run broad repository discovery.
 

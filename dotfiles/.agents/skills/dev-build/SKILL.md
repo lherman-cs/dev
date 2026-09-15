@@ -12,13 +12,13 @@ description: Use when implementing one assigned software task or bounded repair.
 - Never declare your own work accepted and never start the next project task.
 
 ## TDD and implementation
-1. Read the task brief first, then its owning code/contracts. Do not routinely load the full spec, plan, ledger, or historical reports. Understand the immediate requirements; offload substantial supporting fact-finding to Explorer before reading its search surface yourself.
+1. Read the task brief first, then its owning code/contracts. Do not routinely load the full spec, plan, ledger, or historical reports. Read the code you must understand directly; use Explorer only for substantial supporting discovery outside that working set.
 2. **RED:** write the smallest meaningful behavioral test first and run it. Confirm it fails for the expected reason, not syntax/setup noise.
 3. **GREEN:** make the minimum coherent production change that makes the behavior pass.
 4. Run the focused test and confirm GREEN.
 5. **REFACTOR:** simplify only where useful while keeping behavior green.
 6. Run all validation prescribed by the task/repair brief. Do not invent an unrelated full-repository gate.
-7. Self-review the diff for requirement coverage, accidental scope, obvious bugs, needless complexity, debug/dead code, and test adequacy. Fix obvious issues and rerun affected checks.
+7. Self-review once for requirement coverage, accidental scope, bugs, needless complexity, and test adequacy. For an integration claim, trace the test through the actual changed production path; a copied algorithm or mock of the behavior under test is not proof. Fix issues and rerun affected checks.
 8. Make one local commit for this candidate. A later repair is a new commit; never amend/rewrite the reviewed candidate.
 
 ### Legitimate TDD exceptions
@@ -32,8 +32,8 @@ description: Use when implementing one assigned software task or bounded repair.
 
 ## Debugging discipline
 - When behavior is surprising, determine the root cause before proposing patches.
-- Do not stack speculative fixes. Several failed local approaches are evidence to reconsider context, capability, task size, or the plan rather than keep guessing.
-- For install/cache/browser setup failures, distinguish permissions, command timeouts, and dependency/product defects before labeling a baseline failure. Repair routine local setup within existing authority or use automatic tool escalation; do not weaken required checks or change product scope.
+- Do not stack speculative fixes. Local debugging does not consume reviewed repair rounds. If the root cause remains unresolved after evidence-driven attempts, report the failing case, hypotheses ruled out, and precise reasoning gap for configured capability escalation; do not ask Planner to debug an otherwise valid task.
+- For install/cache/browser setup failures, distinguish permissions, command timeouts, and dependency/product defects. Repair routine setup within existing authority or use automatic tool escalation. If a prescribed command needs an equivalent shell/PATH/filter correction, give the controller the failure and corrected command for a ruling; preserve the environment, assertions, coverage, and authority. Never substitute a weaker proof.
 - Long downloads/builds should return a process/session handle and be awaited with short responsive waits; a tool yield is not a process timeout. Retry a failed operation only after a concrete change addresses its cause. Once required task proofs pass, stop optional aggregate experiments; carry missing final-required evidence to final validation explicitly.
 - Preserve failed-command truth exactly; never weaken tests or fabricate expected evidence.
 
@@ -44,13 +44,13 @@ description: Use when implementing one assigned software task or bounded repair.
 - If a requested repair is unsupported, outside scope, or its proposed design would break a caller, send the controller concise counterevidence and the smallest valid alternative before editing; do not blindly implement reviewer prescriptions.
 - If new work appears necessary but is not clearly implied, ask the parent/controller instead of expanding scope.
 - Missing context -> return/ask `NEEDS_CONTEXT` with one specific question.
-- Task too large -> `NEEDS_SPLIT` with the independent behavioral surfaces, shared interface obligations, and smallest viable first candidate. Size alone is not `REPLAN_REQUIRED`; do not silently split the review boundary yourself.
-- Material plan defect -> `REPLAN_REQUIRED` with evidence; do not redesign around it.
+- Task too large -> `NEEDS_SPLIT` only when the behavioral surfaces can be tested and reviewed independently; give shared interface obligations and a viable first candidate. File count or several implementation steps alone do not require a split. Do not silently split the review boundary.
+- Material plan defect -> `REPLAN_REQUIRED` with the contradicted dependency/interface/strategy and affected tasks; a failed command or implementation bug alone is not a plan defect. Do not redesign around one.
 - Suspected semantic/product hole -> ask the controller with the exact missing decision, requirement/reference checked, and affected behavior. The controller checks established contracts and ruling authority before escalating; never invent semantics yourself.
 - Stay available for the controller's answer and resume the same assignment. Continue independent in-scope investigation/verification only when it does not depend on that answer; do not end a task merely because a question was sent.
 
 ## Explorer
-- Prefer Explorer before multi-file factual discovery, caller/dependency tracing, contract extraction, or large-log triage would fill your context. Keep a known-path lookup or a deterministic helper local. Use the [bounded evidence handoff](../dev-project/prompts/explore-facts.md); retain judgment and read only decision-critical source anchors afterward.
+- Use Explorer when a bounded supporting trace/search would materially reduce context or allow independent work; do not delegate the same code you must read to implement the task. Use the [bounded evidence handoff](../dev-project/prompts/explore-facts.md) and inspect decisive anchors yourself.
 - You may spawn only `explorer`, always with `fork_turns="none"`, for a bounded factual question.
 - Independent facts may be explored concurrently. Explorer cannot implement, review, plan, or decide architecture.
 
@@ -71,7 +71,7 @@ When an orchestrated report path is assigned, write a short structured report th
 - Implemented: concise behavior change
 - Verification: exact commands and outcomes
 - Files: relevant changed files
-- Notes: only material decision, TDD exception, or residual concern
+- Notes: only material decision, TDD exception, or residual concern; for repairs, map each blocking ID to its correction/proof and name any other assigned requirement/interface changed
 
 Do not dump search history, terminal transcripts, or a reasoning diary.
 For a file handoff, return only status, report path, candidate SHA, and any blocking question; do not repeat the report in chat. Record concise command results, not full successful test output.
