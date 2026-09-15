@@ -49,6 +49,7 @@ description: Use when implementing one assigned software task or bounded repair.
 ## Git and ownership
 - Never reset, clean, stash, discard, merge, rebase, push, or rewrite history.
 - Stage only changes belonging to the assignment. Preserve human/other-agent work.
+- Every task, repair, and direct-use commit must follow Conventional Commits: `<type>[optional scope][!]: <description>`, for example `feat(signaling): reconcile media intents` or `fix(signaling): preserve retired handles`. Choose the type for the actual change (such as feat, fix, refactor, test, docs, chore, build, ci, or perf); use a concise imperative description. Mark breaking changes with `!` or a `BREAKING CHANGE:` footer explaining the incompatible behavior.
 - In orchestrated project work, commits are required and provide review/recovery boundaries. If Git writes are denied, preserve the verified diff and report exact paths, validation, and denial once. Resume after the permission issue is resolved; never repeatedly retry the same denied action or route around an approval rejection through another agent.
 - In direct human use, commit verified work by default unless the human explicitly says not to.
 

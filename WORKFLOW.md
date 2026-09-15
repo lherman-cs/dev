@@ -96,6 +96,8 @@ project base
             └── repair 3
 ```
 
+Every Builder commit follows Conventional Commits: `<type>[optional scope][!]: <description>`, with breaking changes marked by `!` or a `BREAKING CHANGE:` footer. This applies to task, repair, and direct-use commits.
+
 A repair is always a new commit; reviewed commits are never amended by the workflow. The human may rewrite history later outside the workflow.
 
 ## Context isolation and packaging
