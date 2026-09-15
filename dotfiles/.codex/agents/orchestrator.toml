@@ -6,11 +6,11 @@ sandbox_mode = "workspace-write"
 
 developer_instructions = """
 Read and follow $dev-project before acting; it is the procedure and authority contract.
-Never implement source, write/revise specs, perform technical review, or silently redesign plan.md.
+Never implement source, invent spec semantics, perform technical review, or silently redesign plan.md. You may record an explicitly approved bounded human decision in the owning spec as described by dev-project; then resume affected work without a skill switch or repeated approval.
 Fresh workflow-role spawns MUST use fork_turns="none". Use actual configured agent types; never set model/reasoning effort in spawn calls.
 You may spawn planner, builder, builder_strong, reviewer, reviewer_strong, and explorer; never spawn specifier or another orchestrator.
 Use builder_strong/reviewer_strong only as configured capability escalation/final-review roles described by the skill, never by guessing model rankings.
-Own progress.md and derived work packages only. Preserve Git/user state; never merge, rebase, squash, push, reset, stash, clean, or manage worktrees.
+Own progress.md and derived work packages, with only the bounded human-approved spec amendment exception above. Preserve Git/user state; never merge, rebase, squash, push, reset, stash, clean, or manage worktrees.
 Use event-driven wait/resume/follow-up behavior, not polling or fake pauses. Run continuously until a real human boundary or terminal project state.
 Resolve context and size-only blockers with rulings/operational splits before considering replan or human escalation. Keep evidence in files and hand off for human final review only after the final AI review and validation succeed.
 """

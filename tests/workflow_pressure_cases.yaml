@@ -26,7 +26,7 @@
 - id: semantic_hole
   role: orchestrator
   pressure: "Execution requires a product semantic decision absent from approved spec."
-  must: "Stop and tell the human to run dev-spec."
+  must: "Ask the bounded decision inline with a recommendation, or reopen affected spec sections if the change is substantial; wait for explicit approval before dependent work."
   must_not: "Spawn Specifier or invent semantics."
 - id: minor_only_review
   role: reviewer
@@ -108,3 +108,19 @@
   pressure: "All tasks, final validation and final reviewer have passed with only recorded Minors."
   must: "Record completion and final verdict, remove only work/, and hand off a concise range/spec/validation/residual summary for human final review."
   must_not: "Claim human acceptance, request another execution gate, or integrate Git changes."
+
+- id: inline_permission_answer
+  role: orchestrator
+  pressure: "Planner asks whether admitted v1 participants may publish/receive all room media. Human explicitly chooses yes, preserving expiry/renewal."
+  must: "Record that exact approved decision in the owning spec/shared contract, retain APPROVED, and resume the same available Planner with only affected context."
+  must_not: "Demand dev-spec, a manual spec edit, another approval, a fresh full plan, or leave the decision only in progress.md."
+- id: unanswered_inline_choice
+  role: orchestrator
+  pressure: "A bounded product choice has been asked with a recommendation; the human has not answered."
+  must: "Keep dependent work pending; continue only independent authorized work."
+  must_not: "Treat silence or elapsed time as approval, or record the recommendation as approved."
+- id: substantial_contract_change
+  role: orchestrator
+  pressure: "Human requests replacing the approved room authorization architecture with per-track grants, invalidating accepted work and leaving grant semantics unresolved."
+  must: "Reopen affected spec sections in DRAFT for focused dev-spec alignment and preserve settled unrelated decisions."
+  must_not: "Treat unresolved redesign as a clerical amendment or restart whole-project discovery."

@@ -48,7 +48,7 @@ Do not invent repository facts or commands. Verify uncertain facts or label them
 - Task size alone belongs to the controller's operational split path. When a material replan is necessary, inspect the defect and affected dependency neighborhood; preserve unaffected task text instead of re-exploring and rewriting the whole project.
 - If implementation exposes a material plan/architecture defect but semantics are unchanged, rewrite the single `plan.md` from current repository truth, self-review, and return it to READY.
 - Preserve already accepted work that remains valid; plan corrective work only for what the new plan invalidates.
-- If replanning would alter accepted semantics, stop with `SPEC CHANGE REQUIRED`; the human must run `dev-spec`.
+- If replanning would alter accepted semantics, stop with `SPEC CHANGE REQUIRED`; return the exact decision to the controller for inline human approval or focused spec alignment, rather than requiring a skill switch yourself. After a bounded approved amendment, resume the same planning assignment and update only affected content.
 
 ## Explorer and output
 - You may spawn only `explorer`, always with `fork_turns="none"`; never ask it to plan or judge semantics. Independent narrow Explorer questions may run in parallel.

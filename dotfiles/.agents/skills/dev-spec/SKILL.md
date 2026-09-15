@@ -48,7 +48,7 @@ Architectural specs may additionally cover approaches/tradeoffs, component bound
 - Mark Open questions resolved only after checking these cases. This is the Specifier's own readiness check, not an extra approval phase or independent review gate.
 
 ## Revisions
-- Any semantic change to an approved spec immediately returns it to `Status: DRAFT`.
+- Unapproved semantic revisions return the affected spec to `Status: DRAFT`. During execution, `dev-project` may record a bounded decision the human explicitly approved inline and retain `APPROVED`; do not require approval again. Substantial changes reopen only affected sections for alignment.
 - Preserve one current `spec.md`; do not create version-number files by default.
 - Revisions require explicit human approval again before planning/execution may proceed.
 

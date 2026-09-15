@@ -36,7 +36,7 @@ Every project lives under a git-ignored directory:
 
 Single writers:
 
-- Specifier owns `spec.md`.
+- Specifier owns `spec.md`; during execution Orchestrator may record the exact bounded amendment explicitly approved by the human, without concurrent writers.
 - Planner owns `plan.md`.
 - Orchestrator owns `progress.md` and derived task/review packages.
 - Builder writes repository changes/commits and assigned build reports.
@@ -53,7 +53,7 @@ Single writers:
 - Architectural — one-question-at-a-time alignment, alternatives/tradeoffs, section validation
 - Spike — bounded experiment to resolve a concrete uncertainty, then return to design
 
-Every path ends in `spec.md`. It remains `DRAFT` until the human explicitly approves it. Any semantic change returns an approved spec to DRAFT.
+Every path ends in `spec.md`. It remains `DRAFT` until the human explicitly approves it. Unapproved semantic revisions return the affected spec to DRAFT. A bounded amendment explicitly approved inline during execution may be recorded by Orchestrator with APPROVED retained; that answer is the approval.
 
 After approval, `dev-spec` stops. The explicit command to execute is `dev a project ...` / `dev a pr ...`.
 
@@ -76,7 +76,7 @@ Planner:
 - defines a baseline validation and one whole-project final validation;
 - self-reviews before changing `Status: DRAFT` to `Status: READY`.
 
-A material plan defect discovered later causes a fresh isolated Planner to rewrite the single `plan.md`. Human approval is not needed when semantics remain unchanged. Semantic changes stop execution and require the human to run `dev-spec` again.
+A material plan defect discovered later causes a fresh isolated Planner to rewrite the single `plan.md`. Human approval is not needed when semantics remain unchanged. Bounded semantic questions are answered inline and recorded by Orchestrator; substantial changes reopen affected sections through `dev-spec`.
 
 Check semantic prerequisites before elaborating the plan, and walk the first task through a viable initial test/candidate before READY. Keep full execution-grade coverage; avoid source dumps, repeated workflow prose, and speculative implementation detail. During a material replan preserve unaffected task text. No new independent planning gate is introduced.
 
@@ -196,7 +196,7 @@ If a blocker survives the third scoped re-review, Orchestrator reaches a breaker
 - use configured capability escalation for a demonstrated reasoning blocker;
 - split an oversized task;
 - invoke Planner for a material plan defect;
-- stop for human-run `dev-spec` when semantics are missing;
+- ask a bounded semantic question inline, or reopen affected spec sections for substantial changes;
 - surface a genuine unresolved blocker.
 
 It may not overrule a real blocking finding before the breaker.
@@ -299,7 +299,7 @@ Normal workflow transitions never ask “continue?”. Stop only for a meaningfu
 
 Ordinary implementation ambiguity, review repair, moving to the next task, validation, or autonomous replanning with unchanged semantics are not human gates.
 
-Before declaring a semantic stop, check the exact approved clause, established contract, and prior rulings. Make authorized reversible implementation rulings; do not invent external validation rules or product defaults. A genuine semantic gap is handed back as one concrete decision with a recommendation/tradeoff and the `dev-spec` project path. Preserve state and settled decisions.
+Before declaring a semantic stop, check the exact approved clause, established contract, and prior rulings. Make authorized reversible implementation rulings; do not invent external validation rules or product defaults. For a bounded semantic gap, ask one concrete inline question with a recommendation/tradeoff. The human's explicit answer authorizes the corresponding amendment to the owning spec/shared contract; Orchestrator records it with an approval note and retains APPROVED. Do not require a skill switch, manual edit, or repeated approval. Silence is not approval. Resume the same available Planner/Builder, update only affected planning/briefs and validation, and preserve settled decisions. Substantial changes to goals, architecture, or accepted work reopen only affected sections in DRAFT for `dev-spec` alignment. This exception supersedes the questionnaire's blanket semantic-stop/single-spec-writer rule at the human's request; it grants no authority to invent semantics.
 
 ## Direct role usage
 
