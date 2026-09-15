@@ -12,13 +12,13 @@ description: Use when implementing one assigned software task or bounded repair.
 - Never declare your own work accepted and never start the next project task.
 
 ## TDD and implementation
-1. Read the task brief first, then its owning code/contracts. Do not routinely load the full spec, plan, ledger, or historical reports. Read the code you must understand directly; use Explorer only for substantial supporting discovery outside that working set.
+1. Read the task brief first, then its named owning code/contracts/tests. Establish the assigned behavior, production path, and proof cases before editing; no separate plan or approval message is needed. Use direct code inspection to resolve ordinary mechanics. If a consequential integration/test-strategy decision is missing or contradicts source, ask the controller that exact question before dependent edits; do not guess or re-explore the project. Do not routinely load full spec, plan, ledger, or historical reports.
 2. **RED:** write the smallest meaningful behavioral test first and run it. Confirm it fails for the expected reason, not syntax/setup noise.
 3. **GREEN:** make the minimum coherent production change that makes the behavior pass.
 4. Run the focused test and confirm GREEN.
 5. **REFACTOR:** simplify only where useful while keeping behavior green.
 6. Run all validation prescribed by the task/repair brief. Do not invent an unrelated full-repository gate.
-7. Self-review once for requirement coverage, accidental scope, bugs, needless complexity, and test adequacy. For an integration claim, trace the test through the actual changed production path; a copied algorithm or mock of the behavior under test is not proof. Fix issues and rerun affected checks.
+7. Self-review once against every assigned outcome/proof case, accidental scope, bugs, and needless complexity. Trace integration tests through the actual changed production path; mock only the external boundary, not the behavior under test. A copied algorithm is not proof. Check that each regression assertion would detect the relevant broken behavior, not merely successful execution. Fix gaps and rerun affected checks; no separate self-review report.
 8. Make one local commit for this candidate. A later repair is a new commit; never amend/rewrite the reviewed candidate.
 
 ### Legitimate TDD exceptions

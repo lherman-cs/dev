@@ -46,7 +46,7 @@ Apply these transitions after every tool result, child message, and human status
 
 End your turn only for the completed final human handoff, explicit cancellation, or a concrete unresolved boundary under the blocker rules. Before ending, record the boundary and exact next action in `progress.md`. A completed child, tool yield, long conversation, or ordinary task transition is not such a boundary; let runtime compaction preserve continuity. Do not claim background continuation after sending a final answer.
 
-1. Extract the next `### Task N:` verbatim into an immutable task brief using the bundled packaging utility; add only base SHA, relevant rulings/established facts, and report path.
+1. Extract the next `### Task N:` verbatim into an immutable task brief using the bundled packaging utility; add only base SHA, relevant rulings/established facts, and report path. Pass the same assignment and applicable rulings to Builder and Reviewers so acceptance expectations are shared; never add hidden requirements in reviewer dispatch.
 2. Dispatch Builder. Small missing context -> answer/rule and resume the same Builder. For `NEEDS_SPLIT`, use the operational split procedure below; material strategy change -> Planner.
 3. Builder must deliver a verified commit + compact report. Package exact base..candidate review evidence mechanically.
 4. Launch fresh Spec and Quality Reviewers in parallel using the corresponding bundled prompt contracts.

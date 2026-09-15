@@ -27,7 +27,8 @@ description: Use when reviewing an explicit code candidate, repair, or completed
 - **Important:** concrete material violation of assigned requirements/invariants or technical correctness. Blocks.
 - **Minor:** useful improvement that does not justify delaying acceptance. Never blocks and never enters a repair loop.
 - A blocker must identify a reachable failure or explicit unmet acceptance criterion, supporting code/evidence, material impact, and why this candidate is responsible. A plausible hypothetical without that connection is not enough. Evidence may be code reasoning; a new test is not mandatory proof.
-- Ask for the smallest correction that restores the requirement/invariant. An alternative design, additional hardening, or extra test is optional unless needed to fix that demonstrated failure or satisfy an explicit requirement.
+- Make each blocker executable: give the triggering input/state/action, expected versus actual behavior, owning symbol/path, violated contract, and observable resolution evidence. For a test gap, identify the broken behavior current tests miss and the production entrypoint/assertion that would detect it; “add coverage” is insufficient. Code reasoning remains valid evidence; do not require writing a reproducer for every finding.
+- Ask for the smallest correction that restores the requirement/invariant. Distinguish the required outcome from an illustrative fix; do not mandate an unverified design. An alternative design, additional hardening, or extra test is optional unless needed to fix that demonstrated failure or satisfy an explicit requirement. Evaluate against the supplied contract, not an unstated preferred implementation.
 - `PASS` means no Critical/Important finding remains; it does not mean perfection. Report no findings when none are worthwhile.
 
 ## Review dimensions

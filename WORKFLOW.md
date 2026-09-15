@@ -157,6 +157,10 @@ The controller passes paths and SHAs, not pasted plans/diffs/history.
 
 Task briefs are immutable after dispatch. Repair instructions get new incremental repair briefs. Review packages are exact immutable Git ranges.
 
+Narrow context means few unresolved decisions, not just few files. Planner supplies the owning symbols, production integration path, ordered change, and concrete proof cases (fixture, actions/failure injection, observable assertions, command). Its existing self-review walks each task as a fresh Builder; consequential architectural/test-strategy choices cannot be left implicit at READY. Builder still owns ordinary coding mechanics and checks the relevant source directly. Builder and Reviewers receive the same requirements and applicable rulings; neither an unstated preferred design nor extra review-only expectations become acceptance criteria.
+
+Blocking findings supply a trigger, violated contract, source anchors, and observable resolution evidence. The controller preserves those specifics in the existing narrow repair brief, asks the originating Reviewer to clarify missing evidence, and distinguishes required outcomes from suggested implementations. No new approval, plan-review gate, or handoff artifact is introduced.
+
 Read only the dispatch template needed now. Helpers write packages directly to files; controllers do not print full packages into their own context. Children return status, report path, SHA or blocker IDs rather than duplicating reports. Builders and task reviewers start with their bounded brief and owning code; historical reports and full project authorities require a specific missing fact. Final reviewers still receive whole-project context.
 
 ### Operational task splits

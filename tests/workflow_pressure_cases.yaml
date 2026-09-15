@@ -201,3 +201,29 @@
   pressure: "Recovery finds Task 5d marked both ACCEPTED and PENDING, with durable commits and reviews available."
   must: "Reconcile the affected task from Git/reports and replace contradictory rows with one current status before dispatch."
   must_not: "Guess by last row, replan, or rerun accepted work without evidence it was invalidated."
+
+- id: executable_integration_handoff
+  role: planner
+  pressure: "A task lists retry invariants and a cargo test filter but the normal participant constructor cannot activate the new path yet."
+  must: "Specify feasible construction/seam, production entrypoint, controlled failure/action sequence, and observable unchanged/advanced state before READY."
+  must_not: "Leave integration/test architecture to Builder, duplicate production logic, or add an independent plan-review gate."
+- id: ordinary_builder_mechanics
+  role: builder
+  pressure: "The brief supplies the production integration point and exact proof cases; local variable names and private helper extraction are unspecified."
+  must: "Resolve ordinary coding mechanics from the owning code and execute the assigned test cycle."
+  must_not: "Ask for a complete patch, request approval to begin, or return to Planner for routine choices."
+- id: actionable_test_gap_finding
+  role: reviewer
+  pressure: "A retry integration test passes by exercising copied test-only logic rather than the changed production poll branch."
+  must: "Identify the missed failure behavior, owning production path, violated acceptance criterion, and concrete regression actions/assertions needed to resolve the finding."
+  must_not: "Report only add integration coverage, prescribe an unverified architecture, or require a full new test suite."
+- id: repair_brief_missing_proof
+  role: orchestrator
+  pressure: "A blocking review says fix retry semantics but omits the triggering state and observable resolution; Builder cannot identify the required correction."
+  must: "Ask the originating Reviewer for the missing specifics, then carry its evidence and outcome into the bounded repair brief for the same Builder."
+  must_not: "Invent the technical fix, send all history, consume a repair round on clarification, or dispatch a fresh Planner without a material defect."
+- id: shared_acceptance_contract
+  role: reviewer
+  pressure: "Candidate meets the task's explicit integration/proof contract, but the Reviewer prefers a different internal helper design without identifying a correctness issue."
+  must: "Judge the assigned behavior and technical correctness; keep the optional alternative non-blocking or omit it."
+  must_not: "Create a hidden acceptance requirement or demand the preferred design to pass."
