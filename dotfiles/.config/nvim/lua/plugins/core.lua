@@ -6,6 +6,18 @@ return {
     cmd = "G",
   },
   {
+    "folke/snacks.nvim",
+    opts = {
+      picker = {
+        sources = {
+          grep = {
+            hidden = true,
+          },
+        },
+      },
+    },
+  },
+  {
     "esmuellert/codediff.nvim",
     cmd = "CodeDiff",
   },

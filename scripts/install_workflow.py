@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Copy only the six workflow roles/skills into a target worktree; preserve user config.
+"""Copy only workflow roles and the five public skills into a target worktree; preserve user config.
 Changed existing workflow files are backed up; no bootstrap/install.sh is run.
 """
 from __future__ import annotations
@@ -11,6 +11,7 @@ import shutil
 import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
+LEGACY_PATHS = (Path('.agents/skills/dev-explore'),)
 
 def reject_symlink_parents(target: Path, destination: Path) -> None:
     """Do not follow a .codex/.agents directory symlink outside the target worktree."""
@@ -32,6 +33,15 @@ def install(target: Path, source: Path = ROOT, dry_run: bool = False) -> dict:
             if path.is_file() and '__pycache__' not in path.parts:
                 assets.append((path, path.relative_to(source/'dotfiles')))
     backup = target/'.codex/dev-workflow-backups'/datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')
+    # Remove only workflow-owned legacy paths. Back them up first; never sweep unrelated skills.
+    removed = []
+    for rel in LEGACY_PATHS:
+        legacy = target/rel
+        if not legacy.exists() and not legacy.is_symlink():
+            continue
+        reject_symlink_parents(target, legacy)
+        reject_symlink_parents(target, backup/rel)
+        removed.append(str(rel))
     # Preflight all destinations before writing any asset.
     for _, rel in assets:
         reject_symlink_parents(target, target/rel)
@@ -39,6 +49,19 @@ def install(target: Path, source: Path = ROOT, dry_run: bool = False) -> dict:
         if (target/rel).is_dir() and not (target/rel).is_symlink():
             raise ValueError(f'Refusing to replace a directory with an asset: {target/rel}')
     changed = []; backed_up = []
+    if not dry_run:
+        for rel_text in removed:
+            rel = Path(rel_text); legacy = target/rel; saved = backup/rel
+            saved.parent.mkdir(parents=True, exist_ok=True)
+            if legacy.is_symlink() or legacy.is_file():
+                shutil.copy2(legacy, saved, follow_symlinks=False)
+                legacy.unlink()
+            elif legacy.is_dir():
+                shutil.copytree(legacy, saved, symlinks=True)
+                shutil.rmtree(legacy)
+            else:
+                raise ValueError(f'Unsupported legacy workflow path: {legacy}')
+            backed_up.append(str(rel))
     for src, rel in assets:
         dest = target/rel
         contents = src.read_bytes()
@@ -61,7 +84,7 @@ def install(target: Path, source: Path = ROOT, dry_run: bool = False) -> dict:
             os.replace(name, dest)
         finally:
             Path(name).unlink(missing_ok=True)
-    return {'changed':changed, 'backed_up':backed_up,
+    return {'changed':changed, 'removed':removed, 'backed_up':backed_up,
             'backup_path':str(backup) if backed_up else None, 'dry_run':dry_run}
 
 if __name__ == '__main__':

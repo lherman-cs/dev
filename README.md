@@ -1,28 +1,52 @@
 # dev toolbox
 
-## Updated LLM development workflow
+## Codex development workflow
 
-This repository includes six explicit Codex roles, their concise skills, and the Rust
-launcher integration. Read [WORKFLOW.md](WORKFLOW.md) for commands, human intervention,
-model ownership, and bounded reviews; [VALIDATION.md](VALIDATION.md) states what was tested.
+This repository ships a five-skill, Superpowers-inspired Codex development workflow optimized for bounded context, gated correctness, and forward progress.
+
+Public skills:
+
+- `dev-spec`
+- `dev-plan`
+- `dev-build`
+- `dev-review`
+- `dev-project`
+
+Explorer is a cheap read-only leaf agent, not a sixth public skill. Internal `builder_strong` and `reviewer_strong` agent types are capability-escalation aliases that reuse the same Builder/Reviewer skills.
+
+Typical usage:
 
 ```sh
-cargo test --locked
-cargo install --path . --locked
-# From the project you want to work on:
-dev a s "Align with me on the behavior we need."
-dev a pr "Continue the accepted project in plans/example/."
+# Human-facing semantic alignment
+dev a s "Define the behavior we need and align with me first."
+
+# After spec.md is explicitly APPROVED, execute continuously.
+# dev-project creates/replans plan.md automatically when required.
+dev a pr "Execute plans/example/."
 ```
 
-Models and reasoning live only in `dotfiles/.codex/agents/<role>.toml`; `agent.toml`
-references those roles. Rebuild after changing embedded configuration or instructions.
-`just install` installs only the binary. `just install-workflow /path/to/worktree`
-optionally exports the roles/skills with backups and leaves config.toml alone.
+The project workflow uses only `./plans/<project>/{spec.md,plan.md,progress.md,work/}`. The whole `plans/` tree is expected to be git-ignored. `work/` is deleted after successful completion; the compact spec/plan/progress record remains.
 
-**For a workflow-only update, do not run the legacy Bootstrap command below.**
-The original personal-machine notes and bootstrap scripts are retained separately from
-the new workflow. Rust compilation and live Codex behavior were not tested in the build
-environment; see the validation report before relying on the update.
+Model policy is centralized in `dotfiles/.codex/agents/*.toml`; skills contain no concrete model names. See [WORKFLOW.md](WORKFLOW.md) for the full contract, [SOURCES.md](SOURCES.md) for upstream design/model references, [EVALS.md](EVALS.md) for pressure scenarios, and [VALIDATION.md](VALIDATION.md) for checks actually run.
+
+Developer checks:
+
+```sh
+python3 tests/validate_assets.py
+python3 -m unittest discover -s tests -p 'test_*.py'
+cargo test --locked
+cargo build --locked
+python3 tests/launcher_e2e.py --binary target/debug/dev
+```
+
+Install/export only the workflow assets into an existing worktree:
+
+```sh
+python3 scripts/install_workflow.py /path/to/worktree --dry-run
+python3 scripts/install_workflow.py /path/to/worktree
+```
+
+The exporter preserves unrelated roles/skills and `.codex/config.toml`. For this workflow-only update, do not run the legacy machine bootstrap below.
 
 ---
 

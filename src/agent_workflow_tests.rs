@@ -48,27 +48,33 @@ fn no_task_session_is_not_an_orchestrator_assignment() {
 }
 
 #[test]
-fn role_is_activated_even_when_no_task_prompt_is_given() {
+fn explicit_task_prompt_activates_skill_or_explorer_role() {
     let config = load_agent_config().unwrap();
     for profile in [AgentProfileName::Spec, AgentProfileName::Plan, AgentProfileName::Build,
         AgentProfileName::Review, AgentProfileName::Project, AgentProfileName::Explore] {
         let selected = agent_profile(&config, profile).unwrap();
         let asset = agent_roles::asset(&selected.role).unwrap();
-        let prompt = agent_prompt(&config, profile, &[], Path::new("/cache with spaces")).unwrap().unwrap();
-        assert!(prompt.starts_with(&format!("${}\n", asset.skill_name)));
-        assert!(prompt.contains("No assignment supplied yet"));
-        assert!(prompt.contains("/cache with spaces"));
+        let prompt = agent_prompt(&config, profile, &["task".into()], Path::new("/cache with spaces")).unwrap().unwrap();
+        if let Some(skill) = asset.skill_name {
+            assert!(prompt.starts_with(&format!("${skill}\n")));
+            assert!(prompt.contains("/cache with spaces"));
+        } else {
+            assert_eq!(selected.role, "explorer");
+            assert!(!prompt.starts_with("$dev-"));
+        }
+        assert!(prompt.contains("Human request:\ntask"));
     }
 }
 
 #[test]
-fn leaf_explorer_and_reviewer_use_read_only_defaults() {
+fn explorer_is_read_only_and_reviewer_is_source_read_only_by_contract() {
     let config = load_agent_config().unwrap();
     let explorer = overrides(&agent_codex_args(&config, AgentProfileName::Explore).unwrap());
     assert_eq!(explorer["sandbox_mode"].as_str(), Some("read-only"));
     assert_eq!(explorer["agents.enabled"].as_bool(), Some(false));
     let reviewer = overrides(&agent_codex_args(&config, AgentProfileName::Review).unwrap());
-    assert_eq!(reviewer["sandbox_mode"].as_str(), Some("read-only"));
+    assert_eq!(reviewer["sandbox_mode"].as_str(), Some("workspace-write"));
+    assert!(agent_roles::load("reviewer").unwrap().developer_instructions.contains("repository source as read-only"));
 }
 
 #[test]

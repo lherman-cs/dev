@@ -1,7 +1,6 @@
 # Optional when using plain Codex, rather than `dev a ...`.
-# Merge these policy values only; NEVER replace your existing config.toml.
-# Codex discovers the standalone named roles in .codex/agents/*.toml.
+# Merge these policy values only; NEVER replace an existing config.toml.
 [agents]
 enabled = true
-max_concurrent_threads_per_session = 3
+max_concurrent_threads_per_session = 4
 interrupt_message = true

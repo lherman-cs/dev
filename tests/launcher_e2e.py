@@ -63,8 +63,11 @@ def main() -> None:
                 assert options['model_reasoning_effort'] == source['model_reasoning_effort']
                 assert options['sandbox_mode'] == source['sandbox_mode']
                 assert 'developer_instructions' not in options
-                assert args[-2] == '--' and 'Role contract:' in args[-1]
-                assert ('No assignment supplied yet' in args[-1]) == (not task)
+                if task:
+                    assert args[-2] == '--' and 'Role contract:' in args[-1]
+                    assert 'Human request:' in args[-1]
+                else:
+                    assert '--' not in args and 'Role contract:' not in '\n'.join(args)
                 for role_file in (ROOT / 'dotfiles/.codex/agents').glob('*.toml'):
                     role = tomllib.loads(role_file.read_text())
                     runtime = Path(options[f'agents.{role["name"]}.config_file'])
@@ -72,7 +75,14 @@ def main() -> None:
                     generated = tomllib.loads(runtime.read_text())
                     assert generated['model'] == role['model']
                     assert generated['model_reasoning_effort'] == role['model_reasoning_effort']
-                    assert 'exact bundled skill source' in generated['developer_instructions']
+                    if role['name'] == 'explorer':
+                        assert 'exact bundled skill source' not in generated['developer_instructions']
+                    else:
+                        assert 'exact bundled skill source' in generated['developer_instructions']
+                if command == 'project':
+                    runtime_project = Path(options['agents.orchestrator.config_file']).parent.parent / 'skills/dev-project'
+                    assert (runtime_project/'prompts/build-task.md').is_file()
+                    assert (runtime_project/'scripts/package_review.py').is_file()
         # Trust session: no task injected. Aliases dispatch the expected roles.
         args = launch()
         assert '--' not in args and 'Role contract:' not in '\n'.join(args)

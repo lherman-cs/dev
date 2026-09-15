@@ -2220,20 +2220,23 @@ fn agent_prompt(
     let selected = agent_profile(config, profile)?;
     let asset = agent_roles::asset(&selected.role)?;
     let role = agent_roles::load(&selected.role)?;
-    let skill = agent_roles::skill_path(dir, &selected.role)?;
-    let skill = skill.to_str().context("Codex requires UTF-8 workflow asset paths")?;
 
-    // When the human supplies an explicit request, preserve the role/skill
-    // bootstrap and attach only that real request. Never invent placeholder
-    // assignment text.
-    Ok(Some(format!(
-        "${}\nAct as the configured {} role. Read the exact bundled skill at {:?} before acting.\n\nRole contract:\n{}\nHuman request:\n{}",
-        asset.skill_name,
-        role.name,
-        skill,
-        role.developer_instructions,
-        prompt.join(" ")
-    )))
+    // When the human supplies an explicit request, preserve the configured role
+    // bootstrap and attach only that real request. Explorer is intentionally a
+    // TOML-only leaf rather than a sixth public skill.
+    if let Some(skill_name) = asset.skill_name {
+        let skill = agent_roles::skill_path(dir, &selected.role)?;
+        let skill = skill.to_str().context("Codex requires UTF-8 workflow asset paths")?;
+        Ok(Some(format!(
+            "${skill_name}\nAct as the configured {} role. Read the exact bundled skill at {:?} before acting.\n\nRole contract:\n{}\nHuman request:\n{}",
+            role.name, skill, role.developer_instructions, prompt.join(" ")
+        )))
+    } else {
+        Ok(Some(format!(
+            "Act as the configured {} role.\n\nRole contract:\n{}\nHuman request:\n{}",
+            role.name, role.developer_instructions, prompt.join(" ")
+        )))
+    }
 }
 
 fn workflow_runtime_dir() -> Result<PathBuf> {

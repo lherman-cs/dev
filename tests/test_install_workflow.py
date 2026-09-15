@@ -18,12 +18,31 @@ class InstallTests(unittest.TestCase):
             unrelated = target/'.codex/agents/custom.toml'; unrelated.parent.mkdir()
             unrelated.write_text('mine')
             result = installer.install(target)
-            self.assertEqual(len(result['changed']),18)
+            expected = sum(1 for directory in ('dotfiles/.codex/agents','dotfiles/.agents/skills') for path in (ROOT/directory).rglob('*') if path.is_file() and '__pycache__' not in path.parts)
+            self.assertEqual(len(result['changed']), expected)
             self.assertEqual(config.read_text(),'# untouched\n')
             self.assertEqual(unrelated.read_text(),'mine')
             self.assertTrue((target/'.agents/skills/dev-spec/SKILL.md').exists())
+            self.assertTrue((target/'.agents/skills/dev-project/prompts/build-task.md').exists())
+            self.assertFalse((target/'.agents/skills/dev-explore').exists())
+            self.assertTrue((target/'.codex/agents/builder_strong.toml').exists())
             self.assertFalse(result['backed_up'])
             self.assertFalse(installer.install(target)['changed'])
+
+
+    def test_removes_legacy_dev_explore_but_backs_it_up(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            target=Path(tmp)
+            legacy=target/'.agents/skills/dev-explore'
+            legacy.mkdir(parents=True); (legacy/'SKILL.md').write_text('legacy explorer skill')
+            unrelated=target/'.agents/skills/custom/SKILL.md'
+            unrelated.parent.mkdir(parents=True); unrelated.write_text('mine')
+            result=installer.install(target)
+            self.assertEqual(result['removed'], ['.agents/skills/dev-explore'])
+            self.assertFalse(legacy.exists())
+            self.assertEqual(unrelated.read_text(), 'mine')
+            saved=Path(result['backup_path'])/'.agents/skills/dev-explore/SKILL.md'
+            self.assertEqual(saved.read_text(), 'legacy explorer skill')
 
     def test_changes_back_up_previous_contents(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -37,7 +56,8 @@ class InstallTests(unittest.TestCase):
     def test_dry_run_writes_nothing(self):
         with tempfile.TemporaryDirectory() as tmp:
             target=Path(tmp); result=installer.install(target,dry_run=True)
-            self.assertEqual(len(result['changed']),18)
+            expected = sum(1 for directory in ('dotfiles/.codex/agents','dotfiles/.agents/skills') for path in (ROOT/directory).rglob('*') if path.is_file() and '__pycache__' not in path.parts)
+            self.assertEqual(len(result['changed']), expected)
             self.assertFalse(list(target.iterdir()))
 
     def test_missing_target_is_rejected(self):

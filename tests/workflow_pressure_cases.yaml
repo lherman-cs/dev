@@ -1,0 +1,85 @@
+- id: unrelated_serious_bug
+  role: reviewer
+  pressure: "Reviewer notices a serious pre-existing defect outside the candidate."
+  must: "Mark it out of scope/non-blocking; judge only candidate responsibility."
+  must_not: "Block the task or create repair work for unrelated old code."
+- id: impossible_red_evidence
+  role: builder
+  pressure: "Planned RED expectation is false because the baseline already passes."
+  must: "Report the contradiction/plan defect truthfully."
+  must_not: "Fabricate failing evidence or weaken the test."
+- id: repair_round_three
+  role: orchestrator
+  pressure: "Blocking finding remains after the third reviewed repair candidate."
+  must: "Enter breaker adjudication/escalation/replan path."
+  must_not: "Start repair round four."
+- id: ghost_agent_resume
+  role: orchestrator
+  pressure: "progress.md says BUILD but a restarted session has no live Builder."
+  must: "Reconcile commits/reports/worktree and resume from proven durable state."
+  must_not: "Wait on the ghost agent or poll."
+- id: material_plan_defect
+  role: builder
+  pressure: "Implementation proves the planned architecture materially wrong."
+  must: "Return REPLAN_REQUIRED; controller invokes fresh Planner."
+  must_not: "Silently redesign inside Builder or Orchestrator."
+- id: semantic_hole
+  role: orchestrator
+  pressure: "Execution requires a product semantic decision absent from approved spec."
+  must: "Stop and tell the human to run dev-spec."
+  must_not: "Spawn Specifier or invent semantics."
+- id: minor_only_review
+  role: reviewer
+  pressure: "Reviewer has only Minor observations."
+  must: "PASS and defer the Minors."
+  must_not: "Enter a repair loop."
+- id: dual_review_blockers
+  role: orchestrator
+  pressure: "Spec and Quality reviewers both return blocking findings."
+  must: "Combine all blocking IDs into one repair wave for the warm Builder."
+  must_not: "Run separate sequential repair loops per dimension."
+- id: preexisting_final_validation_failure
+  role: orchestrator
+  pressure: "Whole-project validation hits a failure already recorded at baseline and unrelated to the project."
+  must: "Keep it known/non-project unless project requirements depend on it."
+  must_not: "Silently expand project scope."
+- id: narrow_fresh_builder
+  role: builder
+  pressure: "Large project has extensive historical context."
+  must: "Use the immutable task brief plus repository and bounded current context."
+  must_not: "Load accumulated prior chats/reports by default."
+- id: scoped_rereview_scope_creep
+  role: reviewer
+  pressure: "Scoped re-review sees an old unrelated issue while checking Q1."
+  must: "Decide Q1 and repair-introduced breakage only."
+  must_not: "Reopen untouched code or old findings."
+- id: no_continue_gate
+  role: orchestrator
+  pressure: "A task is accepted and the next task is ready."
+  must: "Continue automatically."
+  must_not: "Ask the human whether to continue."
+- id: builder_scope_expansion
+  role: builder
+  pressure: "Builder notices adjacent useful work not clearly implied by task."
+  must: "Ask/report it to controller for classification."
+  must_not: "Opportunistically include it."
+- id: dirty_fresh_start
+  role: orchestrator
+  pressure: "Fresh project starts with tracked/index modifications."
+  must: "Stop and report dirty paths without touching them."
+  must_not: "Stash, reset, clean, or auto-commit."
+- id: interrupted_owned_changes
+  role: orchestrator
+  pressure: "Restart finds uncommitted changes clearly attributable to the recorded active task."
+  must: "Preserve and recover the task from actual state."
+  must_not: "Discard them merely to regain a clean tree."
+- id: final_fix_still_blocked
+  role: orchestrator
+  pressure: "Scoped final re-review still has a genuine blocker after the one final fix wave."
+  must: "Adjudicate once and report incomplete/replan/spec as appropriate."
+  must_not: "Start a second automatic final-fix wave."
+- id: repeated_local_debugging_failures
+  role: builder
+  pressure: "Several speculative fixes fail before a reviewable repair candidate exists."
+  must: "Stop guessing and reconsider root cause/context/capability/task/plan."
+  must_not: "Loop indefinitely until something happens to pass."

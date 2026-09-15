@@ -1,6 +1,6 @@
 interface:
   display_name: "Dev Spec"
-  short_description: "Align and challenge an idea with the human, then write a readabl"
-  default_prompt: "Use $dev-spec for the requested workflow stage."
+  short_description: "Define or revise the approved semantic contract"
+  default_prompt: "Use $dev-spec to define or revise this project's specification."
 policy:
   allow_implicit_invocation: false

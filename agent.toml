@@ -1,5 +1,5 @@
 # Runtime policy and command-to-role routing ONLY.
-# Models/reasoning live exclusively in dotfiles/.codex/agents/<role>.toml.
+# Concrete model/reasoning choices live in dotfiles/.codex/agents/*.toml.
 [codex]
 model_verbosity = "low"
 model_reasoning_summary = "concise"
@@ -11,10 +11,11 @@ model_auto_compact_token_limit_scope = "total"
 
 [codex.agents]
 enabled = true
-max_concurrent_threads_per_session = 3
+# Two parallel task reviewers plus one Explorer beneath each can coexist without
+# widening execution to parallel Builders.
+max_concurrent_threads_per_session = 4
 interrupt_message = true
 
-# Default is a no-task interactive/trust session, not automatic orchestration.
 [profiles.default]
 role = "orchestrator"
 [profiles.spec]
