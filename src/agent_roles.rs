@@ -52,6 +52,7 @@ pub struct ExtraAsset {
 }
 
 pub const EXTRA_ASSETS: &[ExtraAsset] = &[
+    ExtraAsset { path: "skills/dev-project/prompts/explore-facts.md", source: include_str!("../dotfiles/.agents/skills/dev-project/prompts/explore-facts.md") },
     ExtraAsset { path: "skills/dev-project/prompts/plan-project.md", source: include_str!("../dotfiles/.agents/skills/dev-project/prompts/plan-project.md") },
     ExtraAsset { path: "skills/dev-project/prompts/replan-project.md", source: include_str!("../dotfiles/.agents/skills/dev-project/prompts/replan-project.md") },
     ExtraAsset { path: "skills/dev-project/prompts/build-task.md", source: include_str!("../dotfiles/.agents/skills/dev-project/prompts/build-task.md") },

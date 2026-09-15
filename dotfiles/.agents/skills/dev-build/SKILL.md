@@ -12,7 +12,7 @@ description: Use when implementing one assigned software task or bounded repair.
 - Never declare your own work accepted and never start the next project task.
 
 ## TDD and implementation
-1. Read the task brief first, then its owning code/contracts. Do not routinely load the full spec, plan, ledger, or historical reports. Understand the immediate requirements; use Explorer only when a narrow fact is worth a separate handoff.
+1. Read the task brief first, then its owning code/contracts. Do not routinely load the full spec, plan, ledger, or historical reports. Understand the immediate requirements; offload substantial supporting fact-finding to Explorer before reading its search surface yourself.
 2. **RED:** write the smallest meaningful behavioral test first and run it. Confirm it fails for the expected reason, not syntax/setup noise.
 3. **GREEN:** make the minimum coherent production change that makes the behavior pass.
 4. Run the focused test and confirm GREEN.
@@ -50,6 +50,7 @@ description: Use when implementing one assigned software task or bounded repair.
 - Stay available for the controller's answer and resume the same assignment. Continue independent in-scope investigation/verification only when it does not depend on that answer; do not end a task merely because a question was sent.
 
 ## Explorer
+- Prefer Explorer before multi-file factual discovery, caller/dependency tracing, contract extraction, or large-log triage would fill your context. Keep a known-path lookup or a deterministic helper local. Use the [bounded evidence handoff](../dev-project/prompts/explore-facts.md); retain judgment and read only decision-critical source anchors afterward.
 - You may spawn only `explorer`, always with `fork_turns="none"`, for a bounded factual question.
 - Independent facts may be explored concurrently. Explorer cannot implement, review, plan, or decide architecture.
 

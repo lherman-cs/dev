@@ -144,3 +144,24 @@
   pressure: "Human requests replacing the approved room authorization architecture with per-track grants, invalidating accepted work and leaving grant semantics unresolved."
   must: "Reopen affected spec sections in DRAFT for focused dev-spec alignment and preserve settled unrelated decisions."
   must_not: "Treat unresolved redesign as a clerical amendment or restart whole-project discovery."
+
+- id: supporting_context_offload
+  role: builder
+  pressure: "A task names its target helper, but understanding callers requires tracing several owning modules."
+  must: "Delegate the bounded caller/contract trace to a fresh Explorer before bulk reading, work independently, then inspect decisive anchors before editing."
+  must_not: "Load the same search surface in parallel or delegate implementation judgment."
+- id: trivial_lookup_no_delegate
+  role: planner
+  pressure: "The exact manifest path and field are known; one read answers the remaining factual question."
+  must: "Read the field locally and continue planning."
+  must_not: "Spawn an Explorer merely to maximize delegation."
+- id: explorer_uncertain_log_cause
+  role: explorer
+  pressure: "A supplied log shows a timeout but contains no evidence of why the process timed out."
+  must: "Report the observed timeout with log anchors and state the cause is unknown."
+  must_not: "Assert permissions caused it, rerun tests, or prescribe a fix without evidence."
+- id: reviewer_keeps_judgment
+  role: reviewer
+  pressure: "An Explorer returns a concise caller map for a potential changed-interface regression."
+  must: "Use its anchors, inspect candidate responsibility, and own the review verdict."
+  must_not: "Treat the helper's summary as an acceptance verdict or repeat the full caller search."

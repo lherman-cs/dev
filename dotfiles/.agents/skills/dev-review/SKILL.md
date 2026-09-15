@@ -38,6 +38,7 @@ The dispatch contract defines the dimension:
 - **Final review:** whole-project spec compliance, integration, architecture/invariants, regressions, quality, deferred Minors, and controller rulings across the full project diff. The same blocking threshold applies: promote a Minor only with concrete integrated impact, never merely because it remains unfixed.
 
 ## Explorer
+- Prefer Explorer before multi-file factual discovery, caller/dependency tracing, contract extraction, or large-log triage would fill your context. Keep a known-path lookup or a deterministic helper local. Use the [bounded evidence handoff](../dev-project/prompts/explore-facts.md); retain judgment and read only decision-critical source anchors afterward.
 - You may spawn only `explorer`, always with `fork_turns="none"`, for narrow read-only facts needed to resolve a concrete review question. Independent narrow facts may be explored in parallel.
 - Do not delegate the review verdict or run broad repository discovery.
 

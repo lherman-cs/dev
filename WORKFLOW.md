@@ -55,6 +55,14 @@ Keep the approved review gates and model routing. Reduce repeated context first:
 
 Orchestrator owns metadata and transitions; task agents own technical investigation. Plans, reports, and chat should not duplicate the same evidence. Necessary investigation and spec alignment take precedence over output limits. These instructions target observed waste; mechanical tests do not establish a measured token-saving percentage.
 
+### Explorer delegation
+
+The existing Explorer remains the shared evidence helper, configured as Luna/medium. Every parent role now prefers it for substantial bounded fact-finding before loading that search surface itself: caller/dependency tracing, contract extraction, test/command discovery, and existing-log triage. A trivial known-path lookup or deterministic helper stays local.
+
+Use `prompts/explore-facts.md` for fresh minimal dispatch and compact cited results. Start with one Explorer per parent; a second is useful only for an independent question and available capacity. Parents do independent work while waiting, reuse current findings downstream, and inspect only decisive source anchors instead of repeating discovery. Unknowns and search boundaries remain explicit.
+
+No additional role or public skill is needed for these evidence tasks. Explorer cannot implement, run builds/tests, make product decisions, or issue review verdicts. Builders retain code understanding and validation; Reviewers retain direct candidate inspection and acceptance judgment. The intent is less irrelevant parent context, not a guaranteed quality or token-saving percentage.
+
 ## Human boundary
 
 `dev-spec` is the human-facing design phase. It chooses the lightest sufficient path:

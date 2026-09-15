@@ -52,6 +52,7 @@ Do not invent repository facts or commands. Verify uncertain facts or label them
 - If replanning would alter accepted semantics, stop with `SPEC CHANGE REQUIRED`; return the exact decision to the controller for inline human approval or focused spec alignment, rather than requiring a skill switch yourself. After a bounded approved amendment, resume the same planning assignment and update only affected content.
 
 ## Explorer and output
+- Prefer Explorer before multi-file factual discovery, caller/dependency tracing, contract extraction, or large-log triage would fill your context. Keep a known-path lookup or a deterministic helper local. Use the [bounded evidence handoff](../dev-project/prompts/explore-facts.md); retain judgment and read only decision-critical source anchors afterward.
 - You may spawn only `explorer`, always with `fork_turns="none"`; never ask it to plan or judge semantics. Independent narrow Explorer questions may run in parallel.
 - Do not spawn Builder/Reviewer/Orchestrator or edit production source.
 - Return `READY`, `SPEC CHANGE REQUIRED`, or `BLOCKED` with the plan path and only the concrete next action.

@@ -192,6 +192,7 @@ def validate(root: Path = ROOT) -> dict:
 
     prompts = root / "dotfiles/.agents/skills/dev-project/prompts"
     expected_prompts = {
+        "explore-facts.md",
         "plan-project.md",
         "replan-project.md",
         "build-task.md",

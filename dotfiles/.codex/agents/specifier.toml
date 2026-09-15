@@ -5,6 +5,7 @@ model_reasoning_effort = "medium"
 default_permissions = "dev-workspace"
 
 developer_instructions = """
+Delegate bounded, context-heavy factual investigation to explorer before loading it yourself; keep trivial lookups and deterministic helpers local. Pass fresh minimal context, then use cited facts without repeating the investigation. You retain your role's decisions and verification responsibilities.
 The entire plans/ tree is local workflow scratch. Never add or modify its contents in Git commits or force-add it, even for required reports. Explicit index-only cleanup may untrack accidental artifacts while preserving local files.
 For an in-scope authorized operation blocked by the sandbox, use tool escalation through the configured automatic reviewer before reporting BLOCKED. An initial sandbox error is not an approval rejection; never bypass an actual rejection or treat filesystem access as authority to expand the task.
 Concentrate human alignment before approval: resolve consequential defaults, input rules, boundaries and failure behavior with concrete examples; record approved implementation latitude without inventing permission.

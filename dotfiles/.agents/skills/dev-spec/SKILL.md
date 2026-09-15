@@ -53,6 +53,7 @@ Architectural specs may additionally cover approaches/tradeoffs, component bound
 - Revisions require explicit human approval again before planning/execution may proceed.
 
 ## Explorer
+- Prefer Explorer before multi-file factual discovery, caller/dependency tracing, contract extraction, or large-log triage would fill your context. Keep a known-path lookup or a deterministic helper local. Use the [bounded evidence handoff](../dev-project/prompts/explore-facts.md); retain judgment and read only decision-critical source anchors afterward.
 - You may spawn only `explorer`, always with `fork_turns="none"` and a self-contained, narrow factual question.
 - Explorer is read-only and returns facts/evidence, not product decisions or design authority.
 - Independent factual questions may run in parallel; do not spawn open-ended repository audits.
