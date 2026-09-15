@@ -127,8 +127,8 @@ def validate(root: Path = ROOT) -> dict:
         "Canonical command profiles exist",
     )
     check(
-        config["codex"]["agents"]["max_concurrent_threads_per_session"] == 4,
-        "Four-thread bounded concurrency",
+        config["codex"]["agents"]["max_concurrent_threads_per_session"] == 8,
+        "Eight-thread bounded concurrency",
     )
 
     actual_skills = {
@@ -152,7 +152,8 @@ def validate(root: Path = ROOT) -> dict:
             f"{role}: tuned model policy",
         )
         check(
-            data["default_permissions"] in ("dev-explorer", "dev-workspace", "dev-builder"),
+            data["default_permissions"]
+            in ("dev-explorer", "dev-workspace", "dev-builder"),
             f"{role}: permission profile",
         )
         check(
@@ -212,7 +213,12 @@ def validate(root: Path = ROOT) -> dict:
     scripts = root / "dotfiles/.agents/skills/dev-project/scripts"
     check(
         {p.name for p in scripts.glob("*.py")}
-        == {"package_task.py", "package_review.py", "validate_workflow.py", "prepare_workspace.py"},
+        == {
+            "package_task.py",
+            "package_review.py",
+            "validate_workflow.py",
+            "prepare_workspace.py",
+        },
         "Mechanical helper set",
     )
     for path in scripts.glob("*.py"):
@@ -257,7 +263,12 @@ def validate(root: Path = ROOT) -> dict:
         check(token in registry, f"{role}: embedded role registration")
     for prompt in expected_prompts:
         check(prompt in registry, f"Embedded support prompt: {prompt}")
-    for helper in ("package_task.py", "package_review.py", "validate_workflow.py", "prepare_workspace.py"):
+    for helper in (
+        "package_task.py",
+        "package_review.py",
+        "validate_workflow.py",
+        "prepare_workspace.py",
+    ):
         check(helper in registry, f"Embedded support helper: {helper}")
 
     for path in (root / "src").rglob("*.rs"):

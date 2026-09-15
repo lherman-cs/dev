@@ -49,7 +49,7 @@ enabled = true
 enabled = true
 # Two parallel task reviewers plus one Explorer beneath each can coexist without
 # widening execution to parallel Builders.
-max_concurrent_threads_per_session = 4
+max_concurrent_threads_per_session = 8
 interrupt_message = true
 
 [profiles.default]
