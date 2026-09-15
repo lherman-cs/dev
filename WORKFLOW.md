@@ -280,7 +280,7 @@ Current tuned roles:
 | --- | --- | --- |
 | `specifier` | GPT-6 Astra / medium | Highest-leverage semantic/design judgment; used infrequently, medium avoids defaulting every bounded spec to expensive deep reasoning. |
 | `planner` | GPT-5.6 Sol / high | Precise execution-grade decomposition and interface reasoning. |
-| `builder` | GPT-5.6 Terra / medium | Cost/performance default for repeated implementation work. |
+| `builder` | GPT-5.6 Sol / medium | Cost/performance default for repeated implementation work. |
 | `builder_strong` | GPT-5.6 Sol / high | Explicit escalation only after a concrete Builder reasoning/debugging blocker. |
 | `reviewer` | GPT-5.6 Sol / high | Independent adversarial task review needs stronger reasoning than routine building. |
 | `reviewer_strong` | GPT-6 Astra / low | Final whole-project review / explicit review escalation only. |

@@ -25,7 +25,7 @@ PUBLIC_SKILLS = {"dev-spec", "dev-plan", "dev-build", "dev-review", "dev-project
 EXPECTED_MODELS = {
     "specifier": ("gpt-6-astra", "medium"),
     "planner": ("gpt-5.6-sol", "high"),
-    "builder": ("gpt-5.6-terra", "medium"),
+    "builder": ("gpt-5.6-sol", "medium"),
     "builder_strong": ("gpt-5.6-sol", "high"),
     "reviewer": ("gpt-5.6-sol", "high"),
     "reviewer_strong": ("gpt-6-astra", "low"),
