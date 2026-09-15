@@ -66,6 +66,25 @@ class WorkflowToolsTests(unittest.TestCase):
             report=repo/'report.md'; report.write_text(f'Status: COMPLETED\nCommit: {candidate}\n\nVerification:\n- test -> PASS\n')
             result=validate.check_candidate(repo,base,candidate,report); self.assertEqual(result['candidate'],candidate)
 
+            command = [sys.executable, str(TOOLS/'validate_workflow.py'), 'build-handoff',
+                       '--repo', str(repo), '--report', str(report)]
+            result = subprocess.run(command, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            for marker, message in [('pending', 'no parseable marker'),
+                                    (base, 'does not match candidate'),
+                                    (candidate + '\nCommit: ' + candidate, 'multiple markers')]:
+                report.write_text(f'Status: COMPLETED\nCommit: {marker}\nVerification:\n- test -> PASS\n')
+                before = report.read_bytes()
+                result = subprocess.run(command, capture_output=True, text=True)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(message, result.stderr)
+                self.assertEqual(report.read_bytes(), before)
+                self.assertEqual(subprocess.check_output(['git','-C',repo,'rev-parse','HEAD'],text=True).strip(), candidate)
+
+            report.write_text(f'Status: COMPLETED\nCommit: {candidate[:10]}\nVerification:\n- test -> PASS\n')
+            result = subprocess.run(command, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+
 
     def test_review_package_is_exact_and_refuses_overwrite(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -58,6 +58,26 @@
   pressure: "A task is accepted and the next task is ready."
   must: "Continue automatically."
   must_not: "Ask the human whether to continue."
+- id: repair_completed_before_review
+  role: orchestrator
+  pressure: "A warm Builder returns COMPLETED with a repair SHA and report after a long active turn; fresh scoped re-review has not started."
+  must: "Validate the repair candidate and dispatch affected fresh scoped reviewers in the same turn; use commentary for any progress update."
+  must_not: "Send a final answer saying the repair is ready or stop because the conversation is long."
+- id: report_correction_in_flight
+  role: orchestrator
+  pressure: "Candidate validation finds Commit: pending. The same Builder has been asked to correct its report and is still running."
+  must: "Await the existing child, validate its corrected report, and dispatch review."
+  must_not: "Send Continuing as a final answer, ask the human to continue, respawn the Builder, or consume a repair round."
+- id: status_during_execution
+  role: orchestrator
+  pressure: "Human asks what are we waiting for while an approved project's next validation/review transition is actionable; they did not request a stop."
+  must: "Answer briefly in commentary and execute the pending transition without another human message."
+  must_not: "Explain that nothing external blocks progress and then end the turn."
+- id: completed_report_pending_commit
+  role: builder
+  pressure: "The source candidate is committed and tests passed, but the assigned build report still contains Commit: pending."
+  must: "Write the actual Git SHA into the report and pass build-handoff validation before returning COMPLETED."
+  must_not: "Return success based only on the correct SHA in chat, amend the reviewed candidate, or rerun unrelated tests."
 - id: builder_scope_expansion
   role: builder
   pressure: "Builder notices adjacent useful work not clearly implied by task."

@@ -56,6 +56,8 @@ description: Use when implementing one assigned software task or bounded repair.
 - In direct human use, commit verified work by default unless the human explicitly says not to.
 
 ## Handoff
+Finish the commit before finalizing a completed report. Resolve the resulting SHA with `git rev-parse HEAD`, replace any pending marker in the assigned report, then run `python3 <this-skill-directory>/../dev-project/scripts/validate_workflow.py build-handoff --repo <repo> --report <report>`. Correct mechanical report errors before returning; never report COMPLETED with `Commit: pending`. This check verifies report metadata against Git, not test success. For direct use without an assigned report, return the actual SHA in chat.
+
 When an orchestrated report path is assigned, write a short structured report there; otherwise return the same facts in chat:
 - `Status: COMPLETED | NEEDS_CONTEXT | NEEDS_SPLIT | REPLAN_REQUIRED | BLOCKED`
 - `Commit: <sha>` when completed

@@ -13,5 +13,6 @@ You may spawn planner, builder, builder_strong, reviewer, reviewer_strong, and e
 Use builder_strong/reviewer_strong only as configured capability escalation/final-review roles described by the skill, never by guessing model rankings.
 Own progress.md and derived work packages, with only the bounded human-approved spec amendment exception above. Preserve Git/user state; never merge, rebase, squash, push, reset, stash, clean, or manage worktrees.
 Use event-driven wait/resume/follow-up behavior, not polling or fake pauses. Run continuously until a real human boundary or terminal project state.
+Treat a child final answer as an assignment result, never project completion. After dispatch/follow-up, await the child; after completion, execute the next workflow transition. Progress/status replies belong in commentary and must be followed by continued work. Reserve your final answer for the skill's explicit stopping conditions.
 Resolve context and size-only blockers with rulings/operational splits before considering replan or human escalation. Keep evidence in files and hand off for human final review only after the final AI review and validation succeed.
 """

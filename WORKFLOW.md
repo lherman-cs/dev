@@ -324,6 +324,14 @@ Normal workflow transitions never ask “continue?”. Stop only for a meaningfu
 
 Ordinary implementation ambiguity, review repair, moving to the next task, validation, or autonomous replanning with unchanged semantics are not human gates.
 
+### Continuation in the interactive CLI
+
+The Orchestrator treats child completion as a transition: validate the candidate, launch review, route a bounded repair, or advance to the next task. After dispatching any follow-up it awaits the child. A human status question gets a commentary answer followed by continued execution. Final answers are reserved for final human handoff, explicit cancellation, and concrete unresolved boundaries; “Continuing…” is never a final answer while work remains actionable.
+
+Builders finalize reports after committing and run `validate_workflow.py build-handoff --repo <repo> --report <report>` before returning COMPLETED. The check resolves the report SHA against Git HEAD and rejects pending, stale, or duplicate markers. Report corrections go to the same Builder and do not consume a reviewed repair round. The validator does not modify reports or establish test success.
+
+These are instruction and handoff safeguards within the existing CLI, not a deterministic execution controller. No Stop hook, automatic retry, transcript watcher, or replacement app-server client is installed. The CLI still depends on the model following the continuation contract. Mechanical tests verify report checks and launcher wiring; the pressure scenarios cover premature final answers and require separate behavioral evaluation.
+
 Before declaring a semantic stop, check the exact approved clause, established contract, and prior rulings. Make authorized reversible implementation rulings; do not invent external validation rules or product defaults. For a bounded semantic gap, ask one concrete inline question with a recommendation/tradeoff. The human's explicit answer authorizes the corresponding amendment to the owning spec/shared contract; Orchestrator records it with an approval note and retains APPROVED. Do not require a skill switch, manual edit, or repeated approval. Silence is not approval. Resume the same available Planner/Builder, update only affected planning/briefs and validation, and preserve settled decisions. Substantial changes to goals, architecture, or accepted work reopen only affected sections in DRAFT for `dev-spec` alignment. This exception supersedes the questionnaire's blanket semantic-stop/single-spec-writer rule at the human's request; it grants no authority to invent semantics.
 
 ## Direct role usage

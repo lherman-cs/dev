@@ -14,10 +14,12 @@ COMMIT = re.compile(r'^Commit:\s*`?([0-9a-fA-F]{7,64})`?\s*$', re.MULTILINE)
 def marker(path: Path, pattern: re.Pattern[str], label: str) -> str:
     if not path.is_file():
         raise ValueError(f'Missing {label}: {path}')
-    match = pattern.search(path.read_text())
-    if not match:
+    matches = pattern.findall(path.read_text())
+    if not matches:
         raise ValueError(f'{label} has no parseable marker: {path}')
-    return match.group(1)
+    if len(matches) != 1:
+        raise ValueError(f'{label} has multiple markers: {path}')
+    return matches[0]
 
 def git(repo: Path, *args: str) -> str:
     return subprocess.run(['git', '-C', str(repo), *args], text=True, stdout=subprocess.PIPE,
@@ -36,17 +38,22 @@ def check_project(project: Path) -> dict:
         raise ValueError(f'Missing work directory: {project / "work"}')
     return {'status':'PASS','kind':'project','project':str(project)}
 
-def check_candidate(repo: Path, base: str, candidate: str, report: Path) -> dict:
-    base = git(repo, 'rev-parse', '--verify', f'{base}^{{commit}}')
+def check_build_report(repo: Path, candidate: str, report: Path) -> dict:
     candidate = git(repo, 'rev-parse', '--verify', f'{candidate}^{{commit}}')
-    subprocess.run(['git','-C',str(repo),'merge-base','--is-ancestor',base,candidate],check=True)
     if marker(report, STATUS, 'build report') != 'COMPLETED':
         raise ValueError('Build report is not COMPLETED')
     reported = marker(report, COMMIT, 'build report commit').lower()
-    if not candidate.lower().startswith(reported) and not reported.startswith(candidate.lower()):
+    resolved = git(repo, 'rev-parse', '--verify', f'{reported}^{{commit}}')
+    if candidate != resolved:
         raise ValueError(f'Build report commit {reported} does not match candidate {candidate}')
     if 'Verification:' not in report.read_text():
         raise ValueError('Build report is missing Verification section')
+    return {'status':'PASS','kind':'build-handoff','candidate':candidate}
+
+def check_candidate(repo: Path, base: str, candidate: str, report: Path) -> dict:
+    base = git(repo, 'rev-parse', '--verify', f'{base}^{{commit}}')
+    candidate = check_build_report(repo, candidate, report)['candidate']
+    subprocess.run(['git','-C',str(repo),'merge-base','--is-ancestor',base,candidate],check=True)
     return {'status':'PASS','kind':'candidate','base':base,'candidate':candidate}
 
 def check_reviews(paths: list[Path]) -> dict:
@@ -58,11 +65,13 @@ def main() -> None:
     sub = p.add_subparsers(dest='cmd', required=True)
     a = sub.add_parser('project-ready'); a.add_argument('--project',type=Path,required=True)
     a = sub.add_parser('candidate-ready'); a.add_argument('--repo',type=Path,required=True); a.add_argument('--base',required=True); a.add_argument('--candidate',required=True); a.add_argument('--report',type=Path,required=True)
+    a = sub.add_parser('build-handoff'); a.add_argument('--repo',type=Path,required=True); a.add_argument('--report',type=Path,required=True)
     a = sub.add_parser('reviews'); a.add_argument('--report',type=Path,action='append',required=True)
     args = p.parse_args()
     try:
         if args.cmd == 'project-ready': result = check_project(args.project)
         elif args.cmd == 'candidate-ready': result = check_candidate(args.repo,args.base,args.candidate,args.report)
+        elif args.cmd == 'build-handoff': result = check_build_report(args.repo,'HEAD',args.report)
         else: result = check_reviews(args.report)
     except (ValueError, subprocess.CalledProcessError) as exc:
         raise SystemExit(f'FAIL: {exc}')

@@ -10,6 +10,7 @@ description: Use when executing an approved development project across planning,
 - `spec.md` is semantic authority (`APPROVED` required). `plan.md` is current execution authority (`READY` required). Git and actual artifacts outrank stale ledger claims.
 - Project artifacts are workflow-local/git-ignored. Use the explicitly named project, or one unambiguous active project; never guess by newest directory. Only delete `work/` after successful completion.
 - Run continuously without “continue?” gates; stop only for genuine human authority/permission boundaries.
+- A final answer ends your execution turn; it is not a way to wait or announce continuing work. Use commentary for progress and status answers, then execute the next transition in the same turn.
 - Use this skill directory's `prompts/` dispatch contracts and `scripts/` packaging/validation helpers; derived files never become semantic authority.
 
 ## Reconcile first, every invocation
@@ -31,6 +32,19 @@ description: Use when executing an approved development project across planning,
 - Announce material progress, a changed assumption, or a real blocker in one short sentence; follow runtime-required update intervals without narrating routine tool calls. Wait using runtime events, not repeated status queries.
 
 ## Task loop
+Apply these transitions after every tool result, child message, and human status question:
+
+| Current evidence | Next action |
+| --- | --- |
+| Dispatched child or follow-up still running | Await its completion with `wait_agent`; do not finish your turn. |
+| Builder/repair completed | Validate its report and candidate, then dispatch the required review dimensions. |
+| Report metadata missing or stale | Ask the same Builder to correct its report, await it, then validate; this is not a repair round or human blocker. |
+| Reviews passed | Record acceptance and dispatch the next task, or start final validation. |
+| Reviews contain blockers | Apply the existing scope/clarification/repair rules below. |
+| Human asks for status | Answer briefly in commentary and resume the pending action; only an explicit stop/cancel pauses execution. |
+
+End your turn only for the completed final human handoff, explicit cancellation, or a concrete unresolved boundary under the blocker rules. Before ending, record the boundary and exact next action in `progress.md`. A completed child, tool yield, long conversation, or ordinary task transition is not such a boundary; let runtime compaction preserve continuity. Do not claim background continuation after sending a final answer.
+
 1. Extract the next `### Task N:` verbatim into an immutable task brief using the bundled packaging utility; add only base SHA, relevant rulings/established facts, and report path.
 2. Dispatch Builder. Small missing context -> answer/rule and resume the same Builder. For `NEEDS_SPLIT`, use the operational split procedure below; material strategy change -> Planner.
 3. Builder must deliver a verified commit + compact report. Package exact base..candidate review evidence mechanically.
