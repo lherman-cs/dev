@@ -29,6 +29,7 @@ description: Use when an approved project specification needs an execution plan 
 - Carry the relevant accepted spec requirements/invariants directly into each task so fresh Builder/Reviewers normally need no full-spec reread.
 - Split independent behavioral surfaces before READY. A transaction may need an integrated task, but unrelated ingress, publication, and egress mechanisms should not become one first task merely because they share a feature name.
 - Keep the whole execution plan complete and stable. Detail should remove rediscovery: include exact values, interfaces and commands, but avoid copying source files, restating generic workflow rules, or writing speculative implementation code for Builders. Length is not evidence of readiness.
+- Supply compact verified discovery facts (owning package/manifest, relevant instruction paths, exact validation commands) so each fresh agent can start at the affected code. Keep task prose proportional to its behavior; do not duplicate code or full command output.
 - Put shared execution facts once at project level; carry only the binding requirements needed by each isolated task. Each task includes its applicable constraints even when other tasks repeat them.
 
 ## Each task must be executable

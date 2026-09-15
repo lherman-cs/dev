@@ -18,7 +18,7 @@ description: Use when defining or revising what a software change should mean be
 - Escalate rigor when new evidence warrants it; never choose Bounded merely to save tokens.
 
 ## Process
-1. Establish the project folder and inspect only enough repository context to understand the request.
+1. Run `python3 <this-skill-directory>/../dev-project/scripts/prepare_workspace.py --repo <repo>` before creating project artifacts. Establish the project folder and inspect only enough repository context to understand the request. Never stage/force-add/commit `plans/`; preserve and report any existing tracked artifacts for bounded index cleanup.
 2. Separate known intent, consequential unknowns, and discoverable facts.
 3. Ask only consequential questions, one at a time. Recommend an answer with its tradeoff; carry prior answers forward without reconfirming them. Do not ask the human for facts Explorer can find.
 4. Use focused exploration when repository/upstream evidence would change the design.

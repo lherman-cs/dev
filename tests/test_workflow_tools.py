@@ -102,6 +102,45 @@ class WorkflowToolsTests(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
             self.assertEqual(out.read_bytes(), before)
 
+    def test_artifact_ignore_and_commit_guards_in_linked_worktree(self):
+        prepare = load('prepare_workspace')
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)/'repo'; worktree = Path(tmp)/'linked'
+            def git(*args):
+                return subprocess.check_output(['git', '-C', str(repo), *args], text=True).strip()
+            subprocess.run(['git', 'init', '-q', repo], check=True)
+            git('config', 'user.email', 'test@example.com'); git('config', 'user.name', 'Test')
+            (repo/'source').write_text('base')
+            git('add', 'source'); git('commit', '-qm', 'base')
+            base = git('rev-parse', 'HEAD')
+            git('worktree', 'add', '-qb', 'linked', str(worktree))
+            self.assertEqual(prepare.prepare(worktree)['status'], 'PASS')
+            exclude = Path(git('rev-parse', '--path-format=absolute', '--git-path', 'info/exclude'))
+            before = exclude.read_bytes()
+            prepare.prepare(worktree)
+            self.assertEqual(exclude.read_bytes(), before)
+            self.assertEqual(git('status', '--porcelain'), '')
+            artifact = repo/'plans/project/work/report.md'
+            artifact.parent.mkdir(parents=True); artifact.write_text('local report')
+            self.assertEqual(git('check-ignore', str(artifact)), str(artifact))
+            git('add', '-f', str(artifact))
+            with self.assertRaisesRegex(ValueError, 'staged'):
+                validate.check_index(repo)
+            with self.assertRaisesRegex(ValueError, 'Already tracked'):
+                prepare.prepare(repo)
+            self.assertEqual(artifact.read_text(), 'local report')
+            git('commit', '-qm', 'bad artifact candidate')
+            candidate = git('rev-parse', 'HEAD')
+            report = repo/'handoff.md'
+            report.write_text(f'Status: COMPLETED\nCommit: {candidate}\nVerification: passed\n')
+            with self.assertRaisesRegex(ValueError, 'commits workflow artifacts'):
+                validate.check_candidate(repo, base, candidate, report)
+            # A deliberate untracking cleanup is permitted and preserves local data.
+            git('rm', '--cached', str(artifact))
+            self.assertEqual(validate.check_index(repo)['status'], 'PASS')
+            self.assertEqual(prepare.prepare(repo)['status'], 'PASS')
+            self.assertEqual(artifact.read_text(), 'local report')
+
     def test_review_verdict_parser(self):
         with tempfile.TemporaryDirectory() as tmp:
             p=Path(tmp)/'review.md'; p.write_text('Verdict: PASS\n'); self.assertEqual(validate.check_reviews([p])['verdicts'][str(p)],'PASS')

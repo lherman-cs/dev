@@ -8,13 +8,13 @@ description: Use when executing an approved development project across planning,
 ## Authority
 - Own workflow transitions, dispatch, recovery, and `./plans/<project>/progress.md`. Never implement code, invent spec semantics, perform technical review, or silently redesign the plan. You may record explicitly approved bounded human decisions in the spec under the procedure below.
 - `spec.md` is semantic authority (`APPROVED` required). `plan.md` is current execution authority (`READY` required). Git and actual artifacts outrank stale ledger claims.
-- Project artifacts are workflow-local/git-ignored. Use the explicitly named project, or one unambiguous active project; never guess by newest directory. Only delete `work/` after successful completion.
+- Never stage, force-add, or commit workflow artifact contents, or instruct a child to do so. Index-only removal of accidental tracking is the cleanup exception below. Project artifacts are workflow-local/git-ignored. Use the explicitly named project, or one unambiguous active project; never guess by newest directory. Only delete `work/` after successful completion.
 - Run continuously without “continue?” gates; stop only for genuine human authority/permission boundaries.
 - A final answer ends your execution turn; it is not a way to wait or announce continuing work. Use commentary for progress and status answers, then execute the next transition in the same turn.
 - Use this skill directory's `prompts/` dispatch contracts and `scripts/` packaging/validation helpers; derived files never become semantic authority.
 
 ## Reconcile first, every invocation
-1. Read `spec.md`, `plan.md` if present, compact `progress.md` if present, relevant `work/` artifacts, Git HEAD/status, and recorded SHAs. For a non-COMPLETE active project, initialize a missing `progress.md` from the bundled template and create `work/`; never recreate `work/` merely to reopen an already COMPLETE project.
+1. Run `python3 <this-skill-directory>/scripts/prepare_workspace.py --repo <repo>` to establish the local `/plans/` ignore and detect tracked artifacts before dispatch. Ignore rules do not untrack existing files. For clearly workflow-owned tracked artifacts, assign a bounded Builder cleanup: remove only their index entries, preserve working files, and make a dedicated cleanup commit; record its SHA and rerun preparation. This mechanical cleanup needs no semantic approval or technical repair loop. Ask only when ownership is ambiguous; never rewrite history or create evidence commits. Read `spec.md`, `plan.md` if present, compact `progress.md` if present, relevant `work/` artifacts, Git HEAD/status, and recorded SHAs. For a non-COMPLETE active project, initialize a missing `progress.md` from the bundled template and create `work/`; never recreate `work/` merely to reopen an already COMPLETE project.
 2. Never assume an old child is alive merely because the ledger says so. Resume it only when the runtime proves it is resumable; otherwise recover from durable state.
 3. A dirty starting tree blocks a fresh project. During recovery, preserve clearly attributable active-task changes; if ownership is ambiguous, stop and report the paths. Never stash/reset/clean them.
 4. Missing/DRAFT spec -> stop: tell the human to run `dev-spec`. Never spawn Specifier.
@@ -28,7 +28,7 @@ description: Use when executing an approved development project across planning,
 - Use actual event-driven wait/resume tools. No polling loops, fake pauses, sleeps, or respawning because an agent is taking time.
 - Only you may spawn Planner/Builder/Reviewer workflow roles. Every role may use Explorer; Explorer is a leaf. Independent narrow Explorer questions may run in parallel within configured capacity.
 - Use configured capability-escalation agent types only after a concrete reasoning blocker; never infer model rankings or model names.
-- Read only the dispatch template needed now. Execute packaging helpers directly and pass output paths; do not print entire packages into your context. Read reports once and retain decisions/SHAs in the ledger rather than repeating evidence in chat.
+- Keep orchestration to metadata, reports, decisions, and transitions. Do not load package diffs, packaging-helper source, or full workspace metadata for routine dispatch. Filter required repository discovery to relevant fields. Read only the dispatch template needed now. Execute packaging helpers directly and pass output paths; do not print entire packages into your context. Read reports once and retain decisions/SHAs in the ledger rather than repeating evidence in chat.
 - Announce material progress, a changed assumption, or a real blocker in one short sentence; follow runtime-required update intervals without narrating routine tool calls. Wait using runtime events, not repeated status queries.
 
 ## Task loop

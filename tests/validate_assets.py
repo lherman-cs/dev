@@ -211,7 +211,7 @@ def validate(root: Path = ROOT) -> dict:
     scripts = root / "dotfiles/.agents/skills/dev-project/scripts"
     check(
         {p.name for p in scripts.glob("*.py")}
-        == {"package_task.py", "package_review.py", "validate_workflow.py"},
+        == {"package_task.py", "package_review.py", "validate_workflow.py", "prepare_workspace.py"},
         "Mechanical helper set",
     )
     for path in scripts.glob("*.py"):
@@ -256,7 +256,7 @@ def validate(root: Path = ROOT) -> dict:
         check(token in registry, f"{role}: embedded role registration")
     for prompt in expected_prompts:
         check(prompt in registry, f"Embedded support prompt: {prompt}")
-    for helper in ("package_task.py", "package_review.py", "validate_workflow.py"):
+    for helper in ("package_task.py", "package_review.py", "validate_workflow.py", "prepare_workspace.py"):
         check(helper in registry, f"Embedded support helper: {helper}")
 
     for path in (root / "src").rglob("*.rs"):

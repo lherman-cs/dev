@@ -66,6 +66,7 @@ pub const EXTRA_ASSETS: &[ExtraAsset] = &[
     ExtraAsset { path: "skills/dev-project/scripts/package_task.py", source: include_str!("../dotfiles/.agents/skills/dev-project/scripts/package_task.py") },
     ExtraAsset { path: "skills/dev-project/scripts/package_review.py", source: include_str!("../dotfiles/.agents/skills/dev-project/scripts/package_review.py") },
     ExtraAsset { path: "skills/dev-project/scripts/validate_workflow.py", source: include_str!("../dotfiles/.agents/skills/dev-project/scripts/validate_workflow.py") },
+    ExtraAsset { path: "skills/dev-project/scripts/prepare_workspace.py", source: include_str!("../dotfiles/.agents/skills/dev-project/scripts/prepare_workspace.py") },
 ];
 
 #[derive(Debug, Deserialize)]

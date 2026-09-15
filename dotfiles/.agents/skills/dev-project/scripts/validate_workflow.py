@@ -38,6 +38,14 @@ def check_project(project: Path) -> dict:
         raise ValueError(f'Missing work directory: {project / "work"}')
     return {'status':'PASS','kind':'project','project':str(project)}
 
+def check_index(repo: Path) -> dict:
+    paths = git(repo, 'diff', '--cached', '--name-only', '--diff-filter=ACMRTUXB',
+                '-z', '--', ':(top)plans')
+    if paths:
+        raise ValueError('Workflow artifacts staged for commit: ' + paths.replace('\0', ', ')
+                         + '. Unstage only your artifact changes; preserve working files. Never force-add plans/.')
+    return {'status': 'PASS', 'kind': 'index'}
+
 def check_build_report(repo: Path, candidate: str, report: Path) -> dict:
     candidate = git(repo, 'rev-parse', '--verify', f'{candidate}^{{commit}}')
     if marker(report, STATUS, 'build report') != 'COMPLETED':
@@ -54,6 +62,10 @@ def check_candidate(repo: Path, base: str, candidate: str, report: Path) -> dict
     base = git(repo, 'rev-parse', '--verify', f'{base}^{{commit}}')
     candidate = check_build_report(repo, candidate, report)['candidate']
     subprocess.run(['git','-C',str(repo),'merge-base','--is-ancestor',base,candidate],check=True)
+    paths = git(repo, 'log', '--format=', '--name-only', '--diff-filter=ACMRTUXB',
+                f'{base}..{candidate}', '--', ':(top)plans')
+    if paths:
+        raise ValueError('Candidate range commits workflow artifacts: ' + paths)
     return {'status':'PASS','kind':'candidate','base':base,'candidate':candidate}
 
 def check_reviews(paths: list[Path]) -> dict:
@@ -64,12 +76,14 @@ def main() -> None:
     p = argparse.ArgumentParser(description=__doc__)
     sub = p.add_subparsers(dest='cmd', required=True)
     a = sub.add_parser('project-ready'); a.add_argument('--project',type=Path,required=True)
+    a = sub.add_parser('index-safe'); a.add_argument('--repo',type=Path,required=True)
     a = sub.add_parser('candidate-ready'); a.add_argument('--repo',type=Path,required=True); a.add_argument('--base',required=True); a.add_argument('--candidate',required=True); a.add_argument('--report',type=Path,required=True)
     a = sub.add_parser('build-handoff'); a.add_argument('--repo',type=Path,required=True); a.add_argument('--report',type=Path,required=True)
     a = sub.add_parser('reviews'); a.add_argument('--report',type=Path,action='append',required=True)
     args = p.parse_args()
     try:
         if args.cmd == 'project-ready': result = check_project(args.project)
+        elif args.cmd == 'index-safe': result = check_index(args.repo)
         elif args.cmd == 'candidate-ready': result = check_candidate(args.repo,args.base,args.candidate,args.report)
         elif args.cmd == 'build-handoff': result = check_build_report(args.repo,'HEAD',args.report)
         else: result = check_reviews(args.report)

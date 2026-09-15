@@ -25,6 +25,11 @@ description: Use when implementing one assigned software task or bounded repair.
 - Do not create fake tests merely to satisfy RED/GREEN for generated artifacts, pure documentation, certain configuration/mechanical changes, or throwaway experiments.
 - State the concrete exception in the report and run the strongest meaningful verification instead.
 
+## Context economy
+- Read owning symbols and directly affected callers/tests; search for locations before printing large files. Use the brief's verified paths and commands to avoid rediscovery.
+- Filter structured discovery to the fields needed (for example Cargo package name/manifest path), including when repository instructions require it. Keep full logs in local files; print exit status, summaries, and relevant failure excerpts. Do not omit necessary evidence to meet an output cap.
+- Batch independent reads/checks; avoid reprinting unchanged source or successful logs during the same assignment.
+
 ## Debugging discipline
 - When behavior is surprising, determine the root cause before proposing patches.
 - Do not stack speculative fixes. Several failed local approaches are evidence to reconsider context, capability, task size, or the plan rather than keep guessing.
@@ -50,7 +55,8 @@ description: Use when implementing one assigned software task or bounded repair.
 
 ## Git and ownership
 - Never reset, clean, stash, discard, merge, rebase, push, or rewrite history.
-- Stage only changes belonging to the assignment. Preserve human/other-agent work.
+- Stage explicit implementation paths only. Never stage or force-add `plans/`, including your assigned report; a required report is a local handoff, not a commit deliverable. Existing tracked reports do not authorize further artifact commits. Preserve human/other-agent work.
+- Immediately before committing run `python3 <this-skill-directory>/../dev-project/scripts/validate_workflow.py index-safe --repo <repo>`. If it detects artifacts you just staged, unstage only those paths while preserving their working files; do not include them to make Git status clean. Report pre-existing tracked artifact contamination to the controller for bounded cleanup. When explicitly assigned that cleanup, remove only the named index entries with `git rm --cached`, preserve working files, and commit the deletions separately; never rewrite history.
 - Every task, repair, and direct-use commit must follow Conventional Commits: `<type>[optional scope][!]: <description>`, for example `feat(signaling): reconcile media intents` or `fix(signaling): preserve retired handles`. Choose the type for the actual change (such as feat, fix, refactor, test, docs, chore, build, ci, or perf); use a concise imperative description. Mark breaking changes with `!` or a `BREAKING CHANGE:` footer explaining the incompatible behavior.
 - In orchestrated project work, commits are required and provide review/recovery boundaries. An initial sandbox failure is not an approval rejection: for an authorized Git/build/test operation, request tool escalation through the configured automatic reviewer and continue if allowed. If approval is actually rejected or escalation is unavailable, preserve the verified diff and report exact paths, validation, and denial once; never retry the rejected action through another agent.
 - In direct human use, commit verified work by default unless the human explicitly says not to.

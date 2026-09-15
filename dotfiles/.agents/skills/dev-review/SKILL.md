@@ -14,6 +14,8 @@ description: Use when reviewing an explicit code candidate, repair, or completed
 ## Evidence and scope
 - Inspect the candidate diff and enough surrounding code/callers/tests to establish concrete findings.
 - Read the assigned brief/report/package first. Open full project authorities only for a specific missing requirement; final review deliberately receives the whole-project context. Do not preload historical reports or repeat discovery already supported by evidence.
+- Use the packaged diff as the primary change evidence. Do not regenerate the same diff with 80–100 lines of context; open only the relevant surrounding symbols/callers needed to resolve a specific question. Read each changed surface once for your assigned dimension, then report when coverage is complete.
+- Filter required structured discovery to relevant fields; never dump full workspace metadata. Keep successful command logs out of context. Reuse verified ownership/command facts in the task brief unless stale or contradictory.
 - Builder-reported required validation is workflow evidence. Do not routinely rerun it.
 - Run a small targeted check only when a **specific concrete doubt** cannot be resolved by inspection; never repeat the whole suite by reflex.
 - Candidate-caused defects and requirements the candidate must handle are in scope.

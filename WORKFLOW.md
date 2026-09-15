@@ -34,6 +34,10 @@ Every project lives under a git-ignored directory:
 └── work/         # disposable task briefs/reports/review packages
 ```
 
+`prepare_workspace.py --repo <repo>` establishes `/plans/` in Git's local `info/exclude` when needed, including linked worktrees. It preserves existing excludes, working files, and the index. Existing tracked artifacts are reported because an ignore rule cannot untrack them.
+
+Reports are required local handoffs, never commit deliverables. No role may force-add workflow artifacts. Builders run `validate_workflow.py index-safe --repo <repo>` immediately before committing; candidate validation also rejects artifact additions/modifications anywhere in the candidate range. For clearly workflow-owned contamination, the controller assigns a bounded Builder index-only cleanup, preserving working files in a separate cleanup commit, then continues. This needs no new semantic approval or technical repair loop; ambiguous ownership still requires clarification. Do not rewrite history or silently mix cleanup with implementation.
+
 Single writers:
 
 - Specifier owns `spec.md`; during execution Orchestrator may record the exact bounded amendment explicitly approved by the human, without concurrent writers.
@@ -44,6 +48,12 @@ Single writers:
 - Explorer creates no durable workflow artifacts.
 
 `work/` is deleted only after successful project completion. The other three files remain as the compact local record.
+
+## Token economy
+
+Keep the approved review gates and model routing. Reduce repeated context first: pass verified package/manifest and validation facts in task briefs; filter required structured discovery to relevant fields; inspect the packaged diff once, then read targeted surrounding symbols only where needed. Do not print entire Cargo metadata, repeat diffs with huge context, or load helper implementations for ordinary dispatch. Keep full test logs local and return commands, outcomes, and relevant failures.
+
+Orchestrator owns metadata and transitions; task agents own technical investigation. Plans, reports, and chat should not duplicate the same evidence. Necessary investigation and spec alignment take precedence over output limits. These instructions target observed waste; mechanical tests do not establish a measured token-saving percentage.
 
 ## Human boundary
 
