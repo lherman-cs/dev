@@ -25,7 +25,7 @@ PUBLIC_SKILLS = {"dev-spec", "dev-plan", "dev-build", "dev-review", "dev-project
 EXPECTED_MODELS = {
     "specifier": ("gpt-6-astra", "medium"),
     "planner": ("gpt-5.6-sol", "high"),
-    "builder": ("gpt-5.6-sol", "medium"),
+    "builder": ("gpt-5.6-terra", "medium"),
     "builder_strong": ("gpt-5.6-sol", "high"),
     "reviewer": ("gpt-5.6-sol", "high"),
     "reviewer_strong": ("gpt-6-astra", "low"),
@@ -152,8 +152,7 @@ def validate(root: Path = ROOT) -> dict:
             f"{role}: tuned model policy",
         )
         check(
-            data["default_permissions"]
-            in ("dev-explorer", "dev-workspace", "dev-builder"),
+            data["default_permissions"] in ("dev-explorer", "dev-workspace", "dev-builder"),
             f"{role}: permission profile",
         )
         check(
@@ -213,12 +212,7 @@ def validate(root: Path = ROOT) -> dict:
     scripts = root / "dotfiles/.agents/skills/dev-project/scripts"
     check(
         {p.name for p in scripts.glob("*.py")}
-        == {
-            "package_task.py",
-            "package_review.py",
-            "validate_workflow.py",
-            "prepare_workspace.py",
-        },
+        == {"package_task.py", "package_review.py", "validate_workflow.py", "prepare_workspace.py"},
         "Mechanical helper set",
     )
     for path in scripts.glob("*.py"):
@@ -263,12 +257,7 @@ def validate(root: Path = ROOT) -> dict:
         check(token in registry, f"{role}: embedded role registration")
     for prompt in expected_prompts:
         check(prompt in registry, f"Embedded support prompt: {prompt}")
-    for helper in (
-        "package_task.py",
-        "package_review.py",
-        "validate_workflow.py",
-        "prepare_workspace.py",
-    ):
+    for helper in ("package_task.py", "package_review.py", "validate_workflow.py", "prepare_workspace.py"):
         check(helper in registry, f"Embedded support helper: {helper}")
 
     for path in (root / "src").rglob("*.rs"):
