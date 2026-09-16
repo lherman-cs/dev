@@ -1,22 +1,10 @@
-# Bounded evidence handoff
+# Bounded factual handoff
+Use an `explorer` only when reading a substantial supporting surface here would pollute the parent's focused working set. A known-path lookup or second opinion does not justify another agent.
 
-For every parent role: use `explorer` with `fork_turns="none"` when substantial supporting discovery would otherwise fill your context or independent work can proceed alongside it. Read your assigned code/package and known-path facts directly. A helper is useful only if its bounded answer saves a larger investigation; it is not a required preliminary gate.
+Dispatch with `fork_turns="none"`:
+- Question and why the answer is needed: [ONE_FACTUAL_OUTCOME]
+- Search boundary and starting anchors: [PATHS_SYMBOLS_REVISION]
+- Already established facts/ruled-out locations: [BRIEF_FACTS]
+- Return Answer, Evidence, Unknowns; usually <=250 words with decisive caveats.
 
-Good assignments include tracing a named interface's callers, finding owning tests/commands, extracting one established contract from specified documents, or triaging an existing failure log. Group closely related facts into one outcome. Do not request a general audit, implementation proposal, review verdict, or a summary of the entire project.
-
-Pass only:
-
-```text
-Repository and revision (or document/log path and version): ...
-Question and why the answer is needed: ...
-Starting paths/symbols and allowed search boundary: ...
-Known facts: ...
-Return Answer, Evidence anchors, and Unknowns; usually <=250 words.
-Read-only investigation; no edits, test/build execution, or child agents.
-```
-
-Start with one Explorer per parent; use a second only for an independent needed question and available capacity. Avoid duplicate assignments across roles when the brief already supplies current facts. Continue independent parent work while it runs; do not search the same surface in parallel. When its result is needed, await it rather than ending the task or repeatedly checking status.
-
-Use the returned facts and open only decisive anchors needed for your own decision. Builders still understand the code they change; Reviewers still inspect the candidate and substantiate their verdict. Treat missing/conflicting evidence as uncertainty: ask a focused follow-up or inspect the specific gap, never restart a broad investigation by reflex. A changed revision invalidates only facts affected by those changes.
-
-Carry reusable facts with their source/revision into the parent-owned spec, task brief, report, or ruling when needed downstream. Do not create a separate evidence diary or copy raw logs/source into handoffs. Explorer output is supporting evidence, not semantic authority, validation success, or an acceptance decision.
+No code changes, tests/builds/installers, planning, review verdicts, semantics, or child agents. Negative findings state their actual search scope. Return a digest with revision and path:line/symbol (or upstream source/version), not a transcript. Parent retains judgment, checks decisive anchors, and incorporates only useful durable facts in its own artifact.

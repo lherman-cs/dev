@@ -1,14 +1,6 @@
-# Planner dispatch: material replan
+# Repair a material execution-plan defect
+Dispatch `planner` with `fork_turns="none"` only for a recorded dependency/interface/strategy contradiction.
 
-Use `dev-plan`.
+Read [SPEC_FILE], [PLAN_FILE], the affected rows of [PROGRESS_FILE], and [DEFECT_EVIDENCE]. Worktree/HEAD: [REPO] / [HEAD_SHA]. Affected task IDs: [TASK_IDS].
 
-Repository/worktree: {{repo}}
-Project: {{project}}
-Approved spec: {{spec_path}}
-Current plan: {{plan_path}}
-Progress ledger: {{progress_path}}
-Current HEAD: {{head}}
-Contradicted dependency/interface/strategy and affected tasks: {{reason}}
-
-Replan from actual current repository state. Preserve already accepted work that remains valid. Rewrite the single `plan.md`; do not create versioned plan files. Do not change product semantics. Return `SPEC CHANGE REQUIRED` if the discovery requires a semantic decision.
-Inspect only the concrete defect and affected interfaces; preserve unaffected task text and usable baseline evidence. Routine command/setup corrections and size-only operational splits belong to the controller; return those for a ruling without rewriting the plan. Return status, plan path, and only a concrete blocker/next action.
+Resolve this defect from current source truth, preserving unaffected text and still-valid accepted work. Do not restart repository discovery or rewrite the whole project. A command correction or size-only issue is not a material replan: return it to its owner. Never change semantics or reset repair history. Return READY with the plan path, or the precise missing decision.

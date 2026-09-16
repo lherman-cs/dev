@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""Validate workflow assets/source wiring; no live Codex or behavioral claims."""
-
+"""Local structural validation. Does not claim Rust compilation or LLM behavior."""
 from __future__ import annotations
 import argparse
 import ast
@@ -12,301 +11,109 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 ROLE_SKILLS = {
-    "specifier": "dev-spec",
-    "planner": "dev-plan",
-    "builder": "dev-build",
-    "builder_strong": "dev-build",
-    "reviewer": "dev-review",
-    "reviewer_strong": "dev-review",
-    "orchestrator": "dev-project",
-    "explorer": None,
+    'specifier': 'dev-spec', 'planner': 'dev-plan', 'builder': 'dev-build',
+    'builder_strong': 'dev-build', 'reviewer': 'dev-review',
+    'reviewer_strong': 'dev-review', 'orchestrator': 'dev-project', 'explorer': None,
 }
-PUBLIC_SKILLS = {"dev-spec", "dev-plan", "dev-build", "dev-review", "dev-project"}
-EXPECTED_MODELS = {
-    "specifier": ("gpt-6-astra", "medium"),
-    "planner": ("gpt-5.6-sol", "high"),
-    "builder": ("gpt-5.6-sol", "medium"),
-    "builder_strong": ("gpt-5.6-sol", "high"),
-    "reviewer": ("gpt-5.6-sol", "high"),
-    "reviewer_strong": ("gpt-6-astra", "low"),
-    "orchestrator": ("gpt-5.6-terra", "medium"),
-    "explorer": ("gpt-5.6-luna", "medium"),
+PUBLIC_SKILLS = {s for s in ROLE_SKILLS.values() if s}
+PROMPTS = {
+    'explore-facts.md', 'plan-project.md', 'replan-project.md', 'build-task.md',
+    'fix-task.md', 'task-review.md', 'scoped-rereview.md', 'final-review.md',
+    'report-contract.md', 'progress-template.md',
 }
-checks: list[str] = []
-
-
-def check(condition: bool, label: str) -> None:
-    if not condition:
-        raise AssertionError(label)
-    checks.append(label)
-
-
-def reject_model_policy(table: dict) -> None:
-    for key, value in table.items():
-        check(
-            key
-            not in {
-                "model",
-                "model_reasoning_effort",
-                "default_subagent_model",
-                "default_subagent_reasoning_effort",
-            },
-            f"No duplicate overlay selection: {key}",
-        )
-        if isinstance(value, dict):
-            reject_model_policy(value)
-
-
-def rust_delimiters(source: str) -> None:
-    i = 0
-    stack = []
-    pairs = {")": "(", "]": "[", "}": "{"}
-    while i < len(source):
-        if source.startswith("//", i):
-            pos = source.find("\n", i)
-            i = len(source) if pos < 0 else pos
-            continue
-        if source.startswith("/*", i):
-            depth = 1
-            i += 2
-            while i < len(source) and depth:
-                if source.startswith("/*", i):
-                    depth += 1
-                    i += 2
-                elif source.startswith("*/", i):
-                    depth -= 1
-                    i += 2
-                else:
-                    i += 1
-            assert depth == 0, "Unclosed Rust comment"
-            continue
-        raw = re.match(r'(?:br|cr|r)(#*)"', source[i:])
-        if raw:
-            end = '"' + raw.group(1)
-            pos = source.find(end, i + raw.end())
-            assert pos >= 0, "Unclosed Rust raw string"
-            i = pos + len(end)
-            continue
-        if source[i] == '"':
-            i += 1
-            while i < len(source):
-                if source[i] == "\\":
-                    i += 2
-                elif source[i] == '"':
-                    i += 1
-                    break
-                else:
-                    i += 1
-            else:
-                raise AssertionError("Unclosed Rust string")
-            continue
-        char = re.match(
-            r"'(?:\\(?:u\{[0-9a-fA-F_]+\}|x[0-9a-fA-F]{2}|.)|[^'\\\n])'", source[i:]
-        )
-        if char:
-            i += char.end()
-            continue
-        ch = source[i]
-        if ch in "([{":
-            stack.append(ch)
-        elif ch in ")]}":
-            assert stack and stack.pop() == pairs[ch], (
-                f"Unbalanced Rust delimiter at {i}"
-            )
-        i += 1
-    assert not stack, "Unclosed Rust delimiters"
+HELPERS = {'package_task.py', 'package_review.py', 'review_report.py',
+           'validate_workflow.py', 'prepare_workspace.py'}
 
 
 def validate(root: Path = ROOT) -> dict:
-    checks.clear()
-    config = tomllib.loads((root / "agent.toml").read_text())
-    reject_model_policy(config["codex"])
-    check(
-        set(config["profiles"])
-        == {"default", "spec", "plan", "build", "review", "project", "explore"},
-        "Canonical command profiles exist",
-    )
-    check(
-        config["codex"]["agents"]["max_concurrent_threads_per_session"] == 8,
-        "Eight-thread bounded concurrency",
-    )
+    checks = []
+    def check(condition: bool, label: str) -> None:
+        if not condition:
+            raise AssertionError(label)
+        checks.append(label)
 
-    actual_skills = {
-        p.name for p in (root / "dotfiles/.agents/skills").iterdir() if p.is_dir()
-    }
-    check(actual_skills == PUBLIC_SKILLS, "Exactly five public skills")
-    selections = {}
-    role_lines = {}
-    skill_lines = {}
+    config = tomllib.loads((root/'agent.toml').read_text())
+    fragment = tomllib.loads((root/'dotfiles/.codex/config.fragment.toml').read_text())
+    def no_models(table: dict) -> None:
+        for key, value in table.items():
+            check(key not in {'model', 'model_reasoning_effort', 'default_subagent_model',
+                              'default_subagent_reasoning_effort'}, f'No duplicate overlay model policy: {key}')
+            if isinstance(value, dict): no_models(value)
+    no_models(config['codex'])
+    check(config['codex']['agents'] == fragment['agents'], 'Standalone/launcher agent settings agree')
+    check(config['codex']['agents']['max_concurrent_threads_per_session'] == 4, 'Bounded four-thread capacity')
+    profiles = config['profiles']
+    check(set(profiles) == {'default', 'spec', 'plan', 'build', 'review', 'project', 'explore'}, 'Canonical public commands')
+    check(all(p['role'] in ROLE_SKILLS for p in profiles.values()), 'Every command resolves a role')
+    roles = root/'dotfiles/.codex/agents'
+    check({p.stem for p in roles.glob('*.toml')} == set(ROLE_SKILLS), 'Exactly the intended role aliases')
+    skills = root/'dotfiles/.agents/skills'
+    check({p.name for p in skills.iterdir() if p.is_dir()} == PUBLIC_SKILLS, 'Exactly five public skills')
+    selections, sizes = {}, {}
+    registry = (root/'src/agent_roles.rs').read_text()
     for role, skill in ROLE_SKILLS.items():
-        path = root / f"dotfiles/.codex/agents/{role}.toml"
-        check(path.is_file(), f"{role}: role exists")
-        source = path.read_text()
-        data = tomllib.loads(source)
-        role_lines[role] = len(source.splitlines())
-        check(role_lines[role] < 100, f"{role}: concise role")
-        check(data["name"] == role, f"{role}: identity")
-        selections[role] = [data["model"], data["model_reasoning_effort"]]
-        check(
-            tuple(selections[role]) == EXPECTED_MODELS[role],
-            f"{role}: tuned model policy",
-        )
-        check(
-            data["default_permissions"]
-            in ("dev-explorer", "dev-workspace", "dev-builder"),
-            f"{role}: permission profile",
-        )
-        check(
-            'fork_turns="none"' in data["developer_instructions"],
-            f"{role}: fresh Explorer/workflow handoff policy",
-        )
-        if skill:
-            check(
-                f"${skill}" in data["developer_instructions"], f"{role}: skill binding"
-            )
-        else:
-            check(
-                "$dev-" not in data["developer_instructions"],
-                f"{role}: Explorer is TOML-only, not public skill",
-            )
-    check(
-        tomllib.loads((root / "dotfiles/.codex/agents/explorer.toml").read_text())[
-            "agents"
-        ]["enabled"]
-        is False,
-        "Explorer is leaf",
-    )
-
+        data = tomllib.loads((roles/f'{role}.toml').read_text())
+        check(data['name'] == role, f'{role}: identity')
+        check(isinstance(data['model'], str) and bool(data['model'].strip()), f'{role}: explicit model')
+        check(data['model_reasoning_effort'] in {'low','medium','high','xhigh','max'}, f'{role}: explicit effort')
+        selections[role] = [data['model'], data['model_reasoning_effort']]
+        instructions = data['developer_instructions']
+        check('fork_turns="none"' in instructions, f'{role}: fresh handoff')
+        check(data['default_permissions'] in config['codex']['permissions'], f'{role}: declared permissions')
+        token = f'role_with_skill!("{role}", "{skill}")' if skill else f'role_only!("{role}")'
+        check(token in registry, f'{role}: embedded registration')
+        if skill: check(f'${skill}' in instructions, f'{role}: same skill for root and child')
+        if role.startswith('reviewer'):
+            check('repository source as read-only' in instructions, f'{role}: readonly source contract')
+        if role == 'explorer':
+            check(data['agents']['enabled'] is False, 'Explorer cannot spawn agents')
+            check('$dev-' not in instructions, 'Explorer is not a public workflow skill')
+    # Selection is reported, not copied into a second EXPECTED_MODELS authority.
     for skill in sorted(PUBLIC_SKILLS):
-        path = root / f"dotfiles/.agents/skills/{skill}/SKILL.md"
-        source = path.read_text()
-        skill_lines[skill] = len(source.splitlines())
-        check(skill_lines[skill] < 100, f"{skill}: concise skill")
-        front = yaml.safe_load(source.split("---", 2)[1])
-        check(front["name"] == skill and front["description"], f"{skill}: frontmatter")
-        check("gpt-" not in source.lower(), f"{skill}: no concrete model policy")
-        ui = yaml.safe_load((path.parent / "agents/openai.yaml").read_text())
-        check(
-            ui["policy"]["allow_implicit_invocation"] is False,
-            f"{skill}: explicit activation",
-        )
+        path = skills/skill/'SKILL.md'; text = path.read_text()
+        header = yaml.safe_load(text.split('---',2)[1])
+        check(header['name'] == skill and bool(header['description']), f'{skill}: discovery metadata')
+        check('gpt-' not in text.lower(), f'{skill}: model-free procedure')
+        check(len(text.encode()) <= 12000, f'{skill}: bounded resident instruction bytes')
+        sizes[skill] = len(text.encode())
+        ui = yaml.safe_load((path.parent/'agents/openai.yaml').read_text())
+        check(ui['policy']['allow_implicit_invocation'] is False, f'{skill}: explicit activation')
+    support = skills/'dev-project'
+    check({p.name for p in (support/'prompts').glob('*.md')} == PROMPTS, 'Single-review prompt set; no retired dimensions')
+    check({p.name for p in (support/'scripts').glob('*.py')} == HELPERS, 'Small mechanical helper set')
+    for kind, names in [('prompts',PROMPTS), ('scripts',HELPERS)]:
+        for name in names:
+            embedded = f'skills/dev-project/{kind}/{name}'
+            check(f'path: "{embedded}"' in registry, f'Launcher materializes {embedded}')
+            check(f'include_str!("../dotfiles/.agents/{embedded}")' in registry, f'Launcher embeds {embedded}')
+    for match in re.finditer(r'include_str!\("([^"]+)"\)', registry):
+        check((root/'src'/match[1]).is_file(), f'Existing Rust include: {match[1]}')
+    for path in [*(support/'scripts').glob('*.py'), *(root/'tests').glob('*.py'), *(root/'scripts').glob('*.py')]:
+        ast.parse(path.read_text()); check(True, f'Python syntax: {path.relative_to(root)}')
+    for path in skills.rglob('*.md'):
+        for target in re.findall(r'\[[^\]]*\]\(([^)]+)\)', path.read_text()):
+            if not target.startswith(('http:', 'https:', '#')) and '<' not in target:
+                check((path.parent/target.split('#')[0]).exists(), f'Existing support reference: {path.name} -> {target}')
+    just = (root/'Justfile').read_text()
+    for recipe in ['test-fast:', 'test-slow:', 'test: test-fast test-slow', 'check: test']:
+        check(recipe in just, f'Local recipe {recipe}')
+    check('tests/validate_assets.py' in just and "unittest discover" in just, 'Fast local coverage wired')
+    check('cargo test --locked' in just and 'launcher_e2e.py' in just, 'Real Rust/launcher checks retained')
+    cases = yaml.safe_load((root/'tests/workflow_pressure_cases.yaml').read_text())
+    check(isinstance(cases,list) and len(cases)>=12, 'Broad pressure scenario catalog')
+    check(len({c['id'] for c in cases}) == len(cases), 'Unique pressure scenarios')
+    for case in cases:
+        check(set(case) == {'id','role','pressure','must','must_not'}, f'Pressure schema: {case["id"]}')
+        check(case['role'] in ROLE_SKILLS and all(isinstance(x,str) and x.strip() for x in case.values()), f'Pressure scope: {case["id"]}')
+    return {'status':'PASS', 'assertions':len(checks), 'model_selections':selections,
+            'skill_bytes':sizes, 'pressure_cases':len(cases),
+            'rust_compiled':False, 'live_codex_executed':False}
 
-    prompts = root / "dotfiles/.agents/skills/dev-project/prompts"
-    expected_prompts = {
-        "explore-facts.md",
-        "plan-project.md",
-        "replan-project.md",
-        "build-task.md",
-        "fix-task.md",
-        "task-spec-review.md",
-        "task-quality-review.md",
-        "scoped-spec-rereview.md",
-        "scoped-quality-rereview.md",
-        "final-review.md",
-        "scoped-final-rereview.md",
-        "progress-template.md",
-    }
-    check(
-        {p.name for p in prompts.glob("*.md")} == expected_prompts,
-        "Complete dispatch prompt set",
-    )
-    scripts = root / "dotfiles/.agents/skills/dev-project/scripts"
-    check(
-        {p.name for p in scripts.glob("*.py")}
-        == {
-            "package_task.py",
-            "package_review.py",
-            "validate_workflow.py",
-            "prepare_workspace.py",
-        },
-        "Mechanical helper set",
-    )
-    for path in scripts.glob("*.py"):
-        ast.parse(path.read_text())
-        check(True, f"{path.name}: Python syntax")
-
-    # Core policy regression checks; these are textual/mechanical, not behavior evals.
-    project = (root / "dotfiles/.agents/skills/dev-project/SKILL.md").read_text()
-    for needle, label in [
-        ("Maximum three task repair rounds", "three repair rounds"),
-        ("Two fresh task Reviewers run **in parallel**", "parallel dual review"),
-        ("Never spawn Specifier", "human-run spec boundary"),
-        ("delete only `work/`", "success-only scratch cleanup"),
-    ]:
-        check(needle in project, f"dev-project: {label}")
-    build = (root / "dotfiles/.agents/skills/dev-build/SKILL.md").read_text()
-    check(
-        "**RED:**" in build and "**GREEN:**" in build and "**REFACTOR:**" in build,
-        "Builder strict TDD",
-    )
-    review = (root / "dotfiles/.agents/skills/dev-review/SKILL.md").read_text()
-    check(
-        "**Minor:**" in review
-        and "Never blocks and never enters a repair loop" in review,
-        "Reviewer severity text present",
-    )
-
-    main = (root / "src/main.rs").read_text()
-    check("mod agent_roles;" in main, "Role loader wired into Rust main")
-    check(
-        "agent_roles::registration_args(&dir)?" in main,
-        "Role registrations passed to Codex",
-    )
-    check("Explorer is intentionally a" in main, "TOML-only Explorer prompt path wired")
-    registry = (root / "src/agent_roles.rs").read_text()
-    for role, skill in ROLE_SKILLS.items():
-        token = (
-            f'role_with_skill!("{role}", "{skill}")'
-            if skill
-            else f'role_only!("{role}")'
-        )
-        check(token in registry, f"{role}: embedded role registration")
-    for prompt in expected_prompts:
-        check(prompt in registry, f"Embedded support prompt: {prompt}")
-    for helper in (
-        "package_task.py",
-        "package_review.py",
-        "validate_workflow.py",
-        "prepare_workspace.py",
-    ):
-        check(helper in registry, f"Embedded support helper: {helper}")
-
-    for path in (root / "src").rglob("*.rs"):
-        rust_delimiters(path.read_text())
-        check(True, f"{path.relative_to(root)}: lexical delimiter check")
-        for match in re.finditer(r'include_str!\("([^"]+)"\)', path.read_text()):
-            check(
-                (path.parent / match[1]).is_file(), f"Existing include path: {match[1]}"
-            )
-    for path in [*(root / "tests").glob("*.py"), *(root / "scripts").glob("*.py")]:
-        ast.parse(path.read_text())
-        check(True, f"{path.name}: Python syntax")
-
-    cases = yaml.safe_load((root / "tests/workflow_pressure_cases.yaml").read_text())
-    check(
-        isinstance(cases, list) and len(cases) >= 12,
-        "Pressure scenario catalog has broad coverage",
-    )
-    check(len({c["id"] for c in cases}) == len(cases), "Pressure scenario IDs unique")
-    return {
-        "status": "PASS",
-        "assertions": len(checks),
-        "role_physical_lines": role_lines,
-        "skill_physical_lines": skill_lines,
-        "model_selections": selections,
-        "public_skills": sorted(PUBLIC_SKILLS),
-        "pressure_cases": len(cases),
-        "rust_compiled": False,
-        "live_codex_executed": False,
-    }
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--json", type=Path)
-    args = parser.parse_args()
-    result = validate()
+if __name__ == '__main__':
+    parser=argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--json',type=Path)
+    args=parser.parse_args(); result=validate()
     if args.json:
-        args.json.parent.mkdir(parents=True, exist_ok=True)
-        args.json.write_text(json.dumps(result, indent=2) + "\n")
-    print(json.dumps(result, indent=2))
+        args.json.parent.mkdir(parents=True,exist_ok=True)
+        args.json.write_text(json.dumps(result,indent=2)+'\n')
+    print(json.dumps(result,indent=2))

@@ -2,51 +2,49 @@
 
 ## Codex development workflow
 
-This repository ships a five-skill, Superpowers-inspired Codex development workflow optimized for bounded context, gated correctness, and forward progress.
+Five public skills with bounded context and stable review gates: `dev-spec`, `dev-plan`, `dev-build`, `dev-review`, `dev-project`.
 
-Public skills:
+```text
+approved spec → decision-complete plan → Builder → one fresh Reviewer
+                                             ↖ bounded repair ↙
+all tasks accepted → integrated validation → one fresh final review
+```
 
-- `dev-spec`
-- `dev-plan`
-- `dev-build`
-- `dev-review`
-- `dev-project`
-
-Explorer is a cheap read-only leaf agent, not a sixth public skill. Internal `builder_strong` and `reviewer_strong` agent types are capability-escalation aliases that reuse the same Builder/Reviewer skills.
-
-Typical usage:
+The controller coordinates; it does not become another engineer or reviewer. One Reviewer persona always covers requirements and engineering quality. Task-local Builders stay warm only through their own bounded repairs; reviewers are fresh. Factual Explorer is a read-only leaf, not a sixth public skill. Capability aliases reuse existing Builder/Reviewer personas.
 
 ```sh
 # Human-facing semantic alignment
 dev a s "Define the behavior we need and align with me first."
-
-# After spec.md is explicitly APPROVED, execute continuously.
-# dev-project creates/replans plan.md automatically when required.
+# After explicit spec approval: autonomous planning and gated execution.
 dev a pr "Execute plans/example/."
 ```
 
-The project workflow uses only `./plans/<project>/{spec.md,plan.md,progress.md,work/}`. The whole `plans/` tree is expected to be git-ignored. `work/` is deleted after successful completion; the compact spec/plan/progress record remains.
+Task briefs, exact Git diffs and reports are file-based. Machine-checked review provenance binds the mode, candidate, base and immutable contract. One packet carries all blocking findings without controller paraphrasing. One ordinary repair is followed only by a justified exceptional attempt; no blind three-round loop or real-blocker waiver.
 
-Model policy is centralized in `dotfiles/.codex/agents/*.toml`; skills contain no concrete model names. See [WORKFLOW.md](WORKFLOW.md) for the full contract, [SOURCES.md](SOURCES.md) for upstream design/model references, [EVALS.md](EVALS.md) for pressure scenarios, and [VALIDATION.md](VALIDATION.md) for checks actually run.
+Artifacts live only in `./plans/<project>/{spec.md,plan.md,progress.md,work/}` and are Git-ignored. Preserve incomplete work; delete `work/` only after successful completion. The workflow never pushes, merges, rebases or manages worktrees.
 
-Developer checks:
+Model/effort policy lives only in `dotfiles/.codex/agents/*.toml`. The configured defaults are a starting experiment, not a measured optimum. See [WORKFLOW.md](WORKFLOW.md), [requirements](skill-requirements.md), [decisions](workflow-questionnaire.md), [SOURCES.md](SOURCES.md), [EVALS.md](EVALS.md) and [VALIDATION.md](VALIDATION.md).
+
+### Local checks — no CI
 
 ```sh
-python3 tests/validate_assets.py
-python3 -m unittest discover -s tests -p 'test_*.py'
-cargo test --locked
-cargo build --locked
-python3 tests/launcher_e2e.py --binary target/debug/dev
+python3 -m pip install -r tests/requirements.txt
+just test-fast  # asset wiring and Python/Git/filesystem regression tests
+just test-slow  # Rust tests/build and compiled launcher with a Codex recording shim
+just test       # both; `just check` remains an alias
 ```
 
-Install/export only the workflow assets into an existing worktree:
+No GitHub Actions, hosted qualification or automatic paid model evaluations are added. Live behavioral claims require separate explicit trials.
+
+### Install
 
 ```sh
+just install  # rebuild/install the binary and its embedded workflow snapshot
 python3 scripts/install_workflow.py /path/to/worktree --dry-run
-python3 scripts/install_workflow.py /path/to/worktree
+just install-workflow /path/to/worktree  # optional export of workflow assets only
 ```
 
-The exporter preserves unrelated roles/skills and `.codex/config.toml`. For this workflow-only update, do not run the legacy machine bootstrap below.
+The exporter preserves unrelated roles/skills and `.codex/config.toml`, and backs up changed assets and retired split-review prompts. It does not rewrite active project evidence or delete old runtime caches. See WORKFLOW.md for in-flight report/counter migration. Do not run the legacy machine bootstrap for this workflow-only update.
 
 ---
 

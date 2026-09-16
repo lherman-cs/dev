@@ -1,17 +1,8 @@
-# Strong Reviewer dispatch: final whole-project review
+# Final integrated review, same persona
+Dispatch `reviewer_strong` with `fork_turns="none"`.
 
-Use `dev-review`.
+Worktree: [REPO]. Read frozen [FINAL_CONTRACT], [FINAL_VALIDATION_REPORT], and [PROJECT_DIFF_FILE] for [PROJECT_BASE_SHA]..[CANDIDATE_SHA]. The contract snapshot contains the approved spec, current plan and relevant ledger; do not load historical task reports as a second project narrative.
 
-Repository/worktree: {{repo}}
-Approved spec: {{spec_path}}
-READY plan: {{plan_path}}
-Progress/rulings/deferred Minors: {{progress_path}}
-Full project review package: {{review_package_path}}
-Project base: {{base_sha}}
-Final candidate: {{candidate_sha}}
-Full-project validation evidence: {{validation_evidence}}
-Write report: {{review_report_path}}
+Follow `dev-review`: inspect integrated spec coverage, cross-task contracts, regressions, meaningful residuals and rulings. Earlier task PASS is not proof, but do not repeat every task review. Reuse matching validation evidence; ask for missing proof rather than inventing it.
 
-Perform one fresh integrated review of the final candidate: whole-spec compliance, cross-task interactions, architecture/invariants, regressions/edge cases, technical quality, controller rulings, and whether deferred Minors remain genuinely Minor in integrated context.
-
-Do not mechanically replay every task review or load historical `work/` reports unless a concrete final-review question requires one. Use Critical/Important/Minor severity and compact `F#` finding IDs.
+Write mode `final` JSON to [REVIEW_REPORT], using the contract digest in the diff package and `report-contract.md`. Return verdict, path and blocking IDs only. One integrated fix wave and a fresh scoped final rereview are the only automatic final repair path.

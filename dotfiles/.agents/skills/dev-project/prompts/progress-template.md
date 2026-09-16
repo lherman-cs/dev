@@ -1,23 +1,31 @@
-# Progress
+# Project progress
 
 ## Status
-Project base: <sha>
-Current task: <none|N>
-State: <PLANNING|PREFLIGHT|BUILD|REVIEW|REPAIR|VALIDATE|FINAL_REVIEW|BLOCKED|COMPLETE>
-Current candidate: <sha|none>
+State: PLANNING
+Project base: pending
+Current task: none
+Candidate: none
+Builder identity: none
+Current contract: none
+Current review: none
+Next action: prepare approved plan
 
 ## Tasks
-- <task>: <PENDING|BUILD|REVIEW|REPAIR|ACCEPTED> [candidate=<sha>]
+- 1: PENDING [candidate=none; repairs=0/2; contract=none; review=none]
 
 ## Rulings
-- R1: <small reversible implementation ruling>
-
-## Deferred
-- <Minor finding or known pre-existing baseline issue>
+None.
 
 ## Active findings
-- <stable finding ID, severity, repair round, status>
+None. Keep stable IDs and report/packet paths, not copied reports.
+
+## Deferred
+None. Useful non-blocking observations only.
 
 ## Validation
-- Baseline: <command/outcome>
-- Final: <command/outcome when available>
+Baseline: pending
+Final: pending
+Final fix waves: 0/1
+
+## Recovery
+No unresolved boundary. One current row per task/finding; never append a diary or reset counters on restart.

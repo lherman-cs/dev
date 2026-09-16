@@ -1,17 +1,6 @@
-# Builder dispatch: bounded repair
+# Repair all current blockers together
+Follow up with the task's warm Builder; use a fresh configured Builder escalation only when the controller has recorded a concrete capability blocker and retired the prior writer.
 
-Use `dev-build`.
+Read immutable [BRIEF_FILE] and exact [REPAIR_PACKET]. Current candidate: [CANDIDATE_SHA]. Repair round: [ROUND]/2 (or the single final fix wave). Worktree: [REPO]. Current evidence/report to consult: [PRIOR_REPORT]. Write the new candidate-specific build report to [REPORT_FILE].
 
-Repository/worktree: {{repo}}
-Project: {{project}}
-Original task brief: {{task_brief_path}}
-Repair brief: {{repair_brief_path}}
-Previous candidate: {{previous_candidate}}
-Write repair report: {{repair_report_path}}
-
-Controller preparation: the repair brief carries each blocking ID (deduplicated root causes retain all IDs), trigger and violated invariant, decisive code anchors, required correction outcome, concrete regression setup/assertions or equivalent proof, and focused validation. State what must remain unchanged and include only relevant rulings. Use the reviewer's evidence; obtain missing technical specifics from that reviewer, not by inventing a fix. Pass only the current repair delta and necessary evidence, not historical review bundles. These are contents of the existing brief, not new forms or gates.
-
-Address only the listed blocking finding IDs and directly necessary repair consequences. Preserve the original accepted task requirements and any controller rulings. Diagnose root cause before patching; demonstrate that the changed production path satisfies each finding's required outcome, using meaningful RED/GREEN where applicable. Tests must exercise that path, not duplicate it. Run focused affected verification plus the repair-brief validation, self-review, and create one **new** repair commit; never amend the reviewed candidate.
-Finalize the repair report with the actual committed SHA and run the dev-build handoff validator before returning COMPLETED.
-
-Do not opportunistically repair unrelated old code or implement optional suggestions. Verify affected shared-helper callers against their real contracts. If a finding or prescribed fix is contradicted by evidence, return that evidence to the controller for clarification before editing; preserve the requirement and choose the smallest correct repair.
+Fix every listed blocker without optional redesign. Verify the original failure is gone and check affected contracts. Treat suggested mechanisms as illustrative; return counterevidence before a harmful edit. Give each finding ID its correction and proof. Commit a new SHA, never amend. Return only status, SHA, report path, and a concrete blocker.

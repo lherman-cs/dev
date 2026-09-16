@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Copy only workflow roles and the five public skills into a target worktree; preserve user config.
-Changed existing workflow files are backed up; no bootstrap/install.sh is run.
+"""Copy workflow roles/skills into a target worktree; preserve user config.
+Changed existing assets and precisely named retired prompts are backed up first.
 """
 from __future__ import annotations
 import argparse
@@ -11,7 +11,14 @@ import shutil
 import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
-LEGACY_PATHS = (Path('.agents/skills/dev-explore'),)
+LEGACY_PATHS = (
+    Path('.agents/skills/dev-explore'),
+    *[Path('.agents/skills/dev-project/prompts') / name for name in (
+        'task-spec-review.md', 'task-quality-review.md',
+        'scoped-spec-rereview.md', 'scoped-quality-rereview.md',
+        'scoped-final-rereview.md',
+    )],
+)
 
 def reject_symlink_parents(target: Path, destination: Path) -> None:
     """Do not follow a .codex/.agents directory symlink outside the target worktree."""
@@ -33,7 +40,7 @@ def install(target: Path, source: Path = ROOT, dry_run: bool = False) -> dict:
             if path.is_file() and '__pycache__' not in path.parts:
                 assets.append((path, path.relative_to(source/'dotfiles')))
     backup = target/'.codex/dev-workflow-backups'/datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')
-    # Remove only workflow-owned legacy paths. Back them up first; never sweep unrelated skills.
+    # Only these workflow-owned legacy paths are removed. Custom neighbors survive.
     removed = []
     for rel in LEGACY_PATHS:
         legacy = target/rel

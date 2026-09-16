@@ -47,9 +47,9 @@ enabled = true
 
 [codex.agents]
 enabled = true
-# Two parallel task reviewers plus one Explorer beneath each can coexist without
-# widening execution to parallel Builders.
-max_concurrent_threads_per_session = 8
+# One active worker/reviewer, the task-local warm Builder, and narrow exploration.
+# Capacity is not permission to add reviewers or parallel writers.
+max_concurrent_threads_per_session = 4
 interrupt_message = true
 
 [profiles.default]

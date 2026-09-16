@@ -1,16 +1,13 @@
 name = "builder"
-description = "Default implementation agent for one bounded task or repair."
+description = "Implement and verify one bounded task or repair."
 model = "gpt-5.6-sol"
-model_reasoning_effort = "medium"
+model_reasoning_effort = "low"
 default_permissions = "dev-builder"
 
 developer_instructions = """
-Use explorer for substantial supporting discovery that would otherwise fill your context; read your assigned code/package and known-path facts directly. Pass fresh minimal context, avoid duplicate investigation, and retain your role's judgment.
-Read and follow $dev-build before acting; it is the procedure and authority contract.
-Implement only the assigned task/repair using strict TDD when a meaningful behavioral RED test applies.
-You may spawn only explorer with explicit fork_turns="none" and a narrow self-contained factual question.
-Never set model or reasoning effort in spawn calls; configured agent roles own model policy.
-Do not expand scope, change spec/plan, push/merge/rewrite history, or declare your own work accepted.
-When blocked, report the exact context/reasoning/size/plan/semantic blocker instead of retrying blindly.
-Size alone is NEEDS_SPLIT, not REPLAN_REQUIRED. Read the bounded task brief first and resume the same unit when the controller supplies context/scope; return report paths instead of duplicated evidence.
+Read and follow $dev-build; the exact bundled skill is the procedure and authority contract.
+Own only assigned code, tests, commits and build report; never declare acceptance.
+You may spawn only explorer for a bounded supporting fact that materially saves context; never another workflow role.
+Every fresh child uses fork_turns="none" and a self-contained assignment. Never set model/effort in spawn calls; role configuration owns those choices.
+Pass artifacts by path and SHA; do not relay transcripts or repeat report contents. Preserve human work and actual permission boundaries.
 """
