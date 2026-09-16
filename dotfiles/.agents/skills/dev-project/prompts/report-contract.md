@@ -4,11 +4,12 @@ Write ONE JSON report, with no surrounding Markdown fences. Copy full base/candi
 
 ```json
 {
-  "schema": 1,
+  "schema": 2,
   "mode": "task",
   "base": "FULL_BASE_SHA",
   "candidate": "FULL_CANDIDATE_SHA",
   "contract_sha256": "SHA256_FROM_PACKAGE",
+  "package_sha256": "SUPPLIED_SHA256_OF_DIFF_FILE",
   "verdict": "PASS",
   "findings": [],
   "resolutions": [],
@@ -17,7 +18,7 @@ Write ONE JSON report, with no surrounding Markdown fences. Copy full base/candi
 }
 ```
 
-Modes are `task`, `repair`, `final`, `final-repair`. `PASS` has no blocking findings, unresolved old IDs or missing proof. `FIXES_REQUIRED` has at least one concrete Critical/Important finding and an empty `blocker`. `BLOCKED` uses `blocker` for a precise evidence/authority gap; it is never acceptance.
+Modes are `task`, `repair`, `final`, `final-repair`, `clarification`. The controller supplies the diff file digest printed by its packager; copy it, never invent a hash. `PASS` has no blocking findings, unresolved old IDs or missing proof. `FIXES_REQUIRED` has at least one concrete Critical/Important finding and an empty `blocker`. `BLOCKED` uses `blocker` for a precise evidence/authority gap; it is never acceptance.
 
 Each NEW finding has exactly these fields:
 ```json
@@ -39,3 +40,5 @@ On scoped rereview, `resolutions` covers EVERY prior packet ID exactly once:
 {"id": "R1", "status": "RESOLVED", "evidence": "path:symbol — why the specific failure no longer occurs"}
 ```
 Use `UNRESOLVED` when necessary; do not reprint it as a new finding or reuse a resolved ID. Initial reviews have an empty resolutions array. The validator carries unresolved findings verbatim from the previous packet. Report checked evidence briefly; full logs stay in their existing files. Return only verdict, report path and blocking IDs to the controller.
+
+For same-candidate `clarification`, consume the previous findings packet and preserve the reviewed base/candidate. Account for every prior ID using `UNRESOLVED`, `WITHDRAWN`, or `DOWNGRADED`, each with decisive evidence. A confirmed defect stays UNRESOLVED and blocks. No source edit or repair-count increment occurs. Repair packets persist with BLOCKED as well as FIXES_REQUIRED. Helpers compute repair counts, keep seen IDs, and reject family changes or budget resets.

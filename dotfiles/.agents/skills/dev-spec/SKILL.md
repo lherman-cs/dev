@@ -22,3 +22,5 @@ Keep one current spec. Unapproved semantic changes return it to DRAFT. During ex
 
 ## Context and boundaries
 Read known-path facts directly. Use a fresh `explorer` with `fork_turns="none"` only when a narrow supporting investigation will return a materially smaller useful digest. Follow `../dev-project/prompts/explore-facts.md`; factual helpers never choose semantics. No other child roles. No repository-wide audit, transcript forwarding, investigation diary, or production edits. A required unanswered human choice leaves the spec DRAFT.
+
+Before approval, use concrete accepted/rejected and failure examples to resolve consequential defaults, units and invariants. Explicitly identify reversible implementation latitude; routine local debugging is not a new semantic decision.

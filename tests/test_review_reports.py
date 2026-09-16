@@ -29,7 +29,7 @@ class ReviewReportsTests(unittest.TestCase):
         self.path=self.root/'review.json'
 
     def report(self,**changes):
-        result=dict(schema=1,mode='task',base=A,candidate=B,
+        result=dict(schema=2,package_sha256='f'*64,mode='task',base=A,candidate=B,
                     contract_sha256=rr.digest(self.contract),verdict='PASS',findings=[],
                     resolutions=[],checked=['src/retry.rs:40-60; tests/retry.rs:12'],blocker='')
         result.update(changes); return result

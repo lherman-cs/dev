@@ -11,7 +11,7 @@ Current review: none
 Next action: prepare approved plan
 
 ## Tasks
-- 1: PENDING [candidate=none; repairs=0/2; contract=none; review=none]
+- 1: PENDING [candidate=none; repairs=0/2; contract=none; review=none; package=none; previous=none]
 
 ## Rulings
 None.

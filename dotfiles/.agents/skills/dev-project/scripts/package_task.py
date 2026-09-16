@@ -85,6 +85,8 @@ def main() -> None:
             p.error('--output, --base and --report are required unless --list is used')
         if any(not value.strip() for value in [*args.scope, *args.ruling, *args.fact]):
             p.error('Execution metadata must not be empty')
+        if not re.fullmatch(r'[0-9a-f]{7,64}', args.base):
+            p.error('--base must be a commit ID, not a mutable branch name')
         if args.final:
             if not args.spec or not args.progress or args.scope:
                 p.error('--final requires --spec and --progress and does not accept --scope')
@@ -92,6 +94,8 @@ def main() -> None:
             for text, expected in [(spec, 'APPROVED'), (plan, 'READY')]:
                 if re.findall(r'^Status:\s*(\S+)\s*$', text, re.MULTILINE) != [expected]:
                     raise ValueError(f'Final snapshot requires exactly one {expected} marker')
+            from review_report import declared_verification
+            declared_verification(Path(args.report))
             lines = ['# Final review contract', '', '## Approved specification', '', spec.rstrip(),
                      '', '## Current execution plan', '', plan.rstrip(),
                      '', '## Ledger snapshot', '', args.progress.read_text(encoding='utf-8').rstrip(),
@@ -110,7 +114,8 @@ def main() -> None:
         if args.scope:
             lines += ['Deferred sibling requirements are not omissions in this unit. The parent task is accepted only after all units and integration checks pass.']
         lines += ['', 'Authority excerpts are copied verbatim. This contract is immutable after dispatch.', '']
-        text = '\n'.join(lines)
+        meta = {'schema': 1, 'kind': 'final' if args.final else 'task', 'base': args.base}
+        text = '<!-- dev-contract: ' + json.dumps(meta, sort_keys=True) + ' -->\n' + '\n'.join(lines)
         args.output.parent.mkdir(parents=True, exist_ok=True)
         with args.output.open('x', encoding='utf-8') as handle:
             handle.write(text)

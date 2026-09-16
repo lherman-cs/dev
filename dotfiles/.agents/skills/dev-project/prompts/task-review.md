@@ -6,3 +6,5 @@ Read [BRIEF_FILE], current [BUILD_REPORT], and [DIFF_FILE]. Worktree: [REPO]. Ex
 Follow `dev-review`; inspect the entire assigned outcome once, including material compliance and correctness. Return all material findings found in scope, not one per round. No broad project audit or routine test rerun.
 
 Read `report-contract.md`; write mode `task` JSON to [REVIEW_REPORT]. Return verdict, path, blocking IDs only. The controller validates the envelope; it does not re-review your judgment.
+
+Package SHA256: [PACKAGE_SHA256]. Copy this into the schema-2 report. The package binds any previous packet and current final validation.

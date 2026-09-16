@@ -12,6 +12,7 @@ ROOT=Path(__file__).resolve().parents[1]
 TOOLS=ROOT/'dotfiles/.agents/skills/dev-project/scripts'
 sys.path.insert(0,str(TOOLS))
 import package_task
+import package_review
 import prepare_workspace
 import review_report
 import validate_workflow as validate
@@ -25,7 +26,9 @@ class WorkflowToolsTests(unittest.TestCase):
         self.base=self.git('rev-parse','HEAD')
         (self.repo/'source').write_text('candidate\n'); self.git('commit','-qam','candidate')
         self.candidate=self.git('rev-parse','HEAD')
-        self.contract=self.repo/'brief.md'; self.contract.write_text('Retry without losing state.\n')
+        self.contract=self.repo/'brief.md'; self.contract.write_text('<!-- dev-contract: ' + json.dumps(dict(schema=1,kind='task',base=self.base)) + ' -->\nRetry without losing state.\n')
+        self.package=self.repo/'diff.md'
+        self.package.write_text(package_review.render(self.repo,self.base,self.candidate,self.contract)[0])
 
     def git(self,*args):
         return subprocess.check_output(['git','-C',str(self.repo),*args],text=True,stderr=subprocess.PIPE).strip()
@@ -35,7 +38,7 @@ class WorkflowToolsTests(unittest.TestCase):
 
     def build_report(self):
         path=self.repo/'build.md'
-        path.write_text(f'Status: COMPLETED\nCommit: {self.candidate}\nVerification:\n- focused test -> PASS\n')
+        path.write_text(f'Status: COMPLETED\nCommit: {self.candidate}\nVerification-Status: PASS\nVerification:\n- focused test -> PASS\n')
         return path
 
     def project(self):
@@ -46,7 +49,7 @@ class WorkflowToolsTests(unittest.TestCase):
         return path
 
     def review(self,**changes):
-        data=dict(schema=1,mode='task',base=self.base,candidate=self.candidate,
+        data=dict(schema=2,package_sha256=review_report.digest(self.package),mode='task',base=self.base,candidate=self.candidate,
                   contract_sha256=review_report.digest(self.contract),verdict='PASS',findings=[],
                   resolutions=[],checked=['source:1 behavior and test inspected'],blocker='')
         data.update(changes)
@@ -54,7 +57,7 @@ class WorkflowToolsTests(unittest.TestCase):
 
     def reviews_cli(self,path,*extra):
         return self.cli('validate_workflow.py','reviews','--repo',self.repo,'--base',self.base,
-                        '--candidate',self.candidate,'--contract',self.contract,'--mode','task','--report',path,*extra)
+                        '--candidate',self.candidate,'--contract',self.contract,'--mode','task','--package',self.package,'--report',path,*extra)
 
     def test_task_extracts_only_requested_task(self):
         plan='# Plan\nStatus: READY\n### Task 1: First\nDo A.\n### Task 2: Second\nDo B.\n'
@@ -111,7 +114,7 @@ class WorkflowToolsTests(unittest.TestCase):
     def test_final_contract_is_a_frozen_snapshot(self):
         p=self.project(); output=p/'work/final.md'
         result=self.cli('package_task.py','--plan',p/'plan.md','--spec',p/'spec.md','--progress',p/'progress.md',
-                        '--final','--base',self.base,'--report','validation.md','--output',output)
+                        '--final','--base',self.base,'--report',self.build_report(),'--output',output)
         self.assertEqual(result.returncode,0,result.stderr)
         frozen=output.read_bytes(); (p/'progress.md').write_text('later ledger state')
         self.assertEqual(output.read_bytes(),frozen)
@@ -142,15 +145,15 @@ class WorkflowToolsTests(unittest.TestCase):
         report=self.build_report()
         self.assertEqual(validate.check_candidate(self.repo,self.base,self.candidate,report)['candidate'],self.candidate)
         for value in ['pending',self.base,self.candidate+'\nCommit: '+self.candidate]:
-            report.write_text(f'Status: COMPLETED\nCommit: {value}\nVerification: focused pass\n')
+            report.write_text(f'Status: COMPLETED\nCommit: {value}\nVerification-Status: PASS\nVerification: focused pass\n')
             before=report.read_bytes(); result=self.cli('validate_workflow.py','build-handoff','--repo',self.repo,'--report',report)
             self.assertNotEqual(result.returncode,0); self.assertEqual(report.read_bytes(),before)
             self.assertEqual(self.git('rev-parse','HEAD'),self.candidate)
-        report.write_text(f'Status: COMPLETED\nCommit: {self.candidate[:10]}\nVerification:\n- focused pass\n')
+        report.write_text(f'Status: COMPLETED\nCommit: {self.candidate[:10]}\nVerification-Status: PASS\nVerification:\n- focused pass\n')
         self.assertEqual(self.cli('validate_workflow.py','build-handoff','--repo',self.repo,'--report',report).returncode,0)
 
     def test_empty_verification_rejected(self):
-        report=self.build_report(); report.write_text(f'Status: COMPLETED\nCommit: {self.candidate}\nVerification:\n')
+        report=self.build_report(); report.write_text(f'Status: COMPLETED\nCommit: {self.candidate}\nVerification-Status: PASS\nVerification:\n')
         with self.assertRaisesRegex(ValueError,'nonempty Verification'): validate.check_build_report(self.repo,self.candidate,report)
 
     def test_dirty_candidate_cannot_use_clean_report(self):
@@ -232,7 +235,7 @@ class WorkflowToolsTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'staged'): validate.check_index(self.repo)
         with self.assertRaisesRegex(ValueError,'Already tracked'): prepare_workspace.prepare(self.repo)
         self.git('commit','-qm','bad artifact'); bad=self.git('rev-parse','HEAD')
-        report=self.repo/'handoff'; report.write_text(f'Status: COMPLETED\nCommit: {bad}\nVerification: passed\n')
+        report=self.repo/'handoff'; report.write_text(f'Status: COMPLETED\nCommit: {bad}\nVerification-Status: PASS\nVerification: passed\n')
         with self.assertRaisesRegex(ValueError,'commits workflow artifacts'):
             validate.check_candidate(self.repo,self.base,bad,report)
         self.git('rm','--cached',str(artifact))

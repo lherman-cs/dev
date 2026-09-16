@@ -1,5 +1,7 @@
 # dev toolbox
 
+For this full source snapshot, see [replacement instructions](REPLACEMENT.md), [maintenance analysis](WORKFLOW_ANALYSIS.md), and [actual validation](VALIDATION.md).
+
 ## Codex development workflow
 
 Five public skills with bounded context and stable review gates: `dev-spec`, `dev-plan`, `dev-build`, `dev-review`, `dev-project`.

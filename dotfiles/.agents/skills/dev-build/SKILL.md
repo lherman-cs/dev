@@ -33,8 +33,8 @@ Preserve human/other-agent work. Never push, merge, rebase, reset, stash, clean,
 ## Handoff
 Write the assigned build report (or these facts in chat for standalone use):
 - `Status: COMPLETED | NEEDS_CONTEXT | NEEDS_SPLIT | REPLAN_REQUIRED | BLOCKED`
-- `Commit: <actual sha>` when COMPLETED
+- `Commit: <actual sha>` when COMPLETED; `Verification-Status: PASS | FAIL | BLOCKED` for required checks
 - `Implemented:` concise behavior; `Verification:` exact commands, outcomes and relevant environment
 - `Files:` changed paths; `Notes:` only a TDD exception, material concern, or repair-ID/proof mapping
 
-After committing, run `../dev-project/scripts/validate_workflow.py build-handoff --repo <repo> --report <report>` with Python. Correct metadata before returning; never return COMPLETED with a pending SHA or missing required proof. This script checks metadata, not test truth. Return only status, candidate, report path and a blocking question. Stay available for bounded clarification/repair until this task is accepted; never carry the conversation into the next task.
+After committing, run `../dev-project/scripts/validate_workflow.py build-handoff --repo <repo> --report <report>` with Python. Correct metadata before returning; never return COMPLETED with a pending SHA, failed required check or missing required proof. Required GREEN checks must declare Verification-Status: PASS; a historical RED or known unrelated baseline failure is recorded separately, never relabeled. This script checks metadata, not test truth. Return only status, candidate, report path and a blocking question. Stay available for bounded clarification/repair until this task is accepted; never carry the conversation into the next task.

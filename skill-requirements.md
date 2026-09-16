@@ -19,3 +19,5 @@ Bundle invariants, not another worker prompt. WORKFLOW.md explains the procedure
 - Validators check format, provenance, immutable candidates and files. They cannot prove correctness, judge causality, decide semantic scope or certify live agent behavior.
 - Preserve approvals, permission boundaries, cancellation state, user changes and accepted work. No automatic merge/push/rebase/worktree management.
 - Local testing via Justfile only. No CI or automatic live paid model runs. Rules need concrete regression scenarios, not ever-growing defensive boilerplate.
+
+- Keep model/effort selections unchanged while hardening. Planner alone owns technical readiness; controller uses the index and bounded evidence. Schema-2 packages/reports carry exact ranges, digests and previous findings; required validation declares PASS for its candidate. Local checks are not live-agent quality certification.

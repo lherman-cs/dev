@@ -62,24 +62,25 @@ python3 "$tools/package_task.py" --plan "$project/plan.md" --list
 python3 "$tools/package_task.py" --plan "$project/plan.md" --task "$task" \
   --base "$base" --report "$build_report" --output "$brief"
 python3 "$tools/validate_workflow.py" candidate-ready --repo "$repo" \
-  --base "$base" --candidate "$candidate" --report "$build_report"
+  --base "$base" --candidate "$candidate" --report "$build_report" \
+  --untracked-baseline "$project/work/untracked.json"
 python3 "$tools/package_review.py" --repo "$repo" --base "$base" \
   --candidate "$candidate" --brief "$brief" --output "$diff"
 ```
 
 Task extraction preserves Planner text and appends only bounded metadata/rulings/scope. The original brief is never rewritten after dispatch. A later repair receives its own report path in dispatch, not an appended report with contradictory commit markers. Review packages include all commits in the range, full Git IDs, a diff with context and the brief's SHA-256. External diff/textconv commands are disabled. Helpers print paths/digests, not the payload. Existing outputs cannot be overwritten, including by concurrent exclusive creation.
 
-Build reports remain short Markdown: `Status: COMPLETED`, `Commit: <actual SHA>`, `Verification:` commands/outcomes, implemented behavior and material notes. Builder resolves the commit before `build-handoff`. Metadata validation does not certify test success.
+Build reports remain short Markdown: `Status: COMPLETED`, `Commit: <actual SHA>`, `Verification-Status: PASS|FAIL|BLOCKED`, `Verification:` commands/outcomes, implemented behavior and material notes. Builder resolves the commit before `build-handoff`. Metadata validation does not certify test success.
 
-Reviews use the small JSON format in [report-contract.md](dotfiles/.agents/skills/dev-project/prompts/report-contract.md). It binds mode, base, candidate and contract digest, and distinguishes new findings from per-ID resolution evidence. Empty fields cannot stand in for evidence. A `VALID` envelope means the schema/provenance is valid, **not that the task passed**.
+Reviews use the small JSON format in [report-contract.md](dotfiles/.agents/skills/dev-project/prompts/report-contract.md). It binds mode, base, candidate, contract digest and package digest, and distinguishes new findings from per-ID resolution evidence. Empty fields cannot stand in for evidence. A `VALID` envelope means the schema/provenance is valid, **not that the task passed**.
 
 ```sh
 python3 "$tools/validate_workflow.py" reviews --repo "$repo" \
   --base "$base" --candidate "$candidate" --contract "$brief" --mode task \
-  --report "$review_report" --repair-output "$repair_packet"
+  --report "$review_report" --package "$diff" --repair-output "$repair_packet"
 ```
 
-A PASS advances only after required validation and the review agree with the current clean tracked candidate. FIXES_REQUIRED creates one packet containing exact blocking findings; Minor bodies and checked evidence stay in the report. BLOCKED is an evidence/authority exception, never acceptance. An invalid report is corrected by its owner without a code repair or another reviewer seat. Do not silently treat a legacy `Verdict: PASS` line as current approval.
+A PASS advances only after required validation and the review agree with the current clean tracked candidate. FIXES_REQUIRED, or BLOCKED with findings, creates one packet containing exact blocking findings; Minor bodies and checked evidence stay in the report. BLOCKED is an evidence/authority exception, never acceptance. An invalid report is corrected by its owner without a code repair or another reviewer seat. Do not silently treat a legacy `Verdict: PASS` line as current approval.
 
 ## Repair convergence
 
@@ -89,11 +90,11 @@ One ordinary repair is the expectation. After it fails, use the evidence to chan
 
 ```sh
 python3 "$tools/package_review.py" --repo "$repo" --base "$fix_base" \
-  --candidate "$fixed_candidate" --brief "$brief" --output "$fix_diff"
+  --candidate "$fixed_candidate" --brief "$brief" --previous "$repair_packet" --output "$fix_diff"
 python3 "$tools/validate_workflow.py" reviews --repo "$repo" \
   --base "$fix_base" --candidate "$fixed_candidate" --contract "$brief" \
   --mode repair --previous "$repair_packet" --report "$rereview_report" \
-  --repair-output "$next_repair_packet"
+  --package "$fix_diff" --repair-output "$next_repair_packet"
 ```
 
 A scoped rereviewer explicitly resolves every old blocking ID and inspects repair-caused regressions. Unresolved findings are carried verbatim; retired IDs cannot be reused. Causality is not restricted to changed filenames: a new implementation can break an unchanged caller. A serious defect in the original candidate discovered late is labeled `late-discovery` and remains surfaced/blocking for explicit routing. The helper never downgrades it to make metrics look better. This is bounded review, not an artificial promise that the finding set can only shrink.
@@ -104,7 +105,7 @@ A genuine approved contract change gets a successor brief and affected review; o
 
 Reconcile spec/plan readiness, compact ledger, actual HEAD/index/worktree, exact report provenance and live agent availability. A missing child is not a reason to redispatch accepted tasks. Dirty fresh starts stop; clearly owned interrupted work is preserved/recovered, ambiguous changes are reported. Cancellation preserves everything. Never reset, stash, clean or route a rejected permission request through another agent.
 
-Read the whole plan once for bounded initial preflight, then its compact index/active task only. Validate the plan-defined baseline once and preserve accepted evidence unless relevant code/contracts changed. Operational splits retain parent requirements, explicit sibling coverage and existing repair counts. They do not grant new architecture or parallel writers.
+Planner owns readiness. The controller reads the compact plan index/active task, not a second whole-plan technical preflight. Validate the plan-defined baseline once and preserve accepted evidence unless relevant code/contracts changed. Operational splits retain parent requirements, explicit sibling coverage and existing repair counts. They do not grant new architecture or parallel writers.
 
 After all tasks are accepted, obtain whole-project validation and freeze the final contract before dispatching the configured strongest Reviewer:
 
@@ -114,7 +115,7 @@ python3 "$tools/package_task.py" --final --spec "$project/spec.md" \
   --base "$project_base" --report "$validation_report" --output "$final_contract"
 ```
 
-Package the full project diff against that contract and validate the review with `--mode final`. The reviewer checks integrated requirements, interactions, deferred concerns and actual code, not all past transcripts. Final blockers get one fresh integrated Builder fix wave, focused checks and full-project validation again, then one fresh `final-repair` review with the original final contract and previous packet. No second automatic final fix wave. Real residual blockers mean incomplete.
+Package the full project diff against that contract with `--validation "$validation_report"`, then validate the review with `--mode final --package "$project_diff" --validation "$validation_report"`. The reviewer checks integrated requirements, interactions, deferred concerns and actual code, not all past transcripts. Final blockers get one fresh integrated Builder fix wave, focused checks and full-project validation again, then one fresh `final-repair` review with the original final contract and previous packet. No second automatic final fix wave. Real residual blockers mean incomplete.
 
 On success record final range, evidence, rulings and residual Minors, then delete only `work/`. Retain spec/plan/progress. Workflow completion is a human handoff, not permission to merge/push/rebase or manage worktrees.
 
@@ -129,3 +130,15 @@ The launcher embeds every role, skill, prompt and helper into a content-addresse
 ## Local validation only
 
 `just test-fast` runs asset validation and Python/Git/filesystem tests. `just test-slow` retains actual Rust unit tests/build and the compiled-launcher recording-shim test. `just test` runs both; `just check` remains an alias. No CI workflow, remote runner, or automatic paid model eval is added. See [EVALS.md](EVALS.md) for what deterministic tests can and cannot establish and [VALIDATION.md](VALIDATION.md) for results actually obtained.
+
+## Handoff hardening (models unchanged)
+
+Contracts start with generated base/kind metadata. Initial review must cover that entire base..candidate range; repair review starts at the previous packet's candidate. Schema-2 reviews bind the actual package digest. Gated validation rechecks the package against Git and supplied evidence without printing the diff into controller context. Use `--package` on every `validate_workflow.py reviews` call, `--previous` on repairs/clarifications, and `--validation` for final/final-repair packaging and review checks.
+
+Same-candidate clarification uses mode `clarification`, an explicit per-ID disposition, and preserves its repair count. Every blocking result, including BLOCKED with findings, produces a packet when `--repair-output` is supplied. Helpers enforce at most two reviewed task repairs and one final repair from packet history; no cap grants PASS. Keep immutable predecessor pointers during recovery. Legacy active reports need bounded metadata migration; preserve findings/counts and accepted work rather than restarting the project.
+
+Build and integrated-validation reports declare `Verification-Status: PASS|FAIL|BLOCKED`. Final validation must exist and name the exact full candidate Commit; its digest is bound in the review package. These checks establish declared provenance, not actual test adequacy or truthful model reasoning. Required failures cannot reach the ordinary review gate merely by writing COMPLETED.
+
+Record nonignored untracked inputs once with `validate_workflow.py untracked-baseline --repo <repo> --output <project>/work/untracked.json`. Candidate checks receive `--untracked-baseline`; they reject new/changed nonignored inputs absent from Git, while allowing a preexisting unchanged file or one now committed. Preserve the baseline and keep workflow reports under ignored plans/. This is not hermetic validation: ignored inputs, toolchains, environment and external dependencies still require the recorded validation environment.
+
+Recovery uses `project-ready --project <project> --repo <repo>`. Task rows retain candidate, repairs, contract, review, package and previous packet references. Invalid counters and accepted evidence mismatches fail closed with a bounded recovery error. Detailed Minor observations remain in the report; envelope minor_ids provide their pointer without another packet type. State checks cannot prevent an agent from ignoring the prescribed gates; live behavioral testing remains necessary.

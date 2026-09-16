@@ -6,3 +6,5 @@ Worktree: [REPO]. Read frozen [FINAL_CONTRACT], [FINAL_VALIDATION_REPORT], and [
 Follow `dev-review`: inspect integrated spec coverage, cross-task contracts, regressions, meaningful residuals and rulings. Earlier task PASS is not proof, but do not repeat every task review. Reuse matching validation evidence; ask for missing proof rather than inventing it.
 
 Write mode `final` JSON to [REVIEW_REPORT], using the contract digest in the diff package and `report-contract.md`. Return verdict, path and blocking IDs only. One integrated fix wave and a fresh scoped final rereview are the only automatic final repair path.
+
+Package SHA256: [PACKAGE_SHA256]. Copy this into the schema-2 report. The package binds any previous packet and current final validation.

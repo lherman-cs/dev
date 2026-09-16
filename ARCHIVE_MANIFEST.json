@@ -1,0 +1,758 @@
+{
+  "repository": "lherman-cs/dev",
+  "base_commit": "4946e2f47ffdb78572dbb4dc2175c3c3ab391d67",
+  "models_changed": false,
+  "ci_added": false,
+  "excluded": [
+    ".git",
+    "local ignored plans",
+    "build output",
+    "Python caches",
+    "credentials"
+  ],
+  "removed": [
+    "dotfiles/.agents/skills/dev-project/prompts/task-spec-review.md",
+    "dotfiles/.agents/skills/dev-project/prompts/task-quality-review.md",
+    "dotfiles/.agents/skills/dev-project/prompts/scoped-spec-rereview.md",
+    "dotfiles/.agents/skills/dev-project/prompts/scoped-quality-rereview.md",
+    "dotfiles/.agents/skills/dev-project/prompts/scoped-final-rereview.md"
+  ],
+  "files": [
+    {
+      "path": ".gitignore",
+      "bytes": 176,
+      "sha256": "b469f9a2848c01af14d2f5f23f7b837f711b5d0625cc6b100e68f5237a545704",
+      "git_blob": "c669e37ccc2aa0fec198d41c0cee40dfcbbec0f7",
+      "upstream_blob": "c669e37ccc2aa0fec198d41c0cee40dfcbbec0f7",
+      "status": "preserved"
+    },
+    {
+      "path": "Cargo.lock",
+      "bytes": 16357,
+      "sha256": "f078365c86462e5a8e1a80b25487f184dd1048607ff7eb1ffc27db10ae539e42",
+      "git_blob": "fbe3cc710d9e8f9498ac53f4ca3a6888f6185fc1",
+      "upstream_blob": "fbe3cc710d9e8f9498ac53f4ca3a6888f6185fc1",
+      "status": "preserved"
+    },
+    {
+      "path": "Cargo.toml",
+      "bytes": 311,
+      "sha256": "1a3752b5793fe14c85e4df4defa26b1206c56904d70cb13374f1bcbbead9ffcb",
+      "git_blob": "14250c534da845a23359f26a4af062632f1857a6",
+      "upstream_blob": "14250c534da845a23359f26a4af062632f1857a6",
+      "status": "preserved"
+    },
+    {
+      "path": "EVALS.md",
+      "bytes": 2177,
+      "sha256": "dfc10f8c5a0271820105fff7c72e56aa8593f99ff4ed98e0819aacb16ed9bc64",
+      "git_blob": "9adf619411d959b9d1d65f4698e57e052ffe63d7",
+      "upstream_blob": null,
+      "status": "added"
+    },
+    {
+      "path": "Justfile",
+      "bytes": 895,
+      "sha256": "f4f42373a8d0054ab89652c149e57db0f00db101223a1ea1bb9e0a0cce68ca2a",
+      "git_blob": "4ec010bfcb475e7cddaf23fa9f6553ec0680ba31",
+      "upstream_blob": "4ec010bfcb475e7cddaf23fa9f6553ec0680ba31",
+      "status": "preserved"
+    },
+    {
+      "path": "README.md",
+      "bytes": 7665,
+      "sha256": "1ba8bc1548a1dbff47ea43c81aab6e2cefce01959d76cf750365845369bba6f3",
+      "git_blob": "6735c52b6b73d6340dbcc783063f80d8e4b8cfb5",
+      "upstream_blob": "7c866d0e718e6ca272b9061493aa29f1b4c4e1ff",
+      "status": "modified"
+    },
+    {
+      "path": "REMOVED_FILES.txt",
+      "bytes": 339,
+      "sha256": "8cf3ee90463145c11583de5209c19e4fb08213b1f12dcb1ce7d7f69499e91d51",
+      "git_blob": "40607801e186a2704ad982c8e03e7e030a7ea04a",
+      "upstream_blob": null,
+      "status": "added"
+    },
+    {
+      "path": "REPLACEMENT.md",
+      "bytes": 1711,
+      "sha256": "0b3ac6d0543015ca179e7f22811d6c68f668bdfd5059ad64a291d3f3da2b9415",
+      "git_blob": "e432f4b3c0d54d335e4f63626d97a23390a2a2ed",
+      "upstream_blob": null,
+      "status": "added"
+    },
+    {
+      "path": "SOURCES.md",
+      "bytes": 2746,
+      "sha256": "1640d83e7509983336df9b51ed6225d057bd521cb9cfa945a9117de6a24539cb",
+      "git_blob": "64ff647ca9e5278c05a227410c5ed0d927702901",
+      "upstream_blob": null,
+      "status": "added"
+    },
+    {
+      "path": "VALIDATION.md",
+      "bytes": 2502,
+      "sha256": "a133949b1f94a67b742e1150290e3b48f033ff77948fa6c2ee0220f2b38c209a",
+      "git_blob": "8f92681a35038eac98e8612d88cb44ee37df8806",
+      "upstream_blob": null,
+      "status": "added"
+    },
+    {
+      "path": "WORKFLOW.md",
+      "bytes": 16977,
+      "sha256": "7b722aa0db276e41812d1ac397d0f1e02517b8b4d3f3b415cd05304b5bc9fe50",
+      "git_blob": "a9830d79b1a9dbbae8662bb175f6774950f45770",
+      "upstream_blob": "29f41a19c153cee0c3fbc5ef4ea7a003ad5e3af4",
+      "status": "modified"
+    },
+    {
+      "path": "WORKFLOW_ANALYSIS.md",
+      "bytes": 4301,
+      "sha256": "c025ff2cfc1a733af23b94df5c96ec6bee0865ff424ce0bbb17ff18c8b5e0ea7",
+      "git_blob": "e9122ff77b299f625b14e4b58ec4adad4727a0c6",
+      "upstream_blob": null,
+      "status": "added"
+    },
+    {
+      "path": "agent.toml",
+      "bytes": 2163,
+      "sha256": "fb379eece268d82b53176334c2efa12f7da091910f46bad5147d065915a86a4b",
+      "git_blob": "a2d8a2369810767202f3d95fa72a1aa970c8943f",
+      "upstream_blob": "a2d8a2369810767202f3d95fa72a1aa970c8943f",
+      "status": "preserved"
+    },
+    {
+      "path": "dotfiles/.agents/skills/dev-build/SKILL.md",
+      "bytes": 5069,
+      "sha256": "a88235e8b18366ab362b04cb9f20b3c743802dad5ab74db347ff519c4771544d",
+      "git_blob": "f0b5cb2cd5321b75b8ac46fc21a00ce92b3d94d5",
+      "upstream_blob": "952b07e317aaeb60d7091bcd8b80533445401c15",
+      "status": "modified"
+    },
+    {
+      "path": "dotfiles/.agents/skills/dev-build/agents/openai.yaml",
+      "bytes": 228,
+      "sha256": "37890d6ea04e368368ab8fb250258d08654b93980b4131ff32d022038436523b",
+      "git_blob": "13699d976a27914125c3e80d8c774051e92cc18a",
+      "upstream_blob": "13699d976a27914125c3e80d8c774051e92cc18a",
+      "status": "preserved"
+    },
+    {
+      "path": "dotfiles/.agents/skills/dev-plan/SKILL.md",
+      "bytes": 3944,
+      "sha256": "d5051307587b9bfbb7fc7f1285adce8a5d1a567185bb91b7fec520a3a03934ca",
+      "git_blob": "3ba7ba71cda6dc945ba2e8e14e64e0659ab1d61b",
+      "upstream_blob": "0df5f83728e9b577b90d479f797174abcaecf3b5",
+      "status": "modified"
+    },
+    {
+      "path": "dotfiles/.agents/skills/dev-plan/agents/openai.yaml",
+      "bytes": 243,
+      "sha256": "867b5605505e581eb647063848c9145cca1f7b20c65290517e3b9f08b27b3237",
+      "git_blob": "20af7ff46979f76941f39dd834e8234683976bae",
+      "upstream_blob": "20af7ff46979f76941f39dd834e8234683976bae",
+      "status": "preserved"
+    },
+    {
+      "path": "dotfiles/.agents/skills/dev-project/SKILL.md",
+      "bytes": 10482,
+      "sha256": "a6889d26dda6f8dbfb47aa4965f6af88be46c6391c86f810d064231053b7037c",
+      "git_blob": "105db01b52139f45c88548090116ff6ca1592eb0",
+      "upstream_blob": "0bac8431076fd2f8f18d5bb82f4142598c794919",
+      "status": "modified"
+    },
+    {
+      "path": "dotfiles/.agents/skills/dev-project/agents/openai.yaml",
+      "bytes": 246,
+      "sha256": "caa60dad80185a96b46cbaedbb1353cba906b322b83c5cec1bb6f342c75212da",
+      "git_blob": "ed3872b79ccd644e17feba884da7045459955250",
+      "upstream_blob": "ed3872b79ccd644e17feba884da7045459955250",
+      "status": "preserved"
+    },
+    {
+      "path": "dotfiles/.agents/skills/dev-project/prompts/build-task.md",
+      "bytes": 512,
+      "sha256": "dc9f6c2b4c3f80d4f14be6683a3cb4d3e36b0f0105c843f0724682368a58c576",
+      "git_blob": "602e2c27b3ea19afee6a9fa718a01c75a1168e74",
+      "upstream_blob": "602e2c27b3ea19afee6a9fa718a01c75a1168e74",
+      "status": "preserved"
+    },
+    {
+      "path": "dotfiles/.agents/skills/dev-project/prompts/explore-facts.md",
+      "bytes": 887,
+      "sha256": "114697f8223c0ab3de9f03683ac2bc2c82d44cea272321149627f67ad62efe81",
+      "git_blob": "52d9e63e2e9da86750af5d6943fe0a90504e049e",
+      "upstream_blob": "52d9e63e2e9da86750af5d6943fe0a90504e049e",
+      "status": "preserved"
+    },
+    {
+      "path": "dotfiles/.agents/skills/dev-project/prompts/final-review.md",
+      "bytes": 1063,
+      "sha256": "ab3b1c55a2c89add50e55bb8c7990a92afa7a4ea96d936eca94817c575d4e1d1",
+      "git_blob": "0ff196987336776b4c31e76f877ad0da66fd04d9",
+      "upstream_blob": "d9828147bb4ced759bc049664f2dfbc636aed45e",
+      "status": "modified"
+    },
+    {
+      "path": "dotfiles/.agents/skills/dev-project/prompts/fix-task.md",
+      "bytes": 850,
+      "sha256": "f839e44dfa97b8ed221854898d6d2c61172d3937de713dceb71e198df7df7f90",
+      "git_blob": "5b87c6704dcd1b6ab49b7382dd7c6ecf2d9ad255",
+      "upstream_blob": "5b87c6704dcd1b6ab49b7382dd7c6ecf2d9ad255",
+      "status": "preserved"
+    },
+    {
+      "path": "dotfiles/.agents/skills/dev-project/prompts/plan-project.md",
+      "bytes": 606,
+      "sha256": "6e193253ebd085bdaccc7fad492783ed95924b988004c1cca26a396bcbaa36ea",
+      "git_blob": "bc9130f4ac73b6b732f1740685a95e7231827ea4",
+      "upstream_blob": "bc9130f4ac73b6b732f1740685a95e7231827ea4",
+      "status": "preserved"
+    },
+    {
+      "path": "dotfiles/.agents/skills/dev-project/prompts/progress-template.md",
+      "bytes": 669,
+      "sha256": "242a19f212e0e707375bad8427ee9aa175fcca9394e6c837d394b57fe3eaa5a0",
+      "git_blob": "f19aa5bf2f7e3493b1baf60d631addf41d638514",
+      "upstream_blob": "c3d4025a0173ee356973f46be1e8fe80753be27a",
+      "status": "modified"
+    },
+    {
+      "path": "dotfiles/.agents/skills/dev-project/prompts/replan-project.md",
+      "bytes": 687,
+      "sha256": "2cdd25b6cd4695531cf001ed334ea5954edf6df1a3e13fc23afa3e88d4a8ace3",
+      "git_blob": "bf2216e655af485f7aabee9751bb8593708bc47d",
+      "upstream_blob": "bf2216e655af485f7aabee9751bb8593708bc47d",
+      "status": "preserved"
+    },
+    {
+      "path": "dotfiles/.agents/skills/dev-project/prompts/report-contract.md",
+      "bytes": 3050,
+      "sha256": "229851494cee818b1e58477b2e302cd0182b519f18cd71be2196a7a5f426704d",
+      "git_blob": "78430c9e5d4bceb4112f4a4ebd4828f4d401d93c",
+      "upstream_blob": "3e644bdeefd645cfb65e5deb23f9ae588d054f64",
+      "status": "modified"
+    },
+    {
+      "path": "dotfiles/.agents/skills/dev-project/prompts/scoped-rereview.md",
+      "bytes": 1029,
+      "sha256": "8708750853e8fb03c93c3af9c0c46002b9456ee0e7aa5e45fe55a5e99507b38f",
+      "git_blob": "2c966d3cb3170b9dfb53cf2abd2049ec81fced6e",
+      "upstream_blob": "7dcc0e98fc7d3ef1a15104caad8e3569b48f9c4c",
+      "status": "modified"
+    },
+    {
+      "path": "dotfiles/.agents/skills/dev-project/prompts/task-review.md",
+      "bytes": 933,
+      "sha256": "094c985253a14e0d494499477825ea980050f2764c67dde2534112384f28aceb",
+      "git_blob": "81794a9cec6cb3dc7aea194a16ce0a1c58d49ac9",
+      "upstream_blob": "1e2e9cd4d76dd55a7d71d3b3460d21118b4656fc",
+      "status": "modified"
+    },
+    {
+      "path": "dotfiles/.agents/skills/dev-project/scripts/package_review.py",
+      "bytes": 4015,
+      "sha256": "7c4cdc47dc97db34f2e2c01d16d668d6f8521250e50b7fe11a26721724294fef",
+      "git_blob": "71888aca30c5150292bdb4c22a32ca1eada63f8a",
+      "upstream_blob": "a5b67afd99c5717b690fe1b3c65dd605b27b41eb",
+      "status": "modified"
+    },
+    {
+      "path": "dotfiles/.agents/skills/dev-project/scripts/package_task.py",
+      "bytes": 6737,
+      "sha256": "5db4249735928df850b995f140199a188aadba3628b29d65a4cc5fba8b6d989b",
+      "git_blob": "56c3603b3b5c69b1f95b870263dbf185203c2c69",
+      "upstream_blob": "d6f95bd4ccbb2a9f137e4f9cba0f1e6b56bed4ac",
+      "status": "modified"
+    },
+    {
+      "path": "dotfiles/.agents/skills/dev-project/scripts/prepare_workspace.py",
+      "bytes": 2107,
+      "sha256": "de9be0010e1267967f102acd6904b98f5358a48585d79d7771a3e7f4a7e30145",
+      "git_blob": "c2c53a13d1150708e25b7d2febd4f6f03e5be2c6",
+      "upstream_blob": "c2c53a13d1150708e25b7d2febd4f6f03e5be2c6",
+      "status": "preserved"
+    },
+    {
+      "path": "dotfiles/.agents/skills/dev-project/scripts/review_report.py",
+      "bytes": 12129,
+      "sha256": "28027930201d2b507209b4bc1903ebd627050e11bead857f58c55f85c7829563",
+      "git_blob": "f0ea79fdf1009310b9987f10209d8068da40a0cf",
+      "upstream_blob": "ef293a20598ba6fe27b07fd2085a9e02f243b2e4",
+      "status": "modified"
+    },
+    {
+      "path": "dotfiles/.agents/skills/dev-project/scripts/validate_workflow.py",
+      "bytes": 14384,
+      "sha256": "1511265256e292950aed3d6a7362979f1c7e0b221d393bf797b0266f2244ef2f",
+      "git_blob": "0c27b090b95ab79b4c35d29fc06de0cab5de15fb",
+      "upstream_blob": "ae20da96f63beb4b990eef6a6f9a0cc200723d26",
+      "status": "modified"
+    },
+    {
+      "path": "dotfiles/.agents/skills/dev-review/SKILL.md",
+      "bytes": 4857,
+      "sha256": "adba9c6c0d6d137faa4433014d566d8fb7771e9c3a9f97ea89e6dff799b83f04",
+      "git_blob": "d79f6e9289861fa313ce64b506c3987c75418e25",
+      "upstream_blob": "f5d24b87212b231be14304a6cb34c1a16080ffdf",
+      "status": "modified"
+    },
+    {
+      "path": "dotfiles/.agents/skills/dev-review/agents/openai.yaml",
+      "bytes": 250,
+      "sha256": "7037f435cb5e71c8758bcd12d3b727e7118c41397f1c7d41d6b28b264162187f",
+      "git_blob": "de65b7a054ed89ced147c74e17422007ae4b501a",
+      "upstream_blob": "de65b7a054ed89ced147c74e17422007ae4b501a",
+      "status": "preserved"
+    },
+    {
+      "path": "dotfiles/.agents/skills/dev-spec/SKILL.md",
+      "bytes": 3057,
+      "sha256": "180cc464abee62b5cd6a56eace42cd23a4e3a3b5f5212e13122313a61e39b098",
+      "git_blob": "76572a93f8474ddd2bbbe017dd498c42f80a4ad6",
+      "upstream_blob": "5c60e6f8a1293b23cba3faf6acd3d77ebf2ec327",
+      "status": "modified"
+    },
+    {
+      "path": "dotfiles/.agents/skills/dev-spec/agents/openai.yaml",
+      "bytes": 236,
+      "sha256": "2bb06e51595be0a7d754621f5e65e608a4a3ea75f0b45d5431b85b90ffbcf5f7",
+      "git_blob": "526b5f455b9e1e00c46c305e937431d5fbceeb12",
+      "upstream_blob": "526b5f455b9e1e00c46c305e937431d5fbceeb12",
+      "status": "preserved"
+    },
+    {
+      "path": "dotfiles/.codex/agents/builder.toml",
+      "bytes": 789,
+      "sha256": "46aa1dd320a3ff706aa64be15b53350d4b8925be2733ec4ee98a45570888233a",
+      "git_blob": "2b42128dbcb5ca8b3d425aac42a83d313d510f86",
+      "upstream_blob": "2b42128dbcb5ca8b3d425aac42a83d313d510f86",
+      "status": "preserved"
+    },
+    {
+      "path": "dotfiles/.codex/agents/builder_strong.toml",
+      "bytes": 869,
+      "sha256": "70a678a59595f1154749d2961dfb5c414e0578a2f8fb1a6f38ec2f1379292da8",
+      "git_blob": "2a462d4809c41bf3cc36fe91f6d9f10e71c1b507",
+      "upstream_blob": "2a462d4809c41bf3cc36fe91f6d9f10e71c1b507",
+      "status": "preserved"
+    },
+    {
+      "path": "dotfiles/.codex/agents/explorer.toml",
+      "bytes": 1119,
+      "sha256": "6bd10c1e4c313f18c565baffc5a96abb08d970a180f39588f8cfe3ce2b3344ad",
+      "git_blob": "8119635250ab495f66f24ffb0749154310750a32",
+      "upstream_blob": "8119635250ab495f66f24ffb0749154310750a32",
+      "status": "preserved"
+    },
+    {
+      "path": "dotfiles/.codex/agents/orchestrator.toml",
+      "bytes": 1080,
+      "sha256": "f65739ffa8bbf5583e8ddc45112f76b15745382c3a08b94d1af16b4ce5272e06",
+      "git_blob": "cfa92decffb8a2c8a66c715f27e49e472620b35b",
+      "upstream_blob": "cfa92decffb8a2c8a66c715f27e49e472620b35b",
+      "status": "preserved"
+    },
+    {
+      "path": "dotfiles/.codex/agents/planner.toml",
+      "bytes": 826,
+      "sha256": "0ec7f1868fe16288de25cb9f9f2b7feff0092f5646125344074a225f5f38bb6f",
+      "git_blob": "a4d2e8ed752d776f4b9daddc5b32ddefbb231522",
+      "upstream_blob": "a4d2e8ed752d776f4b9daddc5b32ddefbb231522",
+      "status": "preserved"
+    },
+    {
+      "path": "dotfiles/.codex/agents/reviewer.toml",
+      "bytes": 865,
+      "sha256": "a0d7e1ee69660ac1f513e02c0a2bbed6c6ccc4e479cb78447e35557c74ffe3eb",
+      "git_blob": "2766499a68ea3746331038c5dc714fd582b7d21d",
+      "upstream_blob": "2766499a68ea3746331038c5dc714fd582b7d21d",
+      "status": "preserved"
+    },
+    {
+      "path": "dotfiles/.codex/agents/reviewer_strong.toml",
+      "bytes": 855,
+      "sha256": "b3140f09b1b47e9b6e2893d4121a01eceefecf00c6cfad245cc0da0d2210ee2e",
+      "git_blob": "ad7f4268c9ca2261d07980017f8e997e63c6b058",
+      "upstream_blob": "ad7f4268c9ca2261d07980017f8e997e63c6b058",
+      "status": "preserved"
+    },
+    {
+      "path": "dotfiles/.codex/agents/specifier.toml",
+      "bytes": 778,
+      "sha256": "bed45fdc3e877b2162fef789a2e5f77c7535be46469e9347e4ef1b69f1553681",
+      "git_blob": "fe420584dd45c98311e9a31b3970ed316e88c0cb",
+      "upstream_blob": "fe420584dd45c98311e9a31b3970ed316e88c0cb",
+      "status": "preserved"
+    },
+    {
+      "path": "dotfiles/.codex/config.fragment.toml",
+      "bytes": 221,
+      "sha256": "0fc6fe54357cc58240cc37e31435501fbd436bf4765f34c9dc7a32e5e396e38d",
+      "git_blob": "1a167c69aca0d7c7b2931f06d1ee06d48e5922cc",
+      "upstream_blob": "1a167c69aca0d7c7b2931f06d1ee06d48e5922cc",
+      "status": "preserved"
+    },
+    {
+      "path": "dotfiles/.config/alacritty/alacritty.toml",
+      "bytes": 2560,
+      "sha256": "7fea7993d71f4f8ee62970d902397b087b9a92d7ecd6b1f54e4be9e2bac9ee5b",
+      "git_blob": "a44e430242273a296ae554bdb1ec09e2eadfe801",
+      "upstream_blob": "a44e430242273a296ae554bdb1ec09e2eadfe801",
+      "status": "preserved"
+    },
+    {
+      "path": "dotfiles/.config/nvim/.gitignore",
+      "bytes": 51,
+      "sha256": "f284e46933d658c493bafc852fe1bb46f54e5dbe479c251a739139517d4683ec",
+      "git_blob": "cc5457ab807fad274a186d863d5b7c225948363d",
+      "upstream_blob": "cc5457ab807fad274a186d863d5b7c225948363d",
+      "status": "preserved"
+    },
+    {
+      "path": "dotfiles/.config/nvim/.neoconf.json",
+      "bytes": 183,
+      "sha256": "1819a5b64b71521f214b374bdb3b4dd7531a2b91b881c0803e0029811da7f3e4",
+      "git_blob": "7c480874658bdf329eb36d3e5aabd9bf9e0636a6",
+      "upstream_blob": "7c480874658bdf329eb36d3e5aabd9bf9e0636a6",
+      "status": "preserved"
+    },
+    {
+      "path": "dotfiles/.config/nvim/LICENSE",
+      "bytes": 11357,
+      "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
+      "git_blob": "261eeb9e9f8b2b4b0d119366dda99c6fd7d35c64",
+      "upstream_blob": "261eeb9e9f8b2b4b0d119366dda99c6fd7d35c64",
+      "status": "preserved"
+    },
+    {
+      "path": "dotfiles/.config/nvim/README.md",
+      "bytes": 171,
+      "sha256": "9969960a98455417b5f3781772f01528a64bb450e5f9db57734713ae920bd84a",
+      "git_blob": "185280b0165c72d6005b4a319a8fc7ab40eada49",
+      "upstream_blob": "185280b0165c72d6005b4a319a8fc7ab40eada49",
+      "status": "preserved"
+    },
+    {
+      "path": "dotfiles/.config/nvim/init.lua",
+      "bytes": 122,
+      "sha256": "4f982e4d371bda5b6d53de0d3cca5e9472d5ff733f2c125e8b7dcdb4d0a50639",
+      "git_blob": "5b7f8619ec8fa5de6ebd0657c8b6d151e8b0df41",
+      "upstream_blob": "5b7f8619ec8fa5de6ebd0657c8b6d151e8b0df41",
+      "status": "preserved"
+    },
+    {
+      "path": "dotfiles/.config/nvim/lazy-lock.json",
+      "bytes": 4781,
+      "sha256": "7b1e348d5f137170fc1344924f8a92810eee3cbdb91e2c5312c883858cc5855a",
+      "git_blob": "6a720ad62afa3c3d4895a9d805fad42cc234ea6c",
+      "upstream_blob": "6a720ad62afa3c3d4895a9d805fad42cc234ea6c",
+      "status": "preserved"
+    },
+    {
+      "path": "dotfiles/.config/nvim/lua/api/json.lua",
+      "bytes": 9520,
+      "sha256": "a46c5216afb4fd1200ae01f5e04e709307d13b51ae649ef6edce14230f0bdf0e",
+      "git_blob": "0246f507ed55f9ca65a6dd0ab46f8031e0e5eed5",
+      "upstream_blob": "0246f507ed55f9ca65a6dd0ab46f8031e0e5eed5",
+      "status": "preserved"
+    },
+    {
+      "path": "dotfiles/.config/nvim/lua/config/autocmds.lua",
+      "bytes": 424,
+      "sha256": "ccb2b3a99fe03698bdacaf41b98a48126c70fa38eaa1970e14e7309c876a9635",
+      "git_blob": "4221e75867a5413b47250a33fcc7bab4afd406ad",
+      "upstream_blob": "4221e75867a5413b47250a33fcc7bab4afd406ad",
+      "status": "preserved"
+    },
+    {
+      "path": "dotfiles/.config/nvim/lua/config/keymaps.lua",
+      "bytes": 2535,
+      "sha256": "a0320d57d8b9a9a5d793009d8a2393ae0b699e8a40419d7a061d6770d8ca23a3",
+      "git_blob": "3e0dfe670ef3b22f893db1f23352132ad788ebef",
+      "upstream_blob": "3e0dfe670ef3b22f893db1f23352132ad788ebef",
+      "status": "preserved"
+    },
+    {
+      "path": "dotfiles/.config/nvim/lua/config/lazy.lua",
+      "bytes": 2241,
+      "sha256": "c593b221dd869a92a11b22dc5e19d24ce2919d55aac1d4d53f5a05fa5daafaf0",
+      "git_blob": "b484ae70e5210380ed3e141a815f976a3bc47cbf",
+      "upstream_blob": "b484ae70e5210380ed3e141a815f976a3bc47cbf",
+      "status": "preserved"
+    },
+    {
+      "path": "dotfiles/.config/nvim/lua/config/options.lua",
+      "bytes": 357,
+      "sha256": "5c29a652605aa9d8479921420b3e2cd32318ac9e9f7c671e615bd7f065f0f5ad",
+      "git_blob": "36d196e18214e981de713cdc337de663e7bc53e8",
+      "upstream_blob": "36d196e18214e981de713cdc337de663e7bc53e8",
+      "status": "preserved"
+    },
+    {
+      "path": "dotfiles/.config/nvim/lua/plugins/core.lua",
+      "bytes": 2878,
+      "sha256": "c37f3a1e5584ec766e83fce21a932114d81b3579ce9f774f28e44531ce366bed",
+      "git_blob": "5cbebb78692c0f54ffc968f650e1be32820e94cb",
+      "upstream_blob": "5cbebb78692c0f54ffc968f650e1be32820e94cb",
+      "status": "preserved"
+    },
+    {
+      "path": "dotfiles/.config/nvim/lua/telescope/_extensions/workspace.lua",
+      "bytes": 2077,
+      "sha256": "837aed0327cf807a51ce7ad9deedae4228dc19e87cd113dd7d5557f54a9840cc",
+      "git_blob": "a5cf3c98129bd1aca6e2496d49783eade674b782",
+      "upstream_blob": "a5cf3c98129bd1aca6e2496d49783eade674b782",
+      "status": "preserved"
+    },
+    {
+      "path": "dotfiles/.config/nvim/stylua.toml",
+      "bytes": 58,
+      "sha256": "59841fbcee7b707144c6a470e96e96e96062d7a59d2e45bac445984d863e1af2",
+      "git_blob": "5d6c50dce955fe8b2d86106d4cc4616f5fc2fd59",
+      "upstream_blob": "5d6c50dce955fe8b2d86106d4cc4616f5fc2fd59",
+      "status": "preserved"
+    },
+    {
+      "path": "dotfiles/.config/solaar/config.yaml",
+      "bytes": 3870,
+      "sha256": "d03d93ab902998b0a999d313e876e9e3586b90c6a1a2d3ac37b3ffe8075bed9d",
+      "git_blob": "ccbbe8f09654d68012940eab8d6343913dcdbf54",
+      "upstream_blob": "ccbbe8f09654d68012940eab8d6343913dcdbf54",
+      "status": "preserved"
+    },
+    {
+      "path": "dotfiles/.config/solaar/rules.yaml",
+      "bytes": 78,
+      "sha256": "37ce4f477069ce9ad49be871924adeafddf396a646690eba603e5e36741b1a39",
+      "git_blob": "4b80e24cd5b9fdb5e4edc7ebc6fbf209d55d80a7",
+      "upstream_blob": "4b80e24cd5b9fdb5e4edc7ebc6fbf209d55d80a7",
+      "status": "preserved"
+    },
+    {
+      "path": "dotfiles/.extend.rc",
+      "bytes": 1935,
+      "sha256": "8a04b16df011f9181a2357ec02e7d287586ab735cf81a1e7d5004c4028ac9a14",
+      "git_blob": "6a82547658fdc43e21c859c7134139c2ce8620f9",
+      "upstream_blob": "6a82547658fdc43e21c859c7134139c2ce8620f9",
+      "status": "preserved"
+    },
+    {
+      "path": "dotfiles/.gitconfig",
+      "bytes": 181,
+      "sha256": "997a56af18cbc2e3c6182575fae8e183adfd6bdf44c7c20110ca958ab9e3689d",
+      "git_blob": "756e46883ce284a8cf47be943471f42519d04543",
+      "upstream_blob": "756e46883ce284a8cf47be943471f42519d04543",
+      "status": "preserved"
+    },
+    {
+      "path": "dotfiles/.tmux.conf",
+      "bytes": 1578,
+      "sha256": "25fa9afb043631c9df043c5fab3a8313de9c0d0b1e0d5e50cb986c183b3de9d0",
+      "git_blob": "b803bb1cade0f9dcefe3445ff86797105e2c110e",
+      "upstream_blob": "b803bb1cade0f9dcefe3445ff86797105e2c110e",
+      "status": "preserved"
+    },
+    {
+      "path": "dotfiles/.zshenv",
+      "bytes": 106,
+      "sha256": "94ae853dae44d42cd0ff277a2869350a932ef7d5d3c73ce5e28cd44cc165edec",
+      "git_blob": "2db4afeb2de41bda651e55d7c511404d212e70ad",
+      "upstream_blob": "2db4afeb2de41bda651e55d7c511404d212e70ad",
+      "status": "preserved"
+    },
+    {
+      "path": "firefox-rkmpp.md",
+      "bytes": 238,
+      "sha256": "16cbea185a7fdaacb60bb9c836e7d112ef0d17e4276aec083ce446943b1a87e1",
+      "git_blob": "97b6e53f7f2a9c1a1eaabb551503308768217e3c",
+      "upstream_blob": "97b6e53f7f2a9c1a1eaabb551503308768217e3c",
+      "status": "preserved"
+    },
+    {
+      "path": "flake.lock",
+      "bytes": 1497,
+      "sha256": "4c33f7f1ccb8eca14b52dcdb945d67d5ef94bf1d9e1fbe39ceaa7be191e3d1cb",
+      "git_blob": "9cb74d65fe3c5a389671bf6b4b9e791b65db1020",
+      "upstream_blob": "9cb74d65fe3c5a389671bf6b4b9e791b65db1020",
+      "status": "preserved"
+    },
+    {
+      "path": "flake.nix",
+      "bytes": 890,
+      "sha256": "a0df9b801e2d31997faa5d60b2da5ce7bbd8564cc18e722f999d9117ad4d8789",
+      "git_blob": "43aa9a9bf93d7cb18686ec5cf70a96de1f9d6f81",
+      "upstream_blob": "43aa9a9bf93d7cb18686ec5cf70a96de1f9d6f81",
+      "status": "preserved"
+    },
+    {
+      "path": "install-legacy.sh",
+      "bytes": 934,
+      "sha256": "784b96b8f9a54ceb0cde04cb634c7dbdfeb1b78a049780a6cb88c03e55fd8e8c",
+      "git_blob": "f19436e8b9eaf05f2c628284e14059bde6faa9ec",
+      "upstream_blob": "f19436e8b9eaf05f2c628284e14059bde6faa9ec",
+      "status": "preserved"
+    },
+    {
+      "path": "install.sh",
+      "bytes": 3333,
+      "sha256": "e9a3f5ab6e28dc89a97682f50a7d7e1a95288e0d00d0393b421873130ccd5d2e",
+      "git_blob": "04bc58fe7121cf9eda7b7b853353b7ee03df4b74",
+      "upstream_blob": "04bc58fe7121cf9eda7b7b853353b7ee03df4b74",
+      "status": "preserved"
+    },
+    {
+      "path": "learning/Kubernetes.md",
+      "bytes": 196,
+      "sha256": "50fec87f8dc979bdca1fd9278f70ff7c2c463ca62d9113c16beefd3474159f8f",
+      "git_blob": "c6642e33bd34be09b85a69818608996d9a547b0a",
+      "upstream_blob": "c6642e33bd34be09b85a69818608996d9a547b0a",
+      "status": "preserved"
+    },
+    {
+      "path": "plugins/dev/.codex-plugin/plugin.json",
+      "bytes": 463,
+      "sha256": "807de272ab82d498351eb093f9b9f5659264e1f56ffa5d3813a3065a55b19604",
+      "git_blob": "1d0a01eb7291d39a1ada3fa90f93cc4b04c40e0f",
+      "upstream_blob": "1d0a01eb7291d39a1ada3fa90f93cc4b04c40e0f",
+      "status": "preserved"
+    },
+    {
+      "path": "scripts/install_workflow.py",
+      "bytes": 4660,
+      "sha256": "b07997e50ac1a694478f4ee0a66994061435e7d862a034e7e59770f402973ba7",
+      "git_blob": "03b375e7bad8ce23f54ae03c684f96a7e9c50d75",
+      "upstream_blob": "03b375e7bad8ce23f54ae03c684f96a7e9c50d75",
+      "status": "preserved"
+    },
+    {
+      "path": "skill-requirements.md",
+      "bytes": 3533,
+      "sha256": "fb9445c26dcb5c8f448db4452a174ee03d09326b87c4c7f45a2fe517fa38b17d",
+      "git_blob": "662b43f1b550255e03009f55bf8c957f848633bc",
+      "upstream_blob": "24b270bbe8c8ae10e19ec4f60c5886cee8633013",
+      "status": "modified"
+    },
+    {
+      "path": "src/agent_roles.rs",
+      "bytes": 11698,
+      "sha256": "62c17a184455b956ab8a938c0805e1b26c8ff9ff64d9d92cd35afba143513e28",
+      "git_blob": "34fe6f2bcfc4d98b25b0b509ca9e4b5225f7c9ae",
+      "upstream_blob": "34fe6f2bcfc4d98b25b0b509ca9e4b5225f7c9ae",
+      "status": "preserved"
+    },
+    {
+      "path": "src/agent_workflow_tests.rs",
+      "bytes": 6976,
+      "sha256": "340f24def2c05b3db4dc5ab05eeb239fa22003ff95cf5f849ec88e595af5e7b2",
+      "git_blob": "1eba1e0335a7653d368383565d66cc28023f3fce",
+      "upstream_blob": "1eba1e0335a7653d368383565d66cc28023f3fce",
+      "status": "preserved"
+    },
+    {
+      "path": "src/main.rs",
+      "bytes": 149742,
+      "sha256": "80a4a0a2c1d1e6cd7468966a5b6d8f17bc93e95dbe0f5fbc896ccdcd82673ee9",
+      "git_blob": "c59014f7af4971637bb09af705883168b1c9948e",
+      "upstream_blob": "c59014f7af4971637bb09af705883168b1c9948e",
+      "status": "preserved"
+    },
+    {
+      "path": "tests/launcher_e2e.py",
+      "bytes": 6657,
+      "sha256": "847298855f98d2a7fd0527821fae708b0f7fb8d7e46aa7998a6890558b24935f",
+      "git_blob": "9339be21b9362b705acf1146c83ac86b3fe61a16",
+      "upstream_blob": "9339be21b9362b705acf1146c83ac86b3fe61a16",
+      "status": "preserved"
+    },
+    {
+      "path": "tests/permissions_e2e.py",
+      "bytes": 7114,
+      "sha256": "f06e636f08ddf890e3ec8fae7e4e3cb9b498456b6ae8abe3ff5901032fcdb957",
+      "git_blob": "9e17b6329e5931a19498044075afc09b6938f2e5",
+      "upstream_blob": "9e17b6329e5931a19498044075afc09b6938f2e5",
+      "status": "preserved"
+    },
+    {
+      "path": "tests/requirements.txt",
+      "bytes": 91,
+      "sha256": "6bfaaa4449a9a7eeed58d40ea72991ecb06dd334f7eacbe58ca58ea6c3ac8de9",
+      "git_blob": "6c17142b05d7703be4faa217129eb7aff330e326",
+      "upstream_blob": "6c17142b05d7703be4faa217129eb7aff330e326",
+      "status": "preserved"
+    },
+    {
+      "path": "tests/test_handoff_hardening.py",
+      "bytes": 10643,
+      "sha256": "59b333c1c3bba38b7942cef830e5ffc3d26adfd1a10a7d5f0df8ee3385b12507",
+      "git_blob": "5f998faa17726b4cb8bee295d4e030a5c6e93fa5",
+      "upstream_blob": null,
+      "status": "added"
+    },
+    {
+      "path": "tests/test_install_workflow.py",
+      "bytes": 6781,
+      "sha256": "00ac03d2c5ae37ff1159f50d0f1ad0422d7e42cec53fa87072004b84ceb09d6e",
+      "git_blob": "506c4e0d8fc3dabb2f770934891183148bb0bf8e",
+      "upstream_blob": "506c4e0d8fc3dabb2f770934891183148bb0bf8e",
+      "status": "preserved"
+    },
+    {
+      "path": "tests/test_review_reports.py",
+      "bytes": 12501,
+      "sha256": "209101ed7aae9ef1c8df2140b8fd173300333a08e8b0286a67999ed1e7ebe8a4",
+      "git_blob": "fa9bc068022eaf1304008a75a7f84453b6eb5a1b",
+      "upstream_blob": "97970539e6d6756efc5033d60607ba7875dd37a8",
+      "status": "modified"
+    },
+    {
+      "path": "tests/test_workflow_tools.py",
+      "bytes": 16769,
+      "sha256": "d9fc027a0a3ea117bb0404bd6b965aaa3da1bace20dc63dbbc951e9b68b6022b",
+      "git_blob": "514e970de3b993ddbb7ba3059d398552608207ee",
+      "upstream_blob": "42d07e862055d27a5299e1153fa05dc8a5024170",
+      "status": "modified"
+    },
+    {
+      "path": "tests/validate_assets.py",
+      "bytes": 7367,
+      "sha256": "c30089e98ad3e936bfb04cfedd4e86228e75f087ad229a2775fc5710b6109437",
+      "git_blob": "cfd3707beaf909c3a02f2dbde345524127509062",
+      "upstream_blob": "cfd3707beaf909c3a02f2dbde345524127509062",
+      "status": "preserved"
+    },
+    {
+      "path": "tests/workflow_pressure_cases.yaml",
+      "bytes": 13367,
+      "sha256": "77a16e53c36a22800a61d93d7f756ae733353e86d44a00bd617b3c67b99a24ba",
+      "git_blob": "e9e05686c334cb5f57bd28421c503d0faba891ab",
+      "upstream_blob": "e9e05686c334cb5f57bd28421c503d0faba891ab",
+      "status": "preserved"
+    },
+    {
+      "path": "validation/asset-validation.json",
+      "bytes": 792,
+      "sha256": "d6c0de79fab6bc7c4b6885c68f662466b8fd88ca9f1887b8814c2992c8f3c34c",
+      "git_blob": "9f56d19f6e59f01ffb1c8b6d0fc99992e12e7ca0",
+      "upstream_blob": null,
+      "status": "added"
+    },
+    {
+      "path": "validation/python-tests.log",
+      "bytes": 188,
+      "sha256": "8b227599d5bc0d01e44720fd0889e53f8651c870a6c153e5a2900ff1b868f716",
+      "git_blob": "2fd627fb05d93400b49cea06f6ee1dc521858190",
+      "upstream_blob": null,
+      "status": "added"
+    },
+    {
+      "path": "workflow-questionnaire.md",
+      "bytes": 31407,
+      "sha256": "bfa36720f2a3f8de126a0fcebd211e78e38cdfce67539257fd38d76a53159ecc",
+      "git_blob": "9ff086995042054afb21acf4ce9b7ba96eeea755",
+      "upstream_blob": "3a3affbe7099002c2c4d219d1f184f36c1209699",
+      "status": "modified"
+    }
+  ]
+}
