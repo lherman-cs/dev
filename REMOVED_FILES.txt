@@ -1,5 +1,0 @@
-dotfiles/.agents/skills/dev-project/prompts/task-spec-review.md
-dotfiles/.agents/skills/dev-project/prompts/task-quality-review.md
-dotfiles/.agents/skills/dev-project/prompts/scoped-spec-rereview.md
-dotfiles/.agents/skills/dev-project/prompts/scoped-quality-rereview.md
-dotfiles/.agents/skills/dev-project/prompts/scoped-final-rereview.md

@@ -44,19 +44,19 @@
     },
     {
       "path": "EVALS.md",
-      "bytes": 2177,
-      "sha256": "dfc10f8c5a0271820105fff7c72e56aa8593f99ff4ed98e0819aacb16ed9bc64",
-      "git_blob": "9adf619411d959b9d1d65f4698e57e052ffe63d7",
+      "bytes": 2519,
+      "sha256": "cbd1b82d3302e420893f4e4c05165536c689f0c11886659242b780cfd8dcbe75",
+      "git_blob": null,
       "upstream_blob": null,
-      "status": "added"
+      "status": "simulation-extension"
     },
     {
       "path": "Justfile",
-      "bytes": 895,
-      "sha256": "f4f42373a8d0054ab89652c149e57db0f00db101223a1ea1bb9e0a0cce68ca2a",
-      "git_blob": "4ec010bfcb475e7cddaf23fa9f6553ec0680ba31",
+      "bytes": 1177,
+      "sha256": "aebe0c8440f89a00994e6a61aaafc80c1b73a14887a5160ece15c240ab5a2d7e",
+      "git_blob": null,
       "upstream_blob": "4ec010bfcb475e7cddaf23fa9f6553ec0680ba31",
-      "status": "preserved"
+      "status": "simulation-extension"
     },
     {
       "path": "README.md",
@@ -83,6 +83,14 @@
       "status": "added"
     },
     {
+      "path": "SIMULATION.md",
+      "bytes": 2557,
+      "sha256": "0b352cdd25295790b689e242d111ab737d5c8c8b5d2dd51e736a622ff9937ead",
+      "git_blob": null,
+      "upstream_blob": null,
+      "status": "simulation-extension"
+    },
+    {
       "path": "SOURCES.md",
       "bytes": 2746,
       "sha256": "1640d83e7509983336df9b51ed6225d057bd521cb9cfa945a9117de6a24539cb",
@@ -92,8 +100,8 @@
     },
     {
       "path": "VALIDATION.md",
-      "bytes": 2502,
-      "sha256": "a133949b1f94a67b742e1150290e3b48f033ff77948fa6c2ee0220f2b38c209a",
+      "bytes": 3665,
+      "sha256": "f43f241d19622692d536460bf1b7a71a82889d32ebebbe25d3250b57f957576e",
       "git_blob": "8f92681a35038eac98e8612d88cb44ee37df8806",
       "upstream_blob": null,
       "status": "added"
@@ -627,6 +635,14 @@
       "status": "preserved"
     },
     {
+      "path": "scripts/luna_workflow_sim.py",
+      "bytes": 12218,
+      "sha256": "0e5bada99c1fd72b851a0226ebf0d9feb9260fbebb9d5aacf8f966ef9e46a784",
+      "git_blob": null,
+      "upstream_blob": null,
+      "status": "simulation-extension"
+    },
+    {
       "path": "skill-requirements.md",
       "bytes": 3533,
       "sha256": "fb9445c26dcb5c8f448db4452a174ee03d09326b87c4c7f45a2fe517fa38b17d",
@@ -699,6 +715,14 @@
       "status": "preserved"
     },
     {
+      "path": "tests/test_luna_workflow_sim.py",
+      "bytes": 2001,
+      "sha256": "d8f162cc13f4d122d681ae497f095989999aa41c853ed3cff43db2fca75d765d",
+      "git_blob": null,
+      "upstream_blob": null,
+      "status": "simulation-extension"
+    },
+    {
       "path": "tests/test_review_reports.py",
       "bytes": 12501,
       "sha256": "209101ed7aae9ef1c8df2140b8fd173300333a08e8b0286a67999ed1e7ebe8a4",
@@ -754,5 +778,21 @@
       "upstream_blob": "3a3affbe7099002c2c4d219d1f184f36c1209699",
       "status": "modified"
     }
-  ]
+  ],
+  "source_commit": "61cd38d87dfa659dcf5a8b6ccf2b91f470d5c10b",
+  "simulation_extension": {
+    "production_models_changed": false,
+    "temporary_model": "gpt-5.6-luna",
+    "temporary_effort": "medium",
+    "default_pulsebeam_ref": "e392e1d",
+    "files_added": [
+      "SIMULATION.md",
+      "scripts/luna_workflow_sim.py",
+      "tests/test_luna_workflow_sim.py"
+    ],
+    "files_modified": [
+      "Justfile",
+      "EVALS.md"
+    ]
+  }
 }
