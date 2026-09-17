@@ -1,52 +1,52 @@
 # dev toolbox
 
-For this full source snapshot, see [replacement instructions](REPLACEMENT.md), [maintenance analysis](WORKFLOW_ANALYSIS.md), and [actual validation](VALIDATION.md).
 
 ## Codex development workflow
 
-Five public skills with bounded context and stable review gates: `dev-spec`, `dev-plan`, `dev-build`, `dev-review`, `dev-project`.
+Five public skills: `dev-spec`, `dev-plan`, `dev-build`, `dev-review`, `dev-project`. The human-approved `spec.md` is the semantic authority; a native Rust middleware, `dev workflow`, owns all operational state and transitions in a versioned SQLite database under Git metadata.
 
 ```text
-approved spec → decision-complete plan → Builder → one fresh Reviewer
-                                             ↖ bounded repair ↙
-all tasks accepted → integrated validation → one fresh final review
+approved spec -> Planner compiles queue -> Builder -> one fresh Reviewer -> accepted
+                                         ^            |
+                                         | one repair |
+all tasks accepted -> integrated validation -> one fresh final review
 ```
 
-The controller coordinates; it does not become another engineer or reviewer. One Reviewer persona always covers requirements and engineering quality. Task-local Builders stay warm only through their own bounded repairs; reviewers are fresh. Factual Explorer is a read-only leaf, not a sixth public skill. Capability aliases reuse existing Builder/Reviewer personas.
+Agents never maintain plan/progress/report state files. Planner, Builder and Reviewer interact through narrow `dev workflow` commands; the Luna controller normally does only `next -> dispatch -> wait -> next`. Candidate SHAs, verification, findings, repair/replan ceilings and recovery are enforced by code rather than controller prose.
 
 ```sh
-# Human-facing semantic alignment
-dev a s "Define the behavior we need and align with me first."
-# After explicit spec approval: autonomous planning and gated execution.
-dev a pr "Execute plans/example/."
+# Human semantic alignment
+dev a s "Define the behavior and align with me first."
+# Once spec.md is explicitly APPROVED
+dev workflow init --spec plans/example/spec.md
+dev a pr "Execute the approved workflow."
+# Inspect the deterministic control plane directly
+dev workflow status
+dev workflow next
 ```
 
-Task briefs, exact Git diffs and reports are file-based. Machine-checked review provenance binds the mode, candidate, base and immutable contract. One packet carries all blocking findings without controller paraphrasing. One ordinary repair is followed only by a justified exceptional attempt; no blind three-round loop or real-blocker waiver.
+The ordinary task path has no human gate after planning. One repair is allowed; residual blockers, repeated invalid tool use, a second verification failure, or a second material replan stop precisely rather than loop. Human pause/resume, semantic answers and deliberate HEAD adoption are first-class transitions.
 
-Artifacts live only in `./plans/<project>/{spec.md,plan.md,progress.md,work/}` and are Git-ignored. Preserve incomplete work; delete `work/` only after successful completion. The workflow never pushes, merges, rebases or manages worktrees.
-
-Model/effort policy lives only in `dotfiles/.codex/agents/*.toml`. The configured defaults are a starting experiment, not a measured optimum. See [WORKFLOW.md](WORKFLOW.md), [requirements](skill-requirements.md), [decisions](workflow-questionnaire.md), [SOURCES.md](SOURCES.md), [EVALS.md](EVALS.md) and [VALIDATION.md](VALIDATION.md).
+Model/effort policy remains only in `dotfiles/.codex/agents/*.toml`; this redesign does not change those selections. See [WORKFLOW.md](WORKFLOW.md), [requirements](skill-requirements.md), and [decisions](workflow-questionnaire.md).
 
 ### Local checks — no CI
 
 ```sh
 python3 -m pip install -r tests/requirements.txt
-just test-fast  # asset wiring and Python/Git/filesystem regression tests
-just test-slow  # Rust tests/build and compiled launcher with a Codex recording shim
-just test       # both; `just check` remains an alias
+just test-fast
+just test-slow
+just test
 ```
-
-No GitHub Actions, hosted qualification or automatic paid model evaluations are added. Live behavioral claims require separate explicit trials.
 
 ### Install
 
 ```sh
-just install  # rebuild/install the binary and its embedded workflow snapshot
+just install
 python3 scripts/install_workflow.py /path/to/worktree --dry-run
-just install-workflow /path/to/worktree  # optional export of workflow assets only
+just install-workflow /path/to/worktree
 ```
 
-The exporter preserves unrelated roles/skills and `.codex/config.toml`, and backs up changed assets and retired split-review prompts. It does not rewrite active project evidence or delete old runtime caches. See WORKFLOW.md for in-flight report/counter migration. Do not run the legacy machine bootstrap for this workflow-only update.
+The optional workflow exporter backs up replaced workflow assets and removes the retired prompt/script runtime. The actual workflow state is owned by `dev workflow`, not by exported Python helpers.
 
 ---
 
@@ -244,4 +244,3 @@ Mac by default will limit using more than 1 CPU. To bypass this, we need to flag
 ```bash
 tmux kill-server
 ```
-

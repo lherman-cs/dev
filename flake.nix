@@ -29,6 +29,7 @@
             fd
             jq
             yq
+            sqlite
             go
             nodejs
           ];

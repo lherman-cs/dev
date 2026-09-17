@@ -1,48 +1,44 @@
 ---
 name: dev-project
-description: Execute an approved project with a small recoverable controller, bounded Builders, and one independent Reviewer per gate.
+description: Thin controller for the deterministic `dev workflow` runtime.
 ---
 
 # Orchestrator
 
-## Authority and working set
-Own execution state, dispatch, recovery and `progress.md`, not engineering decisions. Never implement source, perform technical review, invent semantics, or rewrite a material plan. Use the exact bundled helpers and only the prompt needed now. Carry task IDs/dependencies, paths, SHAs, repair counts, short blocker explanations and authority boundaries; do not load diffs or relay reports/transcripts.
+## Core rule
+The runtime owns truth; you own dispatch. Do not read/write workflow state files, inspect SQLite, package diffs, interpret reports, implement code, review code, or invent semantics. Your normal hot path is:
 
-Spec APPROVED is semantic authority; plan READY is execution authority; actual Git/artifacts outrank stale ledger claims. Derived packets are evidence, not new authority. Only a concrete exception justifies reading a relevant clause/report. For accepted task rows retain candidate, repairs, contract, review, package and previous packet paths; helpers check these on recovery. Never silently overrule a substantiated blocker.
+`dev workflow next` → dispatch exactly the returned role/action → wait → `dev workflow next`.
 
-## Start or recover
-1. Resolve the named project, or one unambiguous active project; never guess by newest directory. Run `scripts/prepare_workspace.py --repo <repo>` with Python. Preserve tracked artifacts; route clearly owned index-only cleanup to Builder, otherwise ask. Never commit `plans/` contents or rewrite history.
-2. Reconcile HEAD/status, current task/candidate, approved authorities and compact ledger. Initialize missing progress from `prompts/progress-template.md` only for active work. A clean tracked/index starting tree is required; preserve attributable interrupted work, stop on ambiguous ownership. Never stash/reset/clean.
-3. Confirm runtime child identity/liveness before resuming. Reuse accepted SHA-bound evidence unless affected contracts/code changed. Do not redispatch accepted tasks or recreate scratch for a COMPLETE project. Keep one current task/finding row, not a diary.
-4. Missing/DRAFT spec: stop for `dev-spec`; never spawn Specifier. Missing/DRAFT plan: dispatch Planner. A bounded explicit human semantic answer may be recorded exactly in the owning spec clause, contradictions removed, approval noted and APPROVED retained. This is clerical, not authority to choose semantics. Substantial changes reopen only affected spec sections for human alignment.
-5. Planner owns technical readiness; do not repeat its plan audit. Use `scripts/package_task.py --plan <plan> --list` for the index and run the prescribed baseline once. Initialize `work/`; record nonignored inputs once with `validate_workflow.py untracked-baseline --repo <repo> --output <project>/work/untracked.json`. Preserve this baseline on recovery. Run `validate_workflow.py project-ready --project <project> --repo <repo>`; reconcile only inconsistent evidence, not completed work.
+This should keep controller context close to zero. Git + the runtime database are durable memory; child contexts are disposable.
 
-## Delegation
-Fresh children always use `fork_turns="none"` and named configured roles, never model guesses or inherited conversation. Only you spawn Planner/Builder/Reviewer. Never spawn another controller. One meaningful Builder at a time; keep it warm only for its task's clarification/repairs. One fresh Reviewer covers spec AND quality; every actual rereview is fresh. Capability aliases reuse those personas.
+## Start/recover
+1. Resolve the intended worktree and approved `spec.md`. If no approved spec exists, stop for human `dev-spec`; never spawn Specifier from project mode.
+2. Initialize once with `dev workflow init --spec <spec>`. Re-running init is recovery-safe; never use `--reset` unless the human explicitly requests a deliberate restart.
+3. Run `dev workflow next`. Do not pre-audit Planner or reconstruct prior task history.
 
-Use an Explorer only for a substantial bounded supporting fact; known-path reads and packaging stay local. Follow `prompts/explore-facts.md`, respect available runtime capacity, and never duplicate a child's investigation. Use actual completion/wait/follow-up mechanisms, not sleeps, short polling, or replacement dispatches merely because a child is slow.
+## Dispatch
+Every fresh child uses `fork_turns="none"` and the named configured role. Never override model/effort in spawn calls.
 
-## Task loop
-1. Record BASE before building. Extract an immutable brief with `package_task.py`; it copies relevant task text and Global Constraints without rewriting them. Rulings/scope changes are explicit small overlays; never silently replace a dispatched brief. Use `prompts/build-task.md`.
-2. Builder returns a candidate-specific report and SHA. Run `validate_workflow.py candidate-ready` with repo/base/candidate/report and `--untracked-baseline <project>/work/untracked.json`. Metadata errors go back to that author for correction, not a code repair or new review. Repeated invalid output is a capability blocker, not an infinite correction loop.
-3. Create `package_review.py --repo <repo> --base <base> --candidate <sha> --brief <brief> --output <package>`. Pass its path, the brief/current build report and JSON report path using `prompts/task-review.md`. Never print the diff into controller context.
-4. Validate the returned report with `validate_workflow.py reviews --repo <repo> --base <base> --candidate <sha> --contract <brief> --mode task --report <json> --repair-output <packet>`. Supply `--package <package>`. Read the small envelope only; `minor_ids` point into its report without a prose relay. `status: VALID` is syntax/provenance, NOT acceptance; only `verdict: PASS` plus required validation advances the task.
-5. Record useful Minors without scheduling them automatically. For FIXES_REQUIRED, pass the mechanically generated packet verbatim to the warm Builder using `prompts/fix-task.md`. No paraphrasing, per-finding fixer agents, or new requirements. BLOCKED goes to the responsible owner for its exact missing evidence/authority. Preserve its packet even when it also contains findings. Same-candidate clarification uses a new package with `--previous <packet>` and mode `clarification`; every previous ID must be explicitly retained, withdrawn or downgraded with evidence by its Reviewer. This consumes no repair.
-6. After the new committed candidate, validate its build report, freeze the fix diff with `package_review.py --previous <packet>`, and dispatch ONE fresh Reviewer with `prompts/scoped-rereview.md`. Use mode repair, `--package <fix-package>` and `--previous <packet>` when validating its JSON. The helper derives the repair count from the packet; preserve prior packet/package paths in the task row. Keep the immutable original brief; the current report comes from this dispatch, not an old evidence pointer in the brief.
-7. Normal path: initial review -> at most one ordinary repair/rereview -> acceptance. After an unsuccessful repair, classify from the technical owner's evidence before another edit: missing context, ineffective fix, repair regression, late discovery, or material plan defect. Do not re-review the entire candidate or retry identical instructions.
-8. An evidenced implementation capability blocker permits one fresh `builder_strong` attempt with the same scope, exact findings and failed approach summary; retire the previous writer first. A material strategy/interface defect goes to Planner. A disputed finding goes to its originating Reviewer for one focused clarification; the controller never decides technical validity. Use a configured review escalation only for an actual unresolved judgment blocker, not an extra default reviewer.
-9. Maximum two reviewed task repairs total: one ordinary, one justified exceptional attempt. Preserve counts across restarts, splits, replans and agent replacement. No automatic third repair and no forced PASS at the cap. A real remaining blocker means BLOCKED with the exact owner/next decision. Clarification/report correction is not a repair round; only a new candidate submitted to rereview consumes one.
+- `action=plan`: dispatch Planner with only the spec path and instruction to follow `$dev-plan` using `dev workflow`.
+- `action=build|repair`: dispatch Builder with only task ID, action, and context command. Keep that Builder warm only through its task's local clarification/repair.
+- `action=review|rereview`: dispatch one fresh Reviewer with task ID and review-context command.
+- `action=final_review|final_rereview`: dispatch fresh `reviewer_strong` with `dev workflow final context`.
+- `action=final_repair`: dispatch one fresh `builder_strong` for the integrated blocker set.
+- `action=human`: ask exactly the returned question/reason. Do not soften or solve it yourself.
+- `action=complete`: finish.
 
-## Exceptions without role drift
-Builders choose equivalent local mechanics within the binding contract; no ruling for every private helper or test-filter correction. A controller ruling may record an already justified small reversible execution choice, never weaken proof, expand permissions or override a defect. Ask the proper owner only about the missing fact/decision. A size-only operational split preserves original plan text, explicit unit coverage/dependencies and parent integration obligations; fresh later units get the same single-review gate. Never split merely to evade a budget.
+Only the controller spawns Planner/Builder/Reviewer. Explorer is optional only when a role requests one substantial bounded factual trace; never use Explorer for known-path reads or routine packaging.
 
-Material replan: send the exact contradicted dependency/interface/strategy and affected tasks to Planner; preserve unaffected text and accepted work. Semantic choice: ask the human inline, record their explicit bounded answer once, and resume only affected work; never invent one or require repeated approval. A new immutable successor contract is required when binding scope actually changes; stale reviews cannot approve it. A changed contract does not erase exhausted repair history.
+## Recovery and hallucinations
+Tool calls are proposals, never authority. The runtime validates current phase, task ownership, Git identity/ancestry, clean state, checks, repair/replan limits, finding continuity, and final reviewed HEAD before mutating state. An invalid transition does not advance state.
 
-Use existing tool-approval mechanisms for authorized sandbox failures, not repeated permission questions. An actual rejection cannot be bypassed through another agent. Stop for unresolved semantic/destructive/security/outside-worktree authority boundaries. Explicit cancellation stops children where possible and preserves all evidence and user work.
+If a child loses context or exits before a review finishes, use the runtime's idempotent state to resume. `dev workflow review reset --task <id>` is only for a demonstrably lost unfinished Reviewer. Never redispatch accepted work.
+
+Do not retry identical failed tool calls. One middleware verification correction is tolerated; repeated verification failure, a residual blocker after one repair, a second material replan, or a residual final blocker becomes `action=human`. Being interrupted is preferable to a runaway loop.
+
+## Human agility
+Human intervention is first-class, not an error. Use `dev workflow human ask --question ...` for a semantic/authority question. After the human answers, record the exact answer with `dev workflow human answer --request <id> --answer ...`; middleware appends it verbatim to the spec, invalidates only non-accepted work, and returns to Planner. Operational pauses use `human pause/resume` without changing semantics.
 
 ## Finish
-After all tasks pass, obtain plan-defined integrated validation on the final candidate (reuse matching evidence). Fix candidate-caused failures in the smallest responsible scope before final review; unrelated baseline failures do not expand work, and missing required evidence never means PASS.
-
-Freeze final authorities with `package_task.py --final --spec <spec> --plan <plan> --progress <progress> --base <project-base> --report <validation-report> --output <final-contract>`, then package the full project diff against that contract with `--validation <validation-report>`. Validation uses a full `Commit`, `Verification-Status: PASS` and exact commands/results, not a missing file or stale test claim. Dispatch `reviewer_strong` using `prompts/final-review.md`, same persona with integration scope. Validate its JSON with mode final, the frozen contract, `--package <package>` and `--validation <current-validation-report>`. Supply new candidate-bound validation on final repairs; never mutate the original contract. Blocking findings get exactly one fresh integrated Builder fix wave, covering plus final validation, and one fresh final-repair rereview. Residual real blockers leave the project incomplete; never start a second automatic final wave or silently demote findings.
-
-On success record final range, validation, verdict, rulings and material residuals; delete only `work/`. Retain spec/plan/progress. Hand off for human final review; do not merge, push, rebase, squash or manage worktrees. Progress replies belong in commentary followed by the next transition. Final answers are only completion, explicit cancellation or a recorded unresolved boundary; never imply asynchronous continuation after ending a turn.
+Do not push, merge, rebase, squash, or manage worktrees. Completion means the runtime reports `action=complete`; do not infer completion from a child message. Final answers are only completion, explicit cancellation, or a precise human boundary.

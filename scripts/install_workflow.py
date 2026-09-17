@@ -13,11 +13,8 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[1]
 LEGACY_PATHS = (
     Path('.agents/skills/dev-explore'),
-    *[Path('.agents/skills/dev-project/prompts') / name for name in (
-        'task-spec-review.md', 'task-quality-review.md',
-        'scoped-spec-rereview.md', 'scoped-quality-rereview.md',
-        'scoped-final-rereview.md',
-    )],
+    Path('.agents/skills/dev-project/prompts'),
+    Path('.agents/skills/dev-project/scripts'),
 )
 
 def reject_symlink_parents(target: Path, destination: Path) -> None:

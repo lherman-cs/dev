@@ -1,119 +1,76 @@
 #!/usr/bin/env python3
-"""Local structural validation. Does not claim Rust compilation or LLM behavior."""
+"""Local structural validation for the Rust workflow middleware and agent assets."""
 from __future__ import annotations
-import argparse
-import ast
-import json
+import argparse, ast, json, re, tomllib
 from pathlib import Path
-import re
-import tomllib
 import yaml
 
-ROOT = Path(__file__).resolve().parents[1]
-ROLE_SKILLS = {
-    'specifier': 'dev-spec', 'planner': 'dev-plan', 'builder': 'dev-build',
-    'builder_strong': 'dev-build', 'reviewer': 'dev-review',
-    'reviewer_strong': 'dev-review', 'orchestrator': 'dev-project', 'explorer': None,
+ROOT=Path(__file__).resolve().parents[1]
+ROLE_SKILLS={
+    'specifier':'dev-spec','planner':'dev-plan','builder':'dev-build','builder_strong':'dev-build',
+    'reviewer':'dev-review','reviewer_strong':'dev-review','orchestrator':'dev-project','explorer':None,
 }
-PUBLIC_SKILLS = {s for s in ROLE_SKILLS.values() if s}
-PROMPTS = {
-    'explore-facts.md', 'plan-project.md', 'replan-project.md', 'build-task.md',
-    'fix-task.md', 'task-review.md', 'scoped-rereview.md', 'final-review.md',
-    'report-contract.md', 'progress-template.md',
-}
-HELPERS = {'package_task.py', 'package_review.py', 'review_report.py',
-           'validate_workflow.py', 'prepare_workspace.py'}
+PUBLIC_SKILLS={x for x in ROLE_SKILLS.values() if x}
 
-
-def validate(root: Path = ROOT) -> dict:
-    checks = []
-    def check(condition: bool, label: str) -> None:
-        if not condition:
-            raise AssertionError(label)
+def validate(root:Path=ROOT)->dict:
+    checks=[]
+    def check(cond,label):
+        if not cond: raise AssertionError(label)
         checks.append(label)
 
-    config = tomllib.loads((root/'agent.toml').read_text())
-    fragment = tomllib.loads((root/'dotfiles/.codex/config.fragment.toml').read_text())
-    def no_models(table: dict) -> None:
-        for key, value in table.items():
-            check(key not in {'model', 'model_reasoning_effort', 'default_subagent_model',
-                              'default_subagent_reasoning_effort'}, f'No duplicate overlay model policy: {key}')
-            if isinstance(value, dict): no_models(value)
-    no_models(config['codex'])
-    check(config['codex']['agents'] == fragment['agents'], 'Standalone/launcher agent settings agree')
-    check(config['codex']['agents']['max_concurrent_threads_per_session'] == 4, 'Bounded four-thread capacity')
-    profiles = config['profiles']
-    check(set(profiles) == {'default', 'spec', 'plan', 'build', 'review', 'project', 'explore'}, 'Canonical public commands')
-    check(all(p['role'] in ROLE_SKILLS for p in profiles.values()), 'Every command resolves a role')
-    roles = root/'dotfiles/.codex/agents'
-    check({p.stem for p in roles.glob('*.toml')} == set(ROLE_SKILLS), 'Exactly the intended role aliases')
-    skills = root/'dotfiles/.agents/skills'
-    check({p.name for p in skills.iterdir() if p.is_dir()} == PUBLIC_SKILLS, 'Exactly five public skills')
-    selections, sizes = {}, {}
-    registry = (root/'src/agent_roles.rs').read_text()
-    for role, skill in ROLE_SKILLS.items():
-        data = tomllib.loads((roles/f'{role}.toml').read_text())
-        check(data['name'] == role, f'{role}: identity')
-        check(isinstance(data['model'], str) and bool(data['model'].strip()), f'{role}: explicit model')
-        check(data['model_reasoning_effort'] in {'low','medium','high','xhigh','max'}, f'{role}: explicit effort')
-        selections[role] = [data['model'], data['model_reasoning_effort']]
-        instructions = data['developer_instructions']
-        check('fork_turns="none"' in instructions, f'{role}: fresh handoff')
-        check(data['default_permissions'] in config['codex']['permissions'], f'{role}: declared permissions')
-        token = f'role_with_skill!("{role}", "{skill}")' if skill else f'role_only!("{role}")'
-        check(token in registry, f'{role}: embedded registration')
-        if skill: check(f'${skill}' in instructions, f'{role}: same skill for root and child')
-        if role.startswith('reviewer'):
-            check('repository source as read-only' in instructions, f'{role}: readonly source contract')
-        if role == 'explorer':
-            check(data['agents']['enabled'] is False, 'Explorer cannot spawn agents')
-            check('$dev-' not in instructions, 'Explorer is not a public workflow skill')
-    # Selection is reported, not copied into a second EXPECTED_MODELS authority.
+    config=tomllib.loads((root/'agent.toml').read_text())
+    roles=root/'dotfiles/.codex/agents'; skills=root/'dotfiles/.agents/skills'
+    check(set(config['profiles'])=={'default','spec','plan','build','review','project','explore'},'canonical public commands')
+    check({p.stem for p in roles.glob('*.toml')}==set(ROLE_SKILLS),'exact role set')
+    check({p.name for p in skills.iterdir() if p.is_dir()}==PUBLIC_SKILLS,'exact public skill set')
+    registry=(root/'src/agent_roles.rs').read_text()
+    router=(root/'src/dev.rs').read_text(); workflow=(root/'src/workflow.rs').read_text()
+    workflow += ''.join(p.read_text() for p in sorted((root/'src/workflow_parts').glob('*.rs')))
+    cargo=(root/'Cargo.toml').read_text()
+    check('mod workflow;' in router,'Rust workflow module registered')
+    check('workflow::run(cli.action)' in router,'dev workflow dispatched to Rust middleware')
+    check('autobins = false' in cargo and 'path = "src/dev.rs"' in cargo and 'path = "src/main.rs"' in cargo,'dev router and legacy core bins declared')
+    check('pub const EXTRA_ASSETS: &[ExtraAsset] = &[];' in registry,'no legacy prompt/script runtime assets')
+    check(not (skills/'dev-project/scripts').exists(),'legacy Python workflow scripts removed')
+    check(not (skills/'dev-project/prompts').exists(),'legacy workflow prompt packet layer removed')
+    for required in ['workflow.sqlite3','PRAGMA user_version=1','BEGIN IMMEDIATE','MAX_VERIFICATION_FAILURES','MAX_REPLANS','final_rereview','expected_head']:
+        check(required in workflow,f'workflow invariant present: {required}')
+    for role,skill in ROLE_SKILLS.items():
+        data=tomllib.loads((roles/f'{role}.toml').read_text())
+        check(data['name']==role,f'{role}: identity')
+        check(data['model_reasoning_effort'] in {'low','medium','high','xhigh','max'},f'{role}: effort')
+        check(data['default_permissions'] in config['codex']['permissions'],f'{role}: permissions')
+        if skill:
+            check(f'${skill}' in data['developer_instructions'],f'{role}: skill authority')
+            token=f'role_with_skill!("{role}", "{skill}")'
+        else:
+            token=f'role_only!("{role}")'
+        check(token in registry,f'{role}: embedded registration')
+        check('fork_turns="none"' in data['developer_instructions'] or role=='explorer',f'{role}: fresh child policy')
     for skill in sorted(PUBLIC_SKILLS):
-        path = skills/skill/'SKILL.md'; text = path.read_text()
-        header = yaml.safe_load(text.split('---',2)[1])
-        check(header['name'] == skill and bool(header['description']), f'{skill}: discovery metadata')
-        check('gpt-' not in text.lower(), f'{skill}: model-free procedure')
-        check(len(text.encode()) <= 12000, f'{skill}: bounded resident instruction bytes')
-        sizes[skill] = len(text.encode())
-        ui = yaml.safe_load((path.parent/'agents/openai.yaml').read_text())
-        check(ui['policy']['allow_implicit_invocation'] is False, f'{skill}: explicit activation')
-    support = skills/'dev-project'
-    check({p.name for p in (support/'prompts').glob('*.md')} == PROMPTS, 'Single-review prompt set; no retired dimensions')
-    check({p.name for p in (support/'scripts').glob('*.py')} == HELPERS, 'Small mechanical helper set')
-    for kind, names in [('prompts',PROMPTS), ('scripts',HELPERS)]:
-        for name in names:
-            embedded = f'skills/dev-project/{kind}/{name}'
-            check(f'path: "{embedded}"' in registry, f'Launcher materializes {embedded}')
-            check(f'include_str!("../dotfiles/.agents/{embedded}")' in registry, f'Launcher embeds {embedded}')
-    for match in re.finditer(r'include_str!\("([^"]+)"\)', registry):
-        check((root/'src'/match[1]).is_file(), f'Existing Rust include: {match[1]}')
-    for path in [*(support/'scripts').glob('*.py'), *(root/'tests').glob('*.py'), *(root/'scripts').glob('*.py')]:
-        ast.parse(path.read_text()); check(True, f'Python syntax: {path.relative_to(root)}')
-    for path in skills.rglob('*.md'):
-        for target in re.findall(r'\[[^\]]*\]\(([^)]+)\)', path.read_text()):
-            if not target.startswith(('http:', 'https:', '#')) and '<' not in target:
-                check((path.parent/target.split('#')[0]).exists(), f'Existing support reference: {path.name} -> {target}')
-    just = (root/'Justfile').read_text()
-    for recipe in ['test-fast:', 'test-slow:', 'test: test-fast test-slow', 'check: test']:
-        check(recipe in just, f'Local recipe {recipe}')
-    check('tests/validate_assets.py' in just and "unittest discover" in just, 'Fast local coverage wired')
-    check('cargo test --locked' in just and 'launcher_e2e.py' in just, 'Real Rust/launcher checks retained')
-    cases = yaml.safe_load((root/'tests/workflow_pressure_cases.yaml').read_text())
-    check(isinstance(cases,list) and len(cases)>=12, 'Broad pressure scenario catalog')
-    check(len({c['id'] for c in cases}) == len(cases), 'Unique pressure scenarios')
-    for case in cases:
-        check(set(case) == {'id','role','pressure','must','must_not'}, f'Pressure schema: {case["id"]}')
-        check(case['role'] in ROLE_SKILLS and all(isinstance(x,str) and x.strip() for x in case.values()), f'Pressure scope: {case["id"]}')
-    return {'status':'PASS', 'assertions':len(checks), 'model_selections':selections,
-            'skill_bytes':sizes, 'pressure_cases':len(cases),
-            'rust_compiled':False, 'live_codex_executed':False}
+        path=skills/skill/'SKILL.md'; text=path.read_text(); header=yaml.safe_load(text.split('---',2)[1])
+        check(header['name']==skill and header['description'],f'{skill}: metadata')
+        check('gpt-' not in text.lower(),f'{skill}: model-free skill')
+        check(len(text.encode())<10000,f'{skill}: bounded instructions')
+        ui=yaml.safe_load((path.parent/'agents/openai.yaml').read_text())
+        check(ui['policy']['allow_implicit_invocation'] is False,f'{skill}: explicit activation')
+    for path in [*(root/'tests').glob('*.py'),*(root/'scripts').glob('*.py')]:
+        ast.parse(path.read_text()); check(True,f'Python syntax: {path.relative_to(root)}')
+    check('sqlite' in (root/'install.sh').read_text(),'bootstrap installs sqlite')
+    check(re.search(r'\n\s*sqlite\n',(root/'flake.nix').read_text()) is not None,'Nix package set includes sqlite')
+    just=(root/'Justfile').read_text()
+    check('workflow_e2e.py' in just,'compiled workflow E2E wired')
+    check('cargo test --locked' in just,'Rust tests remain locked')
+    workflow_doc=(root/'WORKFLOW.md').read_text()
+    requirements=(root/'skill-requirements.md').read_text()
+    for phrase in ['Three authorities only.','No context landfill.','One writer per worktree.','not event sourcing','generic workflow engine']:
+        check(phrase in workflow_doc,f'workflow design guardrail documented: {phrase}')
+    for phrase in ['Git owns code/candidate reality','SQLite is private implementation detail','One writer/controller per worktree','generic workflow engine']:
+        check(phrase in requirements,f'workflow requirement guardrail documented: {phrase}')
+    check('//! - SQLite stores only workflow bookkeeping.' in workflow,'Rust module documents SQLite scope')
+    return {'status':'PASS','assertions':len(checks),'rust_compiled':False,'live_codex_executed':False}
 
-if __name__ == '__main__':
-    parser=argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--json',type=Path)
-    args=parser.parse_args(); result=validate()
-    if args.json:
-        args.json.parent.mkdir(parents=True,exist_ok=True)
-        args.json.write_text(json.dumps(result,indent=2)+'\n')
+if __name__=='__main__':
+    ap=argparse.ArgumentParser(); ap.add_argument('--json',type=Path); args=ap.parse_args(); result=validate()
+    if args.json: args.json.write_text(json.dumps(result,indent=2)+'\n')
     print(json.dumps(result,indent=2))

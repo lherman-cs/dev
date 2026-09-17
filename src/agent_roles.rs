@@ -51,23 +51,7 @@ pub struct ExtraAsset {
     pub source: &'static str,
 }
 
-pub const EXTRA_ASSETS: &[ExtraAsset] = &[
-    ExtraAsset { path: "skills/dev-project/prompts/explore-facts.md", source: include_str!("../dotfiles/.agents/skills/dev-project/prompts/explore-facts.md") },
-    ExtraAsset { path: "skills/dev-project/prompts/plan-project.md", source: include_str!("../dotfiles/.agents/skills/dev-project/prompts/plan-project.md") },
-    ExtraAsset { path: "skills/dev-project/prompts/replan-project.md", source: include_str!("../dotfiles/.agents/skills/dev-project/prompts/replan-project.md") },
-    ExtraAsset { path: "skills/dev-project/prompts/build-task.md", source: include_str!("../dotfiles/.agents/skills/dev-project/prompts/build-task.md") },
-    ExtraAsset { path: "skills/dev-project/prompts/fix-task.md", source: include_str!("../dotfiles/.agents/skills/dev-project/prompts/fix-task.md") },
-    ExtraAsset { path: "skills/dev-project/prompts/task-review.md", source: include_str!("../dotfiles/.agents/skills/dev-project/prompts/task-review.md") },
-    ExtraAsset { path: "skills/dev-project/prompts/scoped-rereview.md", source: include_str!("../dotfiles/.agents/skills/dev-project/prompts/scoped-rereview.md") },
-    ExtraAsset { path: "skills/dev-project/prompts/final-review.md", source: include_str!("../dotfiles/.agents/skills/dev-project/prompts/final-review.md") },
-    ExtraAsset { path: "skills/dev-project/prompts/report-contract.md", source: include_str!("../dotfiles/.agents/skills/dev-project/prompts/report-contract.md") },
-    ExtraAsset { path: "skills/dev-project/prompts/progress-template.md", source: include_str!("../dotfiles/.agents/skills/dev-project/prompts/progress-template.md") },
-    ExtraAsset { path: "skills/dev-project/scripts/package_task.py", source: include_str!("../dotfiles/.agents/skills/dev-project/scripts/package_task.py") },
-    ExtraAsset { path: "skills/dev-project/scripts/package_review.py", source: include_str!("../dotfiles/.agents/skills/dev-project/scripts/package_review.py") },
-    ExtraAsset { path: "skills/dev-project/scripts/review_report.py", source: include_str!("../dotfiles/.agents/skills/dev-project/scripts/review_report.py") },
-    ExtraAsset { path: "skills/dev-project/scripts/validate_workflow.py", source: include_str!("../dotfiles/.agents/skills/dev-project/scripts/validate_workflow.py") },
-    ExtraAsset { path: "skills/dev-project/scripts/prepare_workspace.py", source: include_str!("../dotfiles/.agents/skills/dev-project/scripts/prepare_workspace.py") },
-];
+pub const EXTRA_ASSETS: &[ExtraAsset] = &[];
 
 #[derive(Debug, Deserialize)]
 pub struct Role {
@@ -97,7 +81,7 @@ pub fn load(name: &str) -> Result<Role> {
 /// A cache namespace, not a security digest. Exact contents are checked before reuse.
 pub fn runtime_dir(codex_home: &Path) -> PathBuf {
     let mut h = DefaultHasher::new();
-    "dev-workflow-v2".hash(&mut h);
+    "dev-workflow-v3".hash(&mut h);
     for a in ALL {
         a.role_source.hash(&mut h);
         a.skill_source.hash(&mut h);

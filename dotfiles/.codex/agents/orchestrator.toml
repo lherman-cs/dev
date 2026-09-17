@@ -6,9 +6,9 @@ default_permissions = "dev-builder"
 
 developer_instructions = """
 Read and follow $dev-project; the exact bundled skill is the procedure and authority contract.
-Own progress, dispatch, recovery and mechanical packages, not implementation or technical validity. A human-approved spec amendment is clerical only.
+Be a thin dispatcher over `dev workflow`: normally call `dev workflow next`, dispatch exactly its named role/action, wait, then repeat.
+Never inspect SQLite/raw state, diffs, reports, or source for technical judgment. Never implement or review.
 Spawn only planner, builder, builder_strong, reviewer, reviewer_strong or explorer as directed; never specifier or another orchestrator.
 Every fresh child uses fork_turns="none" and a self-contained assignment. Never set model/effort in spawn calls; role configuration owns those choices.
-Pass artifacts by path and SHA; do not relay transcripts or repeat report contents. Preserve human work and actual permission boundaries.
-Use actual wait/follow-up tools and continue transitions after child completion. A valid report is not a PASS verdict. Final answers end execution; never use one to wait.
+A hard runtime boundary stops to human; never manufacture retries to keep going.
 """

@@ -88,8 +88,9 @@ def main() -> None:
                         assert 'exact bundled skill source' in generated['developer_instructions']
                 if command == 'project':
                     runtime_project = Path(options['agents.orchestrator.config_file']).parent.parent / 'skills/dev-project'
-                    assert (runtime_project/'prompts/build-task.md').is_file()
-                    assert (runtime_project/'scripts/package_review.py').is_file()
+                    assert (runtime_project/'SKILL.md').is_file()
+                    assert not (runtime_project/'prompts').exists()
+                    assert not (runtime_project/'scripts').exists()
         # Trust session: no task injected. Aliases dispatch the expected roles.
         args = launch()
         assert '--' not in args and 'Role contract:' not in '\n'.join(args)

@@ -1,144 +1,160 @@
-# Codex workflow
+# Dev workflow runtime
 
-This is the human-facing guide. Workers load their assigned bundled skill and task artifacts, not this guide, the questionnaire, or another framework's router.
-
-## Architecture
-
-```text
-Human + Specifier → APPROVED spec
-                  → Planner → READY plan
-                  → Builder → one fresh Reviewer → accepted task
-                                ↓ concrete blocker
-                           same task Builder
-                                ↓ one repair
-                           fresh scoped Reviewer
-                                ↓ still blocked
-                     change context/capability/plan, not blind retry
-
-All tasks accepted → integrated validation → one fresh final Reviewer
-```
-
-Keep exactly five public skills: `dev-spec`, `dev-plan`, `dev-build`, `dev-review`, `dev-project`. Explorer is a read-only factual leaf. `builder_strong` and `reviewer_strong` are capability aliases of the same personas, not extra routine seats. Every new child gets `fork_turns="none"`. One meaningful writer at a time; task gates remain sequential.
-
-One reviewer always owns both requirements and engineering quality. Final review uses that same persona on an integrated assignment. A task Builder may remain warm for that task's questions/repairs only. Review and rereview contexts are fresh; a same-reviewer clarification is not another audit or repair round.
-
-## Authority and quality
-
-The human approves behavior. Specifier owns `spec.md`, Planner owns `plan.md`, controller owns `progress.md`, Builder owns implementation/commits/build reports, and Reviewer owns review reports. Under an existing spec, ordinary private implementation mechanics belong to Builder. A material interface/dependency/strategy defect goes to Planner; product semantics never become a cheap controller ruling.
-
-A bounded explicit human answer may be recorded by the controller in the owning spec clause with an approval note, then affected work resumes without repeating approval. Substantial or unresolved semantic changes reopen affected sections as DRAFT for `dev-spec`. Silence is not approval. Do not let this clerical exception become design authority.
-
-Define done once: behavior, exact interfaces/invariants, non-goals and observable verification. Planner distinguishes binding contracts from implementation guidance. Use exact code only where it resolves consequential uncertainty; do not implement the feature twice in prose and code. Put setup/config/docs with the behavior they enable, and split only at independently testable/reviewable boundaries. Optional global requirements use a small `## Global Constraints` section; packaging carries it verbatim.
-
-Builder runs meaningful RED → GREEN → REFACTOR, prescribed focused checks, and one bounded self-review. Generated/docs/mechanical work gets an explicit meaningful verification exception, not fake RED. Reviewer checks the actual diff and whether evidence proves the required behavior; reported tests do not prove their own adequacy. Rerun only a focused check for a concrete unanswered doubt. Baseline/final checks run at their intended boundary, not in every seat.
-
-Critical/Important means a reachable material failure or explicit unmet requirement attributable to this candidate. Minor/taste/optional hardening never blocks. The reviewer states the failure, impact and observable resolution; a proposed implementation is guidance, not a new requirement. Serious pre-existing unrelated defects are reported as out of scope without silently enlarging this task.
-
-## Controller economics
-
-Keep state, paths, full SHAs, finding IDs, task dependencies, boundaries and concise exceptions in controller context. It can inspect a relevant contract/report to route an exception, but does not independently review or debug. Pass authoritative artifacts unchanged rather than paraphrasing findings. No nested controllers or routine extra reviewers.
-
-Helpers do extraction, Git checks and report validation, not semantic decisions. There is no additional workflow daemon, workflow engine, database or state manifest. The controller still owns the small recovery ledger. Detailed outputs live under `work/`; return tiny status envelopes. Only read the dispatch template relevant now. Use actual runtime completion/wait/resume mechanisms; never poll in chat, guess a tool name, or promise background work after ending a turn.
-
-Explorer is admitted when a bounded factual digest saves a substantial off-topic investigation. Known-path reads and the implementation/review itself stay local. No duplicate parent/Explorer investigations, hidden second opinions, or delegation of judgment. Close completed helpers before consuming more capacity. Thread capacity is not a reason to increase the number of review seats.
-
-## Artifacts and mechanical protocol
+`dev workflow` is the deterministic control plane for the five-agent development workflow.
+The approved `spec.md` is the only durable workflow document intended for agents or humans to edit directly. Operational state lives in a versioned SQLite database under the worktree's Git metadata and is mutated only by the Rust CLI.
 
 ```text
-plans/<project>/
-  spec.md       # approved semantics
-  plan.md       # current execution plan
-  progress.md   # compact current recovery state; one row per task/finding
-  work/         # immutable briefs/diffs, per-candidate reports, repair packets
+human + Specifier -> approved spec.md
+                         |
+                         v
+                     Planner
+                         |
+                  dev workflow plan
+                         |
+                         v
+Controller: dev workflow next -> Builder -> middleware checks -> Reviewer
+                         ^                        |
+                         |-------- one repair ----|
+                         |
+                         v
+                 integrated final review
 ```
 
-All of `plans/` is Git-ignored. Preparation resolves Git metadata correctly in linked worktrees. Ignore rules never untrack files; explicit workflow-owned index-only cleanup preserves working files and uses a separate cleanup commit. Do not force-add evidence. Commit implementation with explicit paths and Conventional Commits; each repaired candidate is a new commit, never amend a reviewed SHA.
+## Boundary
 
-Let `tools` be the absolute directory containing the assigned bundled `dev-project/scripts`. The launcher prints/materializes that content-addressed location; installed assets have the same layout. Run commands directly; do not read helper source or repeatedly request help to rediscover them.
+Agents propose work through narrow CLI operations. They never edit workflow state, serialize reports, maintain a ledger, or inspect SQLite. The runtime validates the current phase, Git SHAs, ancestry, clean worktree, task dependencies, verification commands, finding continuity, repair/replan ceilings and final reviewed HEAD before committing a transition.
+
+The controller's normal loop is deliberately small:
+
+```text
+dev workflow next
+-> dispatch the named configured role with the returned context command
+-> wait for that role
+-> dev workflow next
+```
+
+The controller does not read diffs, reports, plans or the database. Technical judgment remains with Planner, Builder and Reviewer. Product semantics remain with the human-approved spec.
+
+## Storage
+
+The database is stored at `<absolute-git-dir>/dev-workflow/workflow.sqlite3`. This keeps operational state out of the source tree and gives each linked worktree independent state. `PRAGMA user_version` owns schema versioning; the runtime migrates supported older schemas before use and refuses databases newer than the binary.
+
+The database contains only control-plane facts: phase, spec identity, expected HEAD, tasks/dependencies/checks, candidate SHAs, verification evidence, findings/resolutions, bounded counters, human requests and an event trail. Reasoning transcripts are not durable workflow state.
+
+## SQLite design guardrails
+
+SQLite is an implementation detail behind the semantic CLI, not an API for agents and not a second project model. Keep it deliberately boring:
+
+- **Three authorities only.** Git owns code/candidate reality; approved `spec.md` owns product semantics; SQLite owns workflow bookkeeping. Do not duplicate a fact in SQLite when it can be cheaply and safely re-derived from Git or the spec.
+- **No raw database access in prompts or skills.** Agents call semantic operations such as `next`, `plan add`, `candidate submit`, and `review finish`. Table names, SQL, migrations, and serialization never enter agent context.
+- **Current state first.** Primary rows represent current durable state. The `events` table is a compact diagnostic audit trail, not event sourcing and not required to reconstruct normal state.
+- **No context landfill.** Never persist transcripts, chain-of-thought, copied source, complete diffs, exploration dumps, or unbounded test logs. Store only facts needed to validate, resume, route, or explain a transition.
+- **Small schema, explicit justification.** Normalization tables that support tasks/checks/findings are fine, but new tables/columns must serve a concrete invariant or recovery need. Do not grow SQLite into a project tracker, agent memory store, or generic workflow engine.
+- **One writer per worktree.** `BEGIN IMMEDIATE` makes transitions atomic. Concurrent controllers for the same worktree are unsupported; contention should fail/stop rather than create distributed coordination machinery.
+- **Forward migrations only.** Migrations are transactional, keyed by `PRAGMA user_version`, preserve accepted work, and refuse a database newer than the running binary. No automatic destructive downgrade.
+- **Fail closed.** A malformed/hallucinated/stale tool call returns an error and leaves state unchanged. Idempotent repeats may return the already-committed result; they must never double-advance state.
+- **Storage backend stays encapsulated.** The current implementation invokes the local `sqlite3` CLI; bootstrap/Nix install it. That is a Rust-runtime implementation detail, not an agent dependency. A future embedded SQLite binding may replace it without changing the agent-facing CLI contract. Installing, inspecting, repairing, or migrating SQLite must never become an agent responsibility.
+
+The litmus test is `dev workflow next`: on the normal path it must determine the single next role/action without requiring the controller to read the database, source, plan history, or prior conversations. If maintaining the runtime starts requiring a generic orchestration framework, a large ontology, or durable agent reasoning, simplify it.
+
+## Planning
+
+Initialize only from an explicitly approved spec:
 
 ```sh
-python3 "$tools/prepare_workspace.py" --repo "$repo"
-python3 "$tools/package_task.py" --plan "$project/plan.md" --list
-python3 "$tools/package_task.py" --plan "$project/plan.md" --task "$task" \
-  --base "$base" --report "$build_report" --output "$brief"
-python3 "$tools/validate_workflow.py" candidate-ready --repo "$repo" \
-  --base "$base" --candidate "$candidate" --report "$build_report" \
-  --untracked-baseline "$project/work/untracked.json"
-python3 "$tools/package_review.py" --repo "$repo" --base "$base" \
-  --candidate "$candidate" --brief "$brief" --output "$diff"
+dev workflow init --spec plans/example/spec.md
 ```
 
-Task extraction preserves Planner text and appends only bounded metadata/rulings/scope. The original brief is never rewritten after dispatch. A later repair receives its own report path in dispatch, not an appended report with contradictory commit markers. Review packages include all commits in the range, full Git IDs, a diff with context and the brief's SHA-256. External diff/textconv commands are disabled. Helpers print paths/digests, not the payload. Existing outputs cannot be overwritten, including by concurrent exclusive creation.
-
-Build reports remain short Markdown: `Status: COMPLETED`, `Commit: <actual SHA>`, `Verification-Status: PASS|FAIL|BLOCKED`, `Verification:` commands/outcomes, implemented behavior and material notes. Builder resolves the commit before `build-handoff`. Metadata validation does not certify test success.
-
-Reviews use the small JSON format in [report-contract.md](dotfiles/.agents/skills/dev-project/prompts/report-contract.md). It binds mode, base, candidate, contract digest and package digest, and distinguishes new findings from per-ID resolution evidence. Empty fields cannot stand in for evidence. A `VALID` envelope means the schema/provenance is valid, **not that the task passed**.
+Planner reads the spec and repository, then compiles execution directly into the runtime:
 
 ```sh
-python3 "$tools/validate_workflow.py" reviews --repo "$repo" \
-  --base "$base" --candidate "$candidate" --contract "$brief" --mode task \
-  --report "$review_report" --package "$diff" --repair-output "$repair_packet"
+dev workflow plan add \
+  --title '...' --goal '...' \
+  --requirement '...' --path 'src/...' \
+  --check 'cargo test -p example'
+
+dev workflow plan final-check --check 'cargo test'
+dev workflow plan ready
 ```
 
-A PASS advances only after required validation and the review agree with the current clean tracked candidate. FIXES_REQUIRED, or BLOCKED with findings, creates one packet containing exact blocking findings; Minor bodies and checked evidence stay in the report. BLOCKED is an evidence/authority exception, never acceptance. An invalid report is corrected by its owner without a code repair or another reviewer seat. Do not silently treat a legacy `Verdict: PASS` line as current approval.
+There is no `plan.md`. A task is one coherent independently reviewable outcome. Planner owns consequential interfaces, dependencies, invariants and proof strategy; ordinary implementation mechanics stay with Builder.
 
-## Repair convergence
+## Build and review
 
-Initial review covers the assigned candidate completely within scope and returns all material findings found. The controller sends them together to the same task Builder. One submitted repair candidate plus scoped rereview consumes one round; local debugging, questions and report corrections do not.
-
-One ordinary repair is the expectation. After it fails, use the evidence to change the input, resolve a dispute with the originating reviewer, or use the configured stronger capability. No mandatory new diagnosis agent. A single exceptional second reviewed repair requires a recorded concrete reason and changed input/capability. At two reviewed repairs, stop automatic attempts and route the genuine remaining blocker; do not waive it. Preserve counters across splits, restarts, replacements and replans. A capability blocker may escalate earlier without waiting for failure rounds.
+`dev workflow next` activates exactly one runnable task. Builder retrieves only its task:
 
 ```sh
-python3 "$tools/package_review.py" --repo "$repo" --base "$fix_base" \
-  --candidate "$fixed_candidate" --brief "$brief" --previous "$repair_packet" --output "$fix_diff"
-python3 "$tools/validate_workflow.py" reviews --repo "$repo" \
-  --base "$fix_base" --candidate "$fixed_candidate" --contract "$brief" \
-  --mode repair --previous "$repair_packet" --report "$rereview_report" \
-  --package "$fix_diff" --repair-output "$next_repair_packet"
+dev workflow task --task 3
 ```
 
-A scoped rereviewer explicitly resolves every old blocking ID and inspects repair-caused regressions. Unresolved findings are carried verbatim; retired IDs cannot be reused. Causality is not restricted to changed filenames: a new implementation can break an unchanged caller. A serious defect in the original candidate discovered late is labeled `late-discovery` and remains surfaced/blocking for explicit routing. The helper never downgrades it to make metrics look better. This is bounded review, not an artificial promise that the finding set can only shrink.
-
-A genuine approved contract change gets a successor brief and affected review; old approval cannot apply to its new digest. Preserve counters and explicitly carry every unresolved old finding for the reviewer to resolve/reclassify under the revised authority. Do not fabricate a new digest onto old evidence. Equivalent implementation/command guidance that leaves the binding contract unchanged is a bounded overlay, not a whole replan.
-
-## Recovery and completion
-
-Reconcile spec/plan readiness, compact ledger, actual HEAD/index/worktree, exact report provenance and live agent availability. A missing child is not a reason to redispatch accepted tasks. Dirty fresh starts stop; clearly owned interrupted work is preserved/recovered, ambiguous changes are reported. Cancellation preserves everything. Never reset, stash, clean or route a rejected permission request through another agent.
-
-Planner owns readiness. The controller reads the compact plan index/active task, not a second whole-plan technical preflight. Validate the plan-defined baseline once and preserve accepted evidence unless relevant code/contracts changed. Operational splits retain parent requirements, explicit sibling coverage and existing repair counts. They do not grant new architecture or parallel writers.
-
-After all tasks are accepted, obtain whole-project validation and freeze the final contract before dispatching the configured strongest Reviewer:
+After committing, Builder submits the candidate:
 
 ```sh
-python3 "$tools/package_task.py" --final --spec "$project/spec.md" \
-  --plan "$project/plan.md" --progress "$project/progress.md" \
-  --base "$project_base" --report "$validation_report" --output "$final_contract"
+dev workflow candidate submit --task 3 --sha HEAD
 ```
 
-Package the full project diff against that contract with `--validation "$validation_report"`, then validate the review with `--mode final --package "$project_diff" --validation "$validation_report"`. The reviewer checks integrated requirements, interactions, deferred concerns and actual code, not all past transcripts. Final blockers get one fresh integrated Builder fix wave, focused checks and full-project validation again, then one fresh `final-repair` review with the original final contract and previous packet. No second automatic final fix wave. Real residual blockers mean incomplete.
+The runtime resolves the full SHA, requires it to equal clean HEAD and descend the expected predecessor, then executes Planner-declared checks itself without a shell. A failed check does not advance to review. One corrected candidate is allowed; a second verification failure pauses for human intervention.
 
-On success record final range, evidence, rulings and residual Minors, then delete only `work/`. Retain spec/plan/progress. Workflow completion is a human handoff, not permission to merge/push/rebase or manage worktrees.
+Reviewer gets only task contract + exact candidate evidence:
 
-## Configuration and installation
+```sh
+dev workflow task --task 3 --review
+```
 
-Only `dotfiles/.codex/agents/*.toml` owns concrete models/efforts. Skills choose existing role aliases. Defaults are an experimental starting point, not a benchmarked optimum; Low effort does not enforce scope. Review quality and cost-to-accepted-task decide retuning, not token price alone. `python3 tests/validate_assets.py` reports current selections without copying an expected model matrix into tests.
+Findings are recorded through the runtime and the review closes atomically:
 
-The launcher embeds every role, skill, prompt and helper into a content-addressed runtime directory. Rebuilding the binary installs the new embedded revision; old runtime copies remain available for genuinely old sessions. Starting a fresh `dev a pr` reconciles the current project. Do not edit generated cache files.
+```sh
+dev workflow review finding --task 3 --severity important \
+  --summary '...' --evidence '...'
+dev workflow review finish --task 3 --verdict fixes-required
+```
 
-`just install-workflow /path/to/worktree` optionally exports only workflow assets. It preserves user config and unrelated files; changed assets and the five retired split-review prompts are backed up before replacement/removal. Old active report formats need a provenance-confirmed reformat/review; never rerun completed work just to migrate a ledger. Preserve existing S/Q finding IDs and counts. An interrupted task already at or beyond the new repair cap must route its blocker, not reset to zero.
+An initial PASS accepts the task. Otherwise there is one repair candidate and one fresh rereview. Every initial blocker must receive an explicit resolution; new rereview blockers must be identified as repair regressions or serious late discoveries. Residual blocking work after that single repair pauses instead of looping.
 
-## Local validation only
+## Final review
 
-`just test-fast` runs asset validation and Python/Git/filesystem tests. `just test-slow` retains actual Rust unit tests/build and the compiled-launcher recording-shim test. `just test` runs both; `just check` remains an alias. No CI workflow, remote runner, or automatic paid model eval is added. See [EVALS.md](EVALS.md) for what deterministic tests can and cannot establish and [VALIDATION.md](VALIDATION.md) for results actually obtained.
+After every task is accepted, the runtime executes final checks and routes one fresh integrated review. `dev workflow final context` supplies the approved spec identity, accepted task summary, candidate-bound validation and bounded diff. One integrated final repair wave is allowed. A residual blocker pauses rather than starting another automatic loop.
 
-## Handoff hardening (models unchanged)
+## Human intervention
 
-Contracts start with generated base/kind metadata. Initial review must cover that entire base..candidate range; repair review starts at the previous packet's candidate. Schema-2 reviews bind the actual package digest. Gated validation rechecks the package against Git and supplied evidence without printing the diff into controller context. Use `--package` on every `validate_workflow.py reviews` call, `--previous` on repairs/clarifications, and `--validation` for final/final-repair packaging and review checks.
+Human intervention is a supported transition, not workflow corruption:
 
-Same-candidate clarification uses mode `clarification`, an explicit per-ID disposition, and preserves its repair count. Every blocking result, including BLOCKED with findings, produces a packet when `--repair-output` is supplied. Helpers enforce at most two reviewed task repairs and one final repair from packet history; no cap grants PASS. Keep immutable predecessor pointers during recovery. Legacy active reports need bounded metadata migration; preserve findings/counts and accepted work rather than restarting the project.
+```sh
+dev workflow human ask --question '...'
+dev workflow human answer --request 1 --answer '...'
+dev workflow human pause --reason '...'
+dev workflow human resume
+dev workflow human adopt-head --reason '...'
+```
 
-Build and integrated-validation reports declare `Verification-Status: PASS|FAIL|BLOCKED`. Final validation must exist and name the exact full candidate Commit; its digest is bound in the review package. These checks establish declared provenance, not actual test adequacy or truthful model reasoning. Required failures cannot reach the ordinary review gate merely by writing COMPLETED.
+A semantic answer is appended verbatim to the approved spec and invalidates only non-accepted compiled work, returning control to Planner. A legitimate clean human-created HEAD can be explicitly adopted. Unexpected HEAD movement otherwise fails closed.
 
-Record nonignored untracked inputs once with `validate_workflow.py untracked-baseline --repo <repo> --output <project>/work/untracked.json`. Candidate checks receive `--untracked-baseline`; they reject new/changed nonignored inputs absent from Git, while allowing a preexisting unchanged file or one now committed. Preserve the baseline and keep workflow reports under ignored plans/. This is not hermetic validation: ignored inputs, toolchains, environment and external dependencies still require the recorded validation environment.
+## Failure policy
 
-Recovery uses `project-ready --project <project> --repo <repo>`. Task rows retain candidate, repairs, contract, review, package and previous packet references. Invalid counters and accepted evidence mismatches fail closed with a bounded recovery error. Detailed Minor observations remain in the report; envelope minor_ids provide their pointer without another packet type. State checks cannot prevent an agent from ignoring the prescribed gates; live behavioral testing remains necessary.
+The runtime is strict about safety but flexible about path:
+
+- invalid calls never advance work;
+- two consecutive semantically invalid middleware calls pause to prevent tool-call thrashing;
+- one task repair, then human if still blocked;
+- one automatic material replan, then human;
+- one corrected candidate after verification failure, then human;
+- one final repair wave, then human;
+- stale/non-HEAD candidate acceptance is rejected;
+- oversized review contexts fail toward split/replan instead of silently filling a model context;
+- shell composition is not used for Planner verification commands.
+
+A hard stop is preferable to an unbounded agent loop.
+
+## Models and Git lifecycle
+
+Concrete model/effort choices remain solely in `dotfiles/.codex/agents/*.toml`; the workflow runtime does not dynamically retune them. The workflow never pushes, merges, rebases, squashes or manages worktrees. Those remain human-owned repository lifecycle actions.
+
+## Local validation
+
+```sh
+just test-fast
+just test-slow
+just test
+```
+
+No CI or automatic paid-model runs are required by this repository.

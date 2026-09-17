@@ -20,6 +20,7 @@ test-slow:
     cargo test --locked
     cargo build --locked
     python3 tests/launcher_e2e.py --binary target/debug/dev
+    python3 tests/workflow_e2e.py --binary target/debug/dev
 
 test: test-fast test-slow
 
