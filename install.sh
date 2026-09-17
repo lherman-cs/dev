@@ -46,7 +46,7 @@ fi
 log "Installing packages via Homebrew..."
 brew install \
   gcc wl-clipboard curl git git-lfs htop tmux \
-  neovim fd fzf ripgrep jq yq go nodejs npm protobuf-c sccache
+  neovim fd fzf ripgrep jq yq go nodejs npm protobuf-c sccache pi-coding-agent
 
 # 3. Setup Workspace and Repository
 mkdir -p "$WORKSPACE_DIR"
