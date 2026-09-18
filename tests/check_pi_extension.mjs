@@ -126,5 +126,33 @@ const commits = Number(execFileSync('git', ['rev-list', '--count', `${base}..HEA
 if (commits !== 3) throw new Error(`expected 3 plan/repair commits, got ${commits}`);
 if (!notifications.some(n => n.message.includes('Build complete'))) throw new Error('build did not report completion');
 
+// Replanning may replace an immutable blocked plan. The replacement explicitly
+// supersedes it, so a stale progress.current must not dispatch the old plan again.
+fs.writeFileSync(path.join(planDir, 'P003.toon'), JSON.stringify({ version: 1, id: 'P003', title: 'blocked', depends_on: ['P002'], checks: [] }));
+fs.writeFileSync(path.join(planDir, 'P004.toon'), JSON.stringify({ version: 1, id: 'P004', title: 'replacement', supersedes: 'P003', depends_on: ['P002'], checks: ['test -f built-P004.txt'] }));
+progress.current = 'P003';
+fs.writeFileSync(path.join(projectDir, 'progress.toon'), JSON.stringify(progress));
+await commands.get('dev-build').handler('demo', ctx);
+progress = JSON.parse(fs.readFileSync(path.join(projectDir, 'progress.toon'), 'utf8'));
+if (progress.done.includes('P003')) throw new Error('superseded plan was marked done');
+if (!progress.done.includes('P004')) throw new Error('replacement plan was not driven');
+if (fs.existsSync(path.join(repo, 'built-P003.txt'))) throw new Error('superseded plan was executed');
+if (!fs.existsSync(path.join(repo, 'built-P004.txt'))) throw new Error('replacement plan was not executed');
+
+// If Builder committed successfully but progress.toon was not advanced, Git is
+// enough to recover the current plan without dispatching another Builder.
+const recoveryBase = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repo, encoding: 'utf8' }).trim();
+fs.writeFileSync(path.join(planDir, 'P005.toon'), JSON.stringify({ version: 1, id: 'P005', title: 'recover', depends_on: ['P004'], checks: ['test -f built-P005.txt'] }));
+fs.writeFileSync(path.join(repo, 'built-P005.txt'), 'P005\n');
+execFileSync('git', ['add', 'built-P005.txt'], { cwd: repo });
+execFileSync('git', ['-c', 'user.name=Pi Test', '-c', 'user.email=pi@test.invalid', 'commit', '-qm', 'build P005\n\nPlan-ID: P005'], { cwd: repo });
+progress.current = 'P005';
+progress.head = recoveryBase;
+fs.writeFileSync(path.join(projectDir, 'progress.toon'), JSON.stringify(progress));
+await commands.get('dev-build').handler('demo', ctx);
+progress = JSON.parse(fs.readFileSync(path.join(projectDir, 'progress.toon'), 'utf8'));
+if (!progress.done.includes('P005') || progress.current !== null) throw new Error(`committed current plan was not recovered: ${JSON.stringify(progress)}`);
+if (!notifications.some(n => n.message.includes('Recovered P005'))) throw new Error('recovery was not reported');
+
 fs.rmSync(tmp, { recursive: true, force: true });
 console.log('Pi extension syntax + deterministic build/repair smoke test: PASS');

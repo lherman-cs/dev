@@ -196,12 +196,33 @@ async function loadProgress(project, projectData) {
   return { file, data: await decodeToon(file) };
 }
 
+function supersededIds(entries) {
+  return new Set(entries.map((entry) => entry.data.supersedes).filter(Boolean));
+}
+
 function nextReady(entries, done) {
   for (const entry of entries) {
     if (done.has(entry.data.id)) continue;
     if ((entry.data.depends_on || []).every((id) => done.has(id))) return entry;
   }
   return undefined;
+}
+
+async function recoverCurrentPlan(ctx, progress, entries) {
+  const id = progress.data.current;
+  if (!id) return false;
+  const entry = entries.find((candidate) => candidate.data.id === id);
+  if (!entry) return false;
+  const head = await git(ctx.cwd, ["rev-parse", "HEAD"]);
+  if (head === progress.data.head) return false;
+  const validation = await validatePlanCommit(ctx.cwd, progress.data.head, entry.data);
+  if (!validation.ok) return false;
+  progress.data.done = [...new Set([...(progress.data.done || []), id])];
+  progress.data.current = null;
+  progress.data.head = validation.head;
+  await writeToon(progress.file, progress.data);
+  ctx.ui.notify(`Recovered ${id} from existing validated commit.`, "info");
+  return true;
 }
 
 async function maybeAdoptHumanHead(ctx, progress) {
@@ -444,20 +465,28 @@ async function driveBuild(ctx, args) {
   if (!project) return;
   const loaded = await loadProject(project);
   const progress = await loadProgress(project, loaded.data);
+  const superseded = supersededIds(loaded.entries);
+  if (progress.data.current && superseded.has(progress.data.current)) {
+    progress.data.current = null;
+    await writeToon(progress.file, progress.data);
+  }
+  await recoverCurrentPlan(ctx, progress, loaded.entries);
   await maybeAdoptHumanHead(ctx, progress);
   const done = new Set(progress.data.done || []);
   const ids = new Set(loaded.entries.map((e) => e.data.id));
   for (const id of done) if (!ids.has(id)) throw new Error(`progress.toon references missing approved work ${id}`);
+  const active = loaded.entries.filter((entry) => !superseded.has(entry.data.id));
 
-  while (done.size < loaded.entries.length) {
-    const next = progress.data.current ? loaded.entries.find((e) => e.data.id === progress.data.current) : nextReady(loaded.entries, done);
+  while (active.some((entry) => !done.has(entry.data.id))) {
+    const next = progress.data.current ? active.find((e) => e.data.id === progress.data.current) : nextReady(active, done);
     if (!next) throw new Error("No dependency-ready approved work remains. Run /dev-plan to repair dependencies/state.");
-    ctx.ui.setStatus("dev-build", `${project.name} · ${done.size}/${loaded.entries.length} · ${next.data.id}`);
+    const complete = active.filter((entry) => done.has(entry.data.id)).length;
+    ctx.ui.setStatus("dev-build", `${project.name} · ${complete}/${active.length} · ${next.data.id}`);
     await runPlan(ctx, project, progress, next);
     done.add(next.data.id);
   }
   ctx.ui.setStatus("dev-build", undefined);
-  ctx.ui.notify(`Build complete: ${done.size}/${loaded.entries.length} approved plans/repairs. Next: /dev-prepare`, "info");
+  ctx.ui.notify(`Build complete: ${active.length}/${active.length} approved plans/repairs. Next: /dev-prepare`, "info");
 }
 
 class RichBriefView {
