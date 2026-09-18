@@ -1,4 +1,7 @@
 {
+  "defaultProvider": "openai",
+  "defaultModel": "gpt-5.6-luna",
+  "defaultThinkingLevel": "medium",
   "tuiMode": "fullscreen",
   "fullscreenScrollbar": "auto",
   "terminal": {
