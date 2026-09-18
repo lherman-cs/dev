@@ -1,0 +1,10 @@
+{
+  "tuiMode": "fullscreen",
+  "fullscreenScrollbar": "auto",
+  "terminal": {
+    "showImages": true
+  },
+  "markdown": {
+    "mermaid": "final"
+  }
+}

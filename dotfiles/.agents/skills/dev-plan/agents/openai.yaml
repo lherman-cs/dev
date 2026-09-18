@@ -1,6 +1,0 @@
-interface:
-  display_name: "Dev Plan"
-  short_description: "Compile an approved spec into an execution-ready plan"
-  default_prompt: "Use $dev-plan to create or materially revise the execution plan."
-policy:
-  allow_implicit_invocation: false

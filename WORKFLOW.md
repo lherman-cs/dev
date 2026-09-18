@@ -1,144 +1,206 @@
-# Codex workflow
+# Pi-first development workflow
 
-This is the human-facing guide. Workers load their assigned bundled skill and task artifacts, not this guide, the questionnaire, or another framework's router.
+## Design constraints
 
-## Architecture
+The workflow is intentionally easy to change as we learn. Pi is the harness; skills contain semantic role instructions; a single small extension supplies rich UI, isolated child-agent execution, model routing, Explorer, and deterministic build progress. Do not grow this into a generic workflow engine.
 
-```text
-Human + Specifier → APPROVED spec
-                  → Planner → READY plan
-                  → Builder → one fresh Reviewer → accepted task
-                                ↓ concrete blocker
-                           same task Builder
-                                ↓ one repair
-                           fresh scoped Reviewer
-                                ↓ still blocked
-                     change context/capability/plan, not blind retry
+Hard constraints:
 
-All tasks accepted → integrated validation → one fresh final Reviewer
-```
+- The human creates/manages worktrees.
+- No orchestrator agent.
+- No SQLite/database/event log.
+- No durable model transcripts or copied source/diffs/logs.
+- No per-plan LLM review.
+- No automatic build -> review -> repair loop. The human invokes every major stage.
+- New implementation work enters through an approved plan or approved review repair.
+- Git is implementation truth; the approved spec is semantic truth.
 
-Keep exactly five public skills: `dev-spec`, `dev-plan`, `dev-build`, `dev-review`, `dev-project`. Explorer is a read-only factual leaf. `builder_strong` and `reviewer_strong` are capability aliases of the same personas, not extra routine seats. Every new child gets `fork_turns="none"`. One meaningful writer at a time; task gates remain sequential.
-
-One reviewer always owns both requirements and engineering quality. Final review uses that same persona on an integrated assignment. A task Builder may remain warm for that task's questions/repairs only. Review and rereview contexts are fresh; a same-reviewer clarification is not another audit or repair round.
-
-## Authority and quality
-
-The human approves behavior. Specifier owns `spec.md`, Planner owns `plan.md`, controller owns `progress.md`, Builder owns implementation/commits/build reports, and Reviewer owns review reports. Under an existing spec, ordinary private implementation mechanics belong to Builder. A material interface/dependency/strategy defect goes to Planner; product semantics never become a cheap controller ruling.
-
-A bounded explicit human answer may be recorded by the controller in the owning spec clause with an approval note, then affected work resumes without repeating approval. Substantial or unresolved semantic changes reopen affected sections as DRAFT for `dev-spec`. Silence is not approval. Do not let this clerical exception become design authority.
-
-Define done once: behavior, exact interfaces/invariants, non-goals and observable verification. Planner distinguishes binding contracts from implementation guidance. Use exact code only where it resolves consequential uncertainty; do not implement the feature twice in prose and code. Put setup/config/docs with the behavior they enable, and split only at independently testable/reviewable boundaries. Optional global requirements use a small `## Global Constraints` section; packaging carries it verbatim.
-
-Builder runs meaningful RED → GREEN → REFACTOR, prescribed focused checks, and one bounded self-review. Generated/docs/mechanical work gets an explicit meaningful verification exception, not fake RED. Reviewer checks the actual diff and whether evidence proves the required behavior; reported tests do not prove their own adequacy. Rerun only a focused check for a concrete unanswered doubt. Baseline/final checks run at their intended boundary, not in every seat.
-
-Critical/Important means a reachable material failure or explicit unmet requirement attributable to this candidate. Minor/taste/optional hardening never blocks. The reviewer states the failure, impact and observable resolution; a proposed implementation is guidance, not a new requirement. Serious pre-existing unrelated defects are reported as out of scope without silently enlarging this task.
-
-## Controller economics
-
-Keep state, paths, full SHAs, finding IDs, task dependencies, boundaries and concise exceptions in controller context. It can inspect a relevant contract/report to route an exception, but does not independently review or debug. Pass authoritative artifacts unchanged rather than paraphrasing findings. No nested controllers or routine extra reviewers.
-
-Helpers do extraction, Git checks and report validation, not semantic decisions. There is no additional workflow daemon, workflow engine, database or state manifest. The controller still owns the small recovery ledger. Detailed outputs live under `work/`; return tiny status envelopes. Only read the dispatch template relevant now. Use actual runtime completion/wait/resume mechanisms; never poll in chat, guess a tool name, or promise background work after ending a turn.
-
-Explorer is admitted when a bounded factual digest saves a substantial off-topic investigation. Known-path reads and the implementation/review itself stay local. No duplicate parent/Explorer investigations, hidden second opinions, or delegation of judgment. Close completed helpers before consuming more capacity. Thread capacity is not a reason to increase the number of review seats.
-
-## Artifacts and mechanical protocol
+## Lifecycle
 
 ```text
-plans/<project>/
-  spec.md       # approved semantics
-  plan.md       # current execution plan
-  progress.md   # compact current recovery state; one row per task/finding
-  work/         # immutable briefs/diffs, per-candidate reports, repair packets
+human creates worktree
+        |
+     /dev-spec
+        |  rich spec brief + explicit human approval
+     /dev-plan
+        |  rich plan brief + explicit human approval
+     /dev-build
+        |  fresh visible Builder / plan or repair / commit
+   /dev-prepare
+        |  rebase + local final checks + push/update DRAFT PR
+        |  STOP -- no waiting
+        v
+   CI + review bots run asynchronously
+        |
+   human waits until relevant signals are terminal
+        |
+    /dev-review
+        |  consumes CI RED/GREEN + bot/PR feedback + diff + spec + tests
+        |  adversarial review + rich human brief
+        |
+        +-- PASS -------------------------------> /dev-ship
+        |
+        `-- repairs proposed
+              | rich repair brief: inspect/filter/feedback
+              | explicit human approval
+              v
+         repairs/Rxxx.toon
+              |
+          human invokes /dev-build
+              |
+          /dev-prepare -> external signals -> /dev-review
 ```
 
-All of `plans/` is Git-ignored. Preparation resolves Git metadata correctly in linked worktrees. Ignore rules never untrack files; explicit workflow-owned index-only cleanup preserves working files and uses a separate cleanup commit. Do not force-add evidence. Commit implementation with explicit paths and Conventional Commits; each repaired candidate is a new commit, never amend a reviewed SHA.
+Nothing automatically crosses the human-trigger boundaries.
 
-Let `tools` be the absolute directory containing the assigned bundled `dev-project/scripts`. The launcher prints/materializes that content-addressed location; installed assets have the same layout. Run commands directly; do not read helper source or repeatedly request help to rediscover them.
+## Human review UX is a primary product requirement
 
-```sh
-python3 "$tools/prepare_workspace.py" --repo "$repo"
-python3 "$tools/package_task.py" --plan "$project/plan.md" --list
-python3 "$tools/package_task.py" --plan "$project/plan.md" --task "$task" \
-  --base "$base" --report "$build_report" --output "$brief"
-python3 "$tools/validate_workflow.py" candidate-ready --repo "$repo" \
-  --base "$base" --candidate "$candidate" --report "$build_report" \
-  --untracked-baseline "$project/work/untracked.json"
-python3 "$tools/package_review.py" --repo "$repo" --base "$base" \
-  --candidate "$candidate" --brief "$brief" --output "$diff"
+Spec, Plan, and Review/Repair must feel closer to a modern web review page than a traditional terminal prompt. `workflow_brief` is a reusable Pi TUI surface and should support:
+
+- fullscreen responsive panes/tabs/cards/tables/trees;
+- rich Markdown and syntax-readable code/data;
+- architecture/data-flow diagrams;
+- before/after representations where useful;
+- optional inline screenshots/images when they materially improve understanding;
+- mouse and keyboard navigation;
+- collapsible/drill-down organization and concise evidence links;
+- selectable repair proposals plus a feedback path;
+- graceful fallback when the terminal cannot render an image.
+
+Spend model tokens on understanding and concise human communication, not HTML/CSS/layout boilerplate. The model emits semantic sections/diagrams/repairs; the extension renders them. Richness and human review speed matter more than minimizing every presentation token.
+
+## Explorer is a first-class primitive
+
+`explore` is available to intelligent workflow roles, including Builder children. Explorers are fresh, narrow, read-only, cheap, evidence-oriented subagents. They should be heavily used when they reduce the parent model's context or latency.
+
+Good fan-out examples:
+
+- repository code paths/invariants/symbol ownership;
+- diff impact and compatibility questions;
+- CI failure diagnosis and minimal relevant log evidence;
+- completed bot/PR feedback synthesis;
+- tests/coverage gaps;
+- current upstream/API documentation and primary references.
+
+Prefer several narrow Explorer tasks in parallel over one broad research session. The parent gets compact `Conclusion / Evidence / Uncertainty` packets, never full child transcripts. Explorer activity is visible in Pi. External-capability Explorers may use read-only `gh`, `curl`, and Git commands; the extension blocks obvious mutation commands.
+
+## Artifacts
+
+All workflow artifacts are ignored under `plans/<project>/`:
+
+```text
+spec.md                   semantic authority; human approved
+project.toon              project/base/dependencies/final checks/status
+progress.toon             tiny extension-owned execution pointer
+plans/P001.toon           immutable approved implementation contract
+plans/P002.toon
+repairs/R001.toon         immutable human-approved review repair contract
+review.toon               compact exact-HEAD review state/provenance
 ```
 
-Task extraction preserves Planner text and appends only bounded metadata/rulings/scope. The original brief is never rewritten after dispatch. A later repair receives its own report path in dispatch, not an appended report with contradictory commit markers. Review packages include all commits in the range, full Git IDs, a diff with context and the brief's SHA-256. External diff/textconv commands are disabled. Helpers print paths/digests, not the payload. Existing outputs cannot be overwritten, including by concurrent exclusive creation.
+Do not store raw CI logs, bot transcripts, LLM transcripts, source copies, giant summaries, or generated HTML.
 
-Build reports remain short Markdown: `Status: COMPLETED`, `Commit: <actual SHA>`, `Verification-Status: PASS|FAIL|BLOCKED`, `Verification:` commands/outcomes, implemented behavior and material notes. Builder resolves the commit before `build-handoff`. Metadata validation does not certify test success.
+`progress.toon` contains only the minimum needed to resume deterministic build driving: project, completed work IDs, current work ID, and accepted HEAD. Human Git edits are reality; the workflow never resets/cleans them away.
 
-Reviews use the small JSON format in [report-contract.md](dotfiles/.agents/skills/dev-project/prompts/report-contract.md). It binds mode, base, candidate, contract digest and package digest, and distinguishes new findings from per-ID resolution evidence. Empty fields cannot stand in for evidence. A `VALID` envelope means the schema/provenance is valid, **not that the task passed**.
+## Spec
 
-```sh
-python3 "$tools/validate_workflow.py" reviews --repo "$repo" \
-  --base "$base" --candidate "$candidate" --contract "$brief" --mode task \
-  --report "$review_report" --package "$diff" --repair-output "$repair_packet"
+`/dev-spec` starts semantic alignment. Specifier inspects reality, challenges assumptions, records decisions/non-goals/invariants/acceptance evidence, and may propose splitting the request into independently mergeable/testable projects. The human decides and creates any additional worktrees.
+
+Before approval, Specifier must render the rich Pi spec brief. Feedback returns directly to Specifier. Only explicit human approval marks `spec.md` APPROVED.
+
+## Plan
+
+`/dev-plan` compiles the approved spec into small execution contracts. One plan is the smallest coherent independently testable outcome suitable for one fresh Builder session and one commit. Planner owns plan TOON; Builders never edit plans.
+
+A dispatched plan is immutable. If a material assumption is contradicted, create replacement IDs for affected remaining work rather than rewriting history.
+
+Before `project.toon.status` becomes `ready`, Planner must render a rich plan brief containing architecture/dataflow, plan graph, invariants, validation strategy, risks, and intentionally untouched areas. Explicit human approval is required.
+
+## Build
+
+`/dev-build` is deterministic extension code, not an orchestrator model.
+
+For each dependency-ready approved `Pxxx` or `Rxxx` contract:
+
+1. persist `current` in `progress.toon`;
+2. start a fresh isolated Builder child with the configured exact model/reasoning level;
+3. stream its tool activity/output/usage visibly into the parent Pi TUI;
+4. Builder may delegate narrow read-only research to `explore`;
+5. require exactly one new coherent commit with trailer `Plan-ID: <id>`;
+6. independently rerun Planner/Reviewer-declared checks;
+7. require a clean worktree;
+8. advance `progress.toon` and continue.
+
+A plan gets at most two bounded Builder attempts; the retry may use a stronger configured model. Work is preserved. If the execution contract itself is materially wrong, Builder ends with `NEEDS_REPLAN`; `/dev-build` stops and the human invokes `/dev-plan`. It never summons Planner or Reviewer itself.
+
+## Prepare
+
+`/dev-prepare` creates the remote review candidate and then stops:
+
+1. ensure approved work is complete and the worktree clean;
+2. fetch/rebase onto current base;
+3. run local integrated/final tests, docs checks, lint and format;
+4. stop on semantic conflict or behavior-changing work;
+5. push branch;
+6. create/update a **draft** PR so CI and review bots run;
+7. STOP.
+
+It never waits/polls for CI or bot completion and never launches Review. The human decides when the signals are complete.
+
+## Review and repair planning
+
+The human invokes `/dev-review` after CI and relevant review bots are terminal for the current PR/HEAD. CI may be GREEN **or RED**. Red results are evidence.
+
+Reviewer verifies the external-signal gate, then uses the approved spec, plans/repairs, final diff/history, local evidence, completed CI results/log snippets, bot feedback, PR feedback, tests, and relevant external references. It should fan out several focused Explorers in parallel before synthesizing.
+
+Review does not edit product code. It renders a rich project review. If clean, human approval records `review.toon.status: pass` bound to exact HEAD.
+
+If material repairs are needed, Reviewer creates a draft set of very narrow repair proposals and shows them in the rich review UI. The human can inspect, deselect/filter, or provide feedback and have the Reviewer revise them. Only selected explicitly approved repairs become new immutable `repairs/RNNN.toon` files. Reviewer records `review.toon.status: repairs_approved` and stops. The human decides when to run `/dev-build`.
+
+After repairs, `/dev-prepare` creates a new candidate, external signals run again, and the human invokes `/dev-review` again. There is no hidden repair loop.
+
+## Ship
+
+`/dev-ship` is specific to the final GitHub handoff. It requires `review.toon.status: pass` for exact current HEAD and the same reviewed CI/bot candidate. If HEAD moved, stop.
+
+Shipper updates the PR title/body with a concise high-level human review surface and marks the draft PR ready. Useful sections are:
+
+- Intent
+- What changed
+- Architecture / API impact (only when material)
+- Validation, including CI outcome
+- Risks / review focus
+- compact Plan -> commit map when useful
+
+Do not dump implementation trivia, logs, or agent prose. Shipper never implements fixes and never merges.
+
+If later human PR feedback requires code, the human invokes `/dev-review` again. Reviewer turns the new evidence into a narrow human-approved repair set; then the same Build -> Prepare -> external signals -> Review cycle repeats.
+
+## Models
+
+`~/.pi/agent/dev-workflow.json` is the only role/model policy. Defaults:
+
+```text
+Specifier      gpt-5.6-sol   medium
+Planner        gpt-5.6-sol   high
+Builder        gpt-5.6-sol   low
+Builder retry  gpt-5.6-sol   medium
+Explorer       gpt-5.6-luna  medium
+Prepare        gpt-5.6-luna  medium
+Reviewer       gpt-6-astra   low
+Shipper        gpt-5.6-luna  medium
 ```
 
-A PASS advances only after required validation and the review agree with the current clean tracked candidate. FIXES_REQUIRED, or BLOCKED with findings, creates one packet containing exact blocking findings; Minor bodies and checked evidence stay in the report. BLOCKED is an evidence/authority exception, never acceptance. An invalid report is corrected by its owner without a code repair or another reviewer seat. Do not silently treat a legacy `Verdict: PASS` line as current approval.
+The extension sets the configured model/reasoning level explicitly. Missing/ambiguous/unavailable models fail visibly; there is no silent model fallback. Change this matrix freely as models/costs evolve without changing workflow semantics.
 
-## Repair convergence
+## Extension boundary
 
-Initial review covers the assigned candidate completely within scope and returns all material findings found. The controller sends them together to the same task Builder. One submitted repair candidate plus scoped rereview consumes one round; local debugging, questions and report corrections do not.
+The Pi extension is allowed to own only harness-level concerns:
 
-One ordinary repair is the expectation. After it fails, use the evidence to change the input, resolve a dispute with the originating reviewer, or use the configured stronger capability. No mandatory new diagnosis agent. A single exceptional second reviewed repair requires a recorded concrete reason and changed input/capability. At two reviewed repairs, stop automatic attempts and route the genuine remaining blocker; do not waive it. Preserve counters across splits, restarts, replacements and replans. A capability blocker may escalate earlier without waiting for failure rounds.
+- rich fullscreen review UI;
+- exact role/model selection;
+- visible isolated Builder sessions;
+- parallel read-only Explorer sessions;
+- minimal `progress.toon` bookkeeping and deterministic build verification.
 
-```sh
-python3 "$tools/package_review.py" --repo "$repo" --base "$fix_base" \
-  --candidate "$fixed_candidate" --brief "$brief" --previous "$repair_packet" --output "$fix_diff"
-python3 "$tools/validate_workflow.py" reviews --repo "$repo" \
-  --base "$fix_base" --candidate "$fixed_candidate" --contract "$brief" \
-  --mode repair --previous "$repair_packet" --report "$rereview_report" \
-  --package "$fix_diff" --repair-output "$next_repair_packet"
-```
-
-A scoped rereviewer explicitly resolves every old blocking ID and inspects repair-caused regressions. Unresolved findings are carried verbatim; retired IDs cannot be reused. Causality is not restricted to changed filenames: a new implementation can break an unchanged caller. A serious defect in the original candidate discovered late is labeled `late-discovery` and remains surfaced/blocking for explicit routing. The helper never downgrades it to make metrics look better. This is bounded review, not an artificial promise that the finding set can only shrink.
-
-A genuine approved contract change gets a successor brief and affected review; old approval cannot apply to its new digest. Preserve counters and explicitly carry every unresolved old finding for the reviewer to resolve/reclassify under the revised authority. Do not fabricate a new digest onto old evidence. Equivalent implementation/command guidance that leaves the binding contract unchanged is a bounded overlay, not a whole replan.
-
-## Recovery and completion
-
-Reconcile spec/plan readiness, compact ledger, actual HEAD/index/worktree, exact report provenance and live agent availability. A missing child is not a reason to redispatch accepted tasks. Dirty fresh starts stop; clearly owned interrupted work is preserved/recovered, ambiguous changes are reported. Cancellation preserves everything. Never reset, stash, clean or route a rejected permission request through another agent.
-
-Planner owns readiness. The controller reads the compact plan index/active task, not a second whole-plan technical preflight. Validate the plan-defined baseline once and preserve accepted evidence unless relevant code/contracts changed. Operational splits retain parent requirements, explicit sibling coverage and existing repair counts. They do not grant new architecture or parallel writers.
-
-After all tasks are accepted, obtain whole-project validation and freeze the final contract before dispatching the configured strongest Reviewer:
-
-```sh
-python3 "$tools/package_task.py" --final --spec "$project/spec.md" \
-  --plan "$project/plan.md" --progress "$project/progress.md" \
-  --base "$project_base" --report "$validation_report" --output "$final_contract"
-```
-
-Package the full project diff against that contract with `--validation "$validation_report"`, then validate the review with `--mode final --package "$project_diff" --validation "$validation_report"`. The reviewer checks integrated requirements, interactions, deferred concerns and actual code, not all past transcripts. Final blockers get one fresh integrated Builder fix wave, focused checks and full-project validation again, then one fresh `final-repair` review with the original final contract and previous packet. No second automatic final fix wave. Real residual blockers mean incomplete.
-
-On success record final range, evidence, rulings and residual Minors, then delete only `work/`. Retain spec/plan/progress. Workflow completion is a human handoff, not permission to merge/push/rebase or manage worktrees.
-
-## Configuration and installation
-
-Only `dotfiles/.codex/agents/*.toml` owns concrete models/efforts. Skills choose existing role aliases. Defaults are an experimental starting point, not a benchmarked optimum; Low effort does not enforce scope. Review quality and cost-to-accepted-task decide retuning, not token price alone. `python3 tests/validate_assets.py` reports current selections without copying an expected model matrix into tests.
-
-The launcher embeds every role, skill, prompt and helper into a content-addressed runtime directory. Rebuilding the binary installs the new embedded revision; old runtime copies remain available for genuinely old sessions. Starting a fresh `dev a pr` reconciles the current project. Do not edit generated cache files.
-
-`just install-workflow /path/to/worktree` optionally exports only workflow assets. It preserves user config and unrelated files; changed assets and the five retired split-review prompts are backed up before replacement/removal. Old active report formats need a provenance-confirmed reformat/review; never rerun completed work just to migrate a ledger. Preserve existing S/Q finding IDs and counts. An interrupted task already at or beyond the new repair cap must route its blocker, not reset to zero.
-
-## Local validation only
-
-`just test-fast` runs asset validation and Python/Git/filesystem tests. `just test-slow` retains actual Rust unit tests/build and the compiled-launcher recording-shim test. `just test` runs both; `just check` remains an alias. No CI workflow, remote runner, or automatic paid model eval is added. See [EVALS.md](EVALS.md) for what deterministic tests can and cannot establish and [VALIDATION.md](VALIDATION.md) for results actually obtained.
-
-## Handoff hardening (models unchanged)
-
-Contracts start with generated base/kind metadata. Initial review must cover that entire base..candidate range; repair review starts at the previous packet's candidate. Schema-2 reviews bind the actual package digest. Gated validation rechecks the package against Git and supplied evidence without printing the diff into controller context. Use `--package` on every `validate_workflow.py reviews` call, `--previous` on repairs/clarifications, and `--validation` for final/final-repair packaging and review checks.
-
-Same-candidate clarification uses mode `clarification`, an explicit per-ID disposition, and preserves its repair count. Every blocking result, including BLOCKED with findings, produces a packet when `--repair-output` is supplied. Helpers enforce at most two reviewed task repairs and one final repair from packet history; no cap grants PASS. Keep immutable predecessor pointers during recovery. Legacy active reports need bounded metadata migration; preserve findings/counts and accepted work rather than restarting the project.
-
-Build and integrated-validation reports declare `Verification-Status: PASS|FAIL|BLOCKED`. Final validation must exist and name the exact full candidate Commit; its digest is bound in the review package. These checks establish declared provenance, not actual test adequacy or truthful model reasoning. Required failures cannot reach the ordinary review gate merely by writing COMPLETED.
-
-Record nonignored untracked inputs once with `validate_workflow.py untracked-baseline --repo <repo> --output <project>/work/untracked.json`. Candidate checks receive `--untracked-baseline`; they reject new/changed nonignored inputs absent from Git, while allowing a preexisting unchanged file or one now committed. Preserve the baseline and keep workflow reports under ignored plans/. This is not hermetic validation: ignored inputs, toolchains, environment and external dependencies still require the recorded validation environment.
-
-Recovery uses `project-ready --project <project> --repo <repo>`. Task rows retain candidate, repairs, contract, review, package and previous packet references. Invalid counters and accepted evidence mismatches fail closed with a bounded recovery error. Detailed Minor observations remain in the report; envelope minor_ids provide their pointer without another packet type. State checks cannot prevent an agent from ignoring the prescribed gates; live behavioral testing remains necessary.
+Planning, implementation judgment, adversarial review, and shipping semantics remain in small skills. If a future feature does not clearly belong to those harness concerns, prove the need before adding custom code.
