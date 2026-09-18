@@ -116,7 +116,7 @@ Before approval, Specifier must render the rich Pi spec brief. Feedback returns 
 
 `/dev-plan` compiles the approved spec into small execution contracts. One plan is the smallest coherent independently testable outcome suitable for one fresh Builder session and one commit. Planner owns plan TOON; Builders never edit plans.
 
-A dispatched plan is immutable. If a material assumption is contradicted, create replacement IDs for affected remaining work rather than rewriting history.
+A dispatched plan is immutable. If a material assumption is contradicted, create replacement IDs for affected remaining work rather than rewriting history. A replacement records `supersedes: <old-id>`; superseded contracts remain as history but are not executable.
 
 Before `project.toon.status` becomes `ready`, Planner must render a rich plan brief containing architecture/dataflow, plan graph, invariants, validation strategy, risks, and intentionally untouched areas. Explicit human approval is required.
 

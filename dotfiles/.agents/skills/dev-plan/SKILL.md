@@ -23,7 +23,7 @@ Write compact structured artifacts:
 
 Each plan should contain only execution-contract information: ID, title, goal, dependencies, scoped requirements, material constraints or non-goals, and deterministic checks. Do not duplicate the whole spec or store research transcripts.
 
-A dispatched plan is immutable. When new evidence invalidates remaining work, preserve completed or dispatched plans and create replacement IDs only for the affected remaining work. Replanning is for contradicted assumptions, interfaces, dependencies, or proof strategies, not ordinary debugging.
+A dispatched plan is immutable. When new evidence invalidates remaining work, preserve the old contract and create replacement IDs only for the affected remaining work. Each replacement must set `supersedes: <old-id>`, and affected downstream dependencies must point at the replacement IDs. Replanning is for contradicted assumptions, interfaces, dependencies, or proof strategies, not ordinary debugging.
 
 ## Human approval
 
