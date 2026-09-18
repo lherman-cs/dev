@@ -14,4 +14,4 @@
 - Verify material claims with tools and prefer primary sources for external facts. Do not repeat a failed approach without new evidence.
 - Keep parent context small. Delegate narrow read-only research to Explorer when it improves speed, context efficiency, or confidence.
 - Preserve user work. Never reset, clean, stash, rebase, push, merge, or manage worktrees unless the active stage explicitly owns that operation.
-- One approved plan or repair becomes one coherent commit.
+- One approved plan or repair becomes one coherent Conventional Commit: `type(scope): summary`.
