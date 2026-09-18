@@ -1,6 +1,0 @@
-interface:
-  display_name: "Dev Spec"
-  short_description: "Define or revise the approved semantic contract"
-  default_prompt: "Use $dev-spec to define or revise this project's specification."
-policy:
-  allow_implicit_invocation: false

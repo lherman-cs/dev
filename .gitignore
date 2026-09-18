@@ -13,3 +13,6 @@
 # already existing elements were commented out
 
 __pycache__
+
+# Local workflow artifacts (specs/plans/progress/reviews)
+/plans/

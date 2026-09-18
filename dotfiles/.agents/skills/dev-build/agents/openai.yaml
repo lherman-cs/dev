@@ -1,6 +1,0 @@
-interface:
-  display_name: "Dev Build"
-  short_description: "Implement one bounded task or repair with TDD"
-  default_prompt: "Use $dev-build to implement the assigned task or repair."
-policy:
-  allow_implicit_invocation: false

@@ -1,0 +1,20 @@
+{
+  "version": 2,
+  "models": {
+    "spec": { "model": "gpt-5.6-sol", "thinking": "medium" },
+    "plan": { "model": "gpt-5.6-sol", "thinking": "high" },
+    "builder": { "model": "gpt-5.6-sol", "thinking": "low" },
+    "builder_retry": { "model": "gpt-5.6-sol", "thinking": "medium" },
+    "explorer": { "model": "gpt-5.6-luna", "thinking": "medium" },
+    "prepare": { "model": "gpt-5.6-luna", "thinking": "medium" },
+    "review": { "model": "gpt-6-astra", "thinking": "low" },
+    "ship": { "model": "gpt-5.6-luna", "thinking": "medium" }
+  },
+  "build": {
+    "max_attempts_per_plan": 2
+  },
+  "explorer": {
+    "max_parallel": 4,
+    "max_output_chars": 7000
+  }
+}

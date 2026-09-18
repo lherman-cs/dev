@@ -1,6 +1,0 @@
-interface:
-  display_name: "Dev Project"
-  short_description: "Execute an approved project through gated build and review"
-  default_prompt: "Use $dev-project to execute or resume the approved project."
-policy:
-  allow_implicit_invocation: false
