@@ -65,6 +65,15 @@ rm -rf \
   "$HOME/.agents/skills/dev-ship"
 rm -f "$HOME/.pi/agent/extensions/dev-workflow.ts" "$HOME/.pi/agent/dev-workflow.json"
 
+for p in \
+  npm:@narumitw/pi-lsp \
+  npm:@narumitw/pi-github-pr \
+  npm:@narumitw/pi-chrome-devtools \
+  npm:pi-web-access \
+  npm:pi-mcp-adapter; do
+  pi install "$p"
+done
+
 log "Linking dotfiles"
 dev reconcile --from "$PWD/dotfiles" --apply
 append_shell "source '$HOME/.extend.rc'"
