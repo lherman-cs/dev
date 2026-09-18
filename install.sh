@@ -65,6 +65,9 @@ rm -rf \
   "$HOME/.agents/skills/dev-ship"
 rm -f "$HOME/.pi/agent/extensions/dev-workflow.ts" "$HOME/.pi/agent/dev-workflow.json"
 
+log "Linking dotfiles"
+dev reconcile --from "$PWD/dotfiles" --apply
+
 for p in \
   npm:@narumitw/pi-lsp \
   npm:@narumitw/pi-github-pr \
@@ -75,8 +78,6 @@ for p in \
   pi install "$p"
 done
 
-log "Linking dotfiles"
-dev reconcile --from "$PWD/dotfiles" --apply
 append_shell "source '$HOME/.extend.rc'"
 
 if ! command -v webi >/dev/null 2>&1 && [[ ! -d "$HOME/.local/bin/nerdfont" ]]; then
