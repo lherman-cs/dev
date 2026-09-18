@@ -93,6 +93,20 @@ def main():
     check(not (skills / "dev-build").exists(), "build is extension driver, not skill")
     check("/plans/" in (ROOT / ".gitignore").read_text(), "workflow artifacts ignored")
 
+    guidelines = (ROOT / "dotfiles" / ".pi" / "agent" / "AGENTS.md").read_text()
+    for required in [
+        "Do not use em dashes",
+        "quality, simplicity, robustness, scalability, and long-term maintainability",
+        "reproduce the failure as close as practical to the user-visible boundary",
+        "Tests must be fast, deterministic, and useful",
+        "delete before adding",
+    ]:
+        check(required in guidelines, f"engineering guideline: {required}")
+
+    for skill_md in skills.glob("dev-*/SKILL.md"):
+        check("/dev-" not in skill_md.read_text(), f"{skill_md.parent.name} does not route to another workflow skill")
+    check("## Skill boundary" in workflow, "workflow owns skill sequencing")
+
     install = (ROOT / "install.sh").read_text()
     check("@earendil-works/pi-coding-agent" in install, "Pi installed")
     check("@toon-format/cli" in install, "TOON CLI installed")

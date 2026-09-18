@@ -15,6 +15,10 @@ Hard constraints:
 - New implementation work enters through an approved plan or approved review repair.
 - Git is implementation truth; the approved spec is semantic truth.
 
+## Skill boundary
+
+`WORKFLOW.md` owns lifecycle sequencing. Individual skills own only their stage contract: prerequisites, work, outputs, and stop conditions. A skill may explain why it stopped, but it must not select, invoke, or conditionally route to another workflow skill. The human chooses the next stage. This keeps skills independently revisable and prevents the workflow graph from being duplicated across prompts.
+
 ## Lifecycle
 
 ```text
