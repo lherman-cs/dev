@@ -11,7 +11,10 @@ append_shell() {
   local line="$1" rc_file
   if [[ "${SHELL:-}" == *bash* ]]; then rc_file="$HOME/.bashrc"; else rc_file="$HOME/.zshrc"; fi
   touch "$rc_file"
-  grep -Fxq "$line" "$rc_file" || { printf '%s\n' "$line" >>"$rc_file"; log "Added to $rc_file: $line"; }
+  grep -Fxq "$line" "$rc_file" || {
+    printf '%s\n' "$line" >>"$rc_file"
+    log "Added to $rc_file: $line"
+  }
 }
 
 if ! command -v brew >/dev/null 2>&1; then
@@ -22,10 +25,9 @@ if ! command -v brew >/dev/null 2>&1; then
 fi
 
 log "Installing base tools"
-brew install gcc wl-clipboard curl git git-lfs htop tmux neovim fd fzf ripgrep jq yq gh go nodejs npm protobuf-c sccache
+brew install gcc wl-clipboard curl git git-lfs htop tmux neovim fd fzf ripgrep jq yq gh go nodejs npm protobuf-c sccache pi-coding-agent
 
 log "Installing Pi + TOON"
-npm install -g --ignore-scripts @earendil-works/pi-coding-agent
 npm install -g @toon-format/cli
 
 mkdir -p "$WORKSPACE_DIR"
