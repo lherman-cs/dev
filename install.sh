@@ -69,6 +69,7 @@ for p in \
   npm:@narumitw/pi-lsp \
   npm:@narumitw/pi-github-pr \
   npm:@narumitw/pi-chrome-devtools \
+  npm:@narumitw/pi-usage \
   npm:pi-web-access \
   npm:pi-mcp-adapter; do
   pi install "$p"
