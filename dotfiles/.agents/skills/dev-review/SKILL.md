@@ -1,19 +1,21 @@
 ---
 name: dev-review
-description: Manually review one exact completed PR candidate and approve pass or narrow repairs.
+description: Adversarially review one exact completed candidate and human-approve pass or narrow repairs.
 ---
 
 # dev-review
 
-Review the exact current PR candidate against the approved spec.
+Fresh whole-project review of the exact PR candidate against the approved spec.
 
-- Require terminal CI/checks for exact HEAD; red is evidence. Require relevant PR/review-bot feedback to be complete.
-- Inspect the base-to-HEAD diff/history, tests, CI failures, and feedback. Use `explore` for focused read-only verification.
-- Ignore taste; find material correctness, compatibility, spec, and proof gaps.
-- Present one rich `workflow_brief`.
+- Gate on exact HEAD: CI/checks and expected PR/review-bot feedback must be terminal. Red CI is evidence; if signals are pending, report what remains and stop.
+- Use approved spec + plans/repairs, base-to-HEAD diff/history, local verification, focused CI failure logs, bot/PR feedback, tests, and relevant primary references.
+- Use `explore` aggressively for narrow parallel checks of invariants, diff impact, CI failures, feedback validity, coverage gaps, and external references; consume compact evidence, not transcripts.
+- Be bounded/adversarial but conservative: block only concrete material correctness/spec/compatibility/proof issues. Ignore taste; PASS means no material issue found.
 
-If clean, explicit human approval writes compact `review.toon` with `status: pass`, exact HEAD/PR, and concise evidence.
+Show one rich `workflow_brief` with candidate summary, architecture/behavior impact, CI + PR/bot signals, validation, risks, conclusion, and repair proposals if needed.
 
-If repairs are needed, let the human inspect/filter/revise proposals. Only explicitly approved repairs become immutable `repairs/RNNN.toon`; write `review.toon` with `status: repairs_approved`.
+If clean, explicit human approval writes compact `review.toon` `status: pass` bound to exact HEAD/PR.
 
-Never edit product code, launch repairs, or store raw logs/transcripts.
+If repairs are needed, propose the smallest independent repairs with why/scope/proof/evidence. Let the human inspect, deselect/filter, or give feedback; revise as needed. Only selected explicit approvals become new immutable `repairs/RNNN.toon`; never reuse IDs. Write `status: repairs_approved` with exact HEAD/PR and selected IDs.
+
+Never edit product code, launch repairs, or persist raw logs/transcripts.
