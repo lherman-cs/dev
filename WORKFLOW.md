@@ -166,9 +166,9 @@ Human approval is persisted against exact HEAD before finalization so an interru
 
 ## Skill boundary
 
-`WORKFLOW.md` owns lifecycle sequencing. Skills own semantic stage contracts.
+Skills stay tiny and single-purpose: human-invoked Spec, Plan, manual Prepare, and manual Review. They never contain runtime modes or route to other skills.
 
-The deterministic shipping controller may invoke a skill as a disposable worker, but skills do not route to other workflow skills. This keeps lifecycle state in one place and avoids an LLM orchestrator.
+`/dev-build` and `/dev-ship` are deterministic extension commands. Shipping's narrow conflict-resolver, machine-reviewer, and PR-finalizer contracts live directly beside the controller code instead of hiding alternate behavior in skills.
 
 ## Human review UX
 
