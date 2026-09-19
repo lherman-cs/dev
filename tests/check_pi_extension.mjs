@@ -63,7 +63,7 @@ const prompt=process.argv.at(-1); const m=/^Execution contract: (.+)$/m.exec(pro
 const plan=JSON.parse(fs.readFileSync(m[1],'utf8'));
 fs.writeFileSync(path.join(process.cwd(),\`built-\${plan.id}.txt\`),plan.id+'\\n');
 cp.execFileSync('git',['add',\`built-\${plan.id}.txt\`]);
-cp.execFileSync('git',['-c','user.name=Pi Test','-c','user.email=pi@test.invalid','commit','-m',\`build \${plan.id}\\n\\nPlan-ID: \${plan.id}\`],{stdio:'ignore'});
+cp.execFileSync('git',['-c','user.name=Pi Test','-c','user.email=pi@test.invalid','commit','-m','feat(test): implement contract'],{stdio:'ignore'});
 const message={role:'assistant',content:[{type:'text',text:'implemented '+plan.id}],usage:{totalTokens:1000}};
 process.stdout.write(JSON.stringify({type:'message_end',message})+'\\n');
 `;
