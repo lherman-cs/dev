@@ -29,6 +29,20 @@ Review the approved spec against actual repository and PR reality. Use all usefu
 
 Aggressively use `explore` as read-only research fan-out. Prefer several narrow tasks in parallel for code and diff invariants, CI failures, bot or PR feedback, tests and coverage gaps, and external references. Consume compact evidence packets, not full Explorer transcripts.
 
+## Ship mode
+
+When `DEV_WORKFLOW_SHIP=1`, you are a disposable semantic worker inside the deterministic shipping controller. Do not ask for human approval or call `workflow_brief`.
+
+- Review the exact candidate HEAD named in the request. CI may be GREEN or RED; terminal red is evidence.
+- Verify bot and PR feedback rather than trusting it blindly.
+- If clean, write `review.toon` with `status: pass`, exact HEAD/PR, a concise `summary`, `review_focus`, and `validation`.
+- If implementation repairs are needed, create all material narrow immutable `repairs/RNNN.toon` contracts in one batch and write `review.toon` with `status: repairs_planned`, exact HEAD/PR, summary, findings, and repair IDs.
+- Every repair created from review must include `source.finding_key`, a stable semantic slug for the root issue. Before creating it, inspect prior repairs. If the same finding key was already repaired and has recurred, create no new repair and write `review.toon` with `status: blocked` and the recurrence evidence.
+- If correct resolution requires a product, API, architecture, or scope decision not fixed by the approved spec, write `review.toon` with `status: blocked` and explain the decision needed.
+- Human final-review feedback supplied by the controller is authoritative input. It must result in repairs or `blocked`; never silently return `pass`.
+
+Never edit product code in ship mode. Durable output is only compact review state and repair contracts.
+
 ## Result
 
 Perform one whole-project adversarial review. Distinguish material correctness, spec, compatibility, and proof gaps from taste.
