@@ -767,21 +767,113 @@ async function awaitShipSignals(ctx, ship) {
   }
 }
 
-async function runWorkflowChild(ctx, role, skill, project, extra = "") {
-  const profile = await resolvedRoleProfile(ctx, role);
-  const skillPath = path.join(SKILL_ROOT, skill, "SKILL.md");
-  const result = await runVisibleAgent(ctx, {
-    title: skill,
-    subtitle: `${profile.model || "model"}/${profile.thinking || "default"}`,
-    profile,
-    system: `Read and follow the exact ${skill} skill at ${skillPath}. You are running as a disposable worker inside the deterministic dev-ship controller.`,
-    prompt: [`Project: ${project.name}`, extra].filter(Boolean).join("\n\n"),
-    tools: ["read", "grep", "find", "ls", "bash", "write", "explore"],
-    env: { DEV_WORKFLOW_CHILD: "1", DEV_WORKFLOW_SHIP: "1" },
+function parseWorkerJson(text) {
+  const raw = String(text || "").trim();
+  const fenced = /^```(?:json)?\s*([\s\S]*?)\s*```$/i.exec(raw);
+  const source = fenced ? fenced[1] : raw;
+  const first = source.indexOf("{");
+  const last = source.lastIndexOf("}");
+  if (first < 0 || last <= first) throw new Error("Worker did not return JSON.");
+  return JSON.parse(source.slice(first, last + 1));
+}
+
+function shipReviewerSystem() {
+  return [
+    "Review one exact shipping candidate against the approved spec and repository reality.",
+    "Treat terminal red CI and bot/PR comments as evidence to verify, not authority. Use explore when focused read-only research helps.",
+    "Do not edit files. Return only JSON.",
+    'Schema: {"status":"pass|repairs|blocked","summary":"...","review_focus":["..."],"validation":["..."],"findings":[{"key":"stable.root.cause","title":"...","reason":"...","evidence":["..."],"repair":{"title":"...","goal":"...","requirements":["..."],"checks":["..."]}}]}',
+    "Use repairs only for implementation defects whose correct behavior is fixed by the spec. Use blocked for a real semantic/product/API/architecture/scope decision.",
+    "Finding keys identify root causes and must stay stable across candidates. If human feedback is supplied, it must result in repairs or blocked, never pass.",
+  ].join("\n");
+}
+
+async function runShipReviewer(ctx, project, ship, humanFeedback = "") {
+  const profile = await resolvedRoleProfile(ctx, "review");
+  let invalid = "";
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    const result = await runVisibleAgent(ctx, {
+      title: humanFeedback ? "Final feedback triage" : "Candidate review",
+      subtitle: `${profile.model || "model"}/${profile.thinking || "default"}`,
+      profile,
+      system: shipReviewerSystem(),
+      prompt: [
+        `Approved spec: ${path.join(project.dir, "spec.md")}`,
+        `Project artifacts: ${project.dir}`,
+        `Exact candidate: PR #${ship.data.candidate.pr}, HEAD ${ship.data.candidate.head}, base ${ship.data.candidate.base}`,
+        humanFeedback ? `Human feedback: ${humanFeedback}` : "",
+        invalid ? `Previous response was invalid. Correct only its structure:\n${invalid}` : "",
+      ].filter(Boolean).join("\n\n"),
+      tools: ["read", "grep", "find", "ls", "explore"],
+      env: { DEV_WORKFLOW_CHILD: "1" },
+    });
+    if (result?.aborted) throw new Error("Reviewer was interrupted; review state was not advanced.");
+    if (result.code !== 0) throw new Error(`Reviewer failed: ${result.stderr || result.stdout}`);
+    try {
+      const review = parseWorkerJson(result.stdout);
+      if (!["pass", "repairs", "blocked"].includes(review.status)) throw new Error("invalid status");
+      if (!Array.isArray(review.findings)) throw new Error("findings must be an array");
+      if (humanFeedback && review.status === "pass") throw new Error("human feedback cannot return pass");
+      if (review.status === "repairs" && review.findings.some((finding) => !finding?.key || !finding?.repair?.goal)) throw new Error("repair findings require key and goal");
+      return review;
+    } catch (error) {
+      invalid = `${error instanceof Error ? error.message : String(error)}\n${String(result.stdout).slice(-1800)}`;
+    }
+  }
+  throw new Error(`Reviewer returned invalid structured output twice.\n${invalid}`);
+}
+
+function repairedFindingKeys(entries) {
+  return new Set(entries.map((entry) => entry.data.source?.finding_key).filter(Boolean));
+}
+
+async function persistShipReview(project, loaded, ship, review) {
+  const reviewFile = path.join(project.dir, "review.toon");
+  if (review.status === "pass") {
+    await writeToon(reviewFile, {
+      version: 1, status: "pass", head: ship.data.candidate.head, pr: ship.data.candidate.pr,
+      summary: review.summary || "", review_focus: review.review_focus || [], validation: review.validation || [],
+    });
+    return "pass";
+  }
+  if (review.status === "blocked") {
+    await writeToon(reviewFile, {
+      version: 1, status: "blocked", head: ship.data.candidate.head, pr: ship.data.candidate.pr,
+      summary: review.summary || "", findings: review.findings || [],
+    });
+    return "blocked";
+  }
+
+  const prior = repairedFindingKeys(loaded.entries);
+  const repeated = [...new Set(review.findings.map((finding) => finding.key).filter((key) => prior.has(key)))];
+  if (repeated.length) {
+    await writeToon(reviewFile, {
+      version: 1, status: "blocked", head: ship.data.candidate.head, pr: ship.data.candidate.pr,
+      summary: `Previously repaired finding recurred: ${repeated.join(", ")}`, findings: review.findings,
+    });
+    return "blocked";
+  }
+
+  const active = loaded.entries.filter((entry) => !supersededIds(loaded.entries).has(entry.data.id));
+  let number = Number(nextRepairId(loaded.entries).slice(1));
+  const ids = [];
+  for (const finding of review.findings) {
+    const id = `R${String(number++).padStart(3, "0")}`;
+    ids.push(id);
+    await writeToon(path.join(project.dir, "repairs", `${id}.toon`), {
+      version: 1, id, title: finding.repair.title || finding.title || id,
+      depends_on: active.map((entry) => entry.data.id),
+      goal: finding.repair.goal,
+      requirements: finding.repair.requirements || [finding.reason].filter(Boolean),
+      checks: finding.repair.checks || [],
+      source: { kind: "candidate_review", finding_key: finding.key, candidate: ship.data.candidate.head, evidence: finding.evidence || [] },
+    });
+  }
+  await writeToon(reviewFile, {
+    version: 1, status: "repairs_planned", head: ship.data.candidate.head, pr: ship.data.candidate.pr,
+    summary: review.summary || "", findings: review.findings.map((finding) => ({ key: finding.key, title: finding.title, reason: finding.reason })), repairs: ids,
   });
-  if (result?.aborted) throw new Error(`${skill} was interrupted; durable state was not advanced.`);
-  if (result.code !== 0) throw new Error(`${skill} failed: ${result.stderr || result.stdout}`);
-  return result;
+  return "repairs_planned";
 }
 
 async function reviewShipCandidate(ctx, project, loaded, ship) {
@@ -797,20 +889,19 @@ async function reviewShipCandidate(ctx, project, loaded, ship) {
   }
 
   const reviewFile = path.join(project.dir, "review.toon");
-  let review = fs.existsSync(reviewFile) ? await decodeToon(reviewFile) : null;
-  if (!review || review.head !== ship.data.candidate.head || !["pass", "repairs_planned", "blocked"].includes(review.status)) {
-    await runWorkflowChild(ctx, "review", "dev-review", project, `Autonomously review exact candidate HEAD ${ship.data.candidate.head}.`);
-    if (!fs.existsSync(reviewFile)) throw new Error("Autonomous reviewer did not write review.toon.");
-    review = await decodeToon(reviewFile);
+  let stored = fs.existsSync(reviewFile) ? await decodeToon(reviewFile) : null;
+  if (!stored || stored.head !== ship.data.candidate.head || !["pass", "repairs_planned", "blocked"].includes(stored.status)) {
+    const generated = await runShipReviewer(ctx, project, ship);
+    await persistShipReview(project, loaded, ship, generated);
+    stored = await decodeToon(reviewFile);
   }
-  if (review.head !== ship.data.candidate.head) throw new Error("Reviewer wrote stale candidate state.");
 
-  if (review.status === "pass") {
+  if (stored.status === "pass") {
     ship.data.phase = "human";
     await saveShip(ship);
     return;
   }
-  if (review.status === "repairs_planned") {
+  if (stored.status === "repairs_planned") {
     if (ship.data.repair_round >= shipSettings().maxRepairRounds) {
       await blockShip(ship, "Automatic repair-round limit reached.", "build");
       return;
@@ -823,34 +914,60 @@ async function reviewShipCandidate(ctx, project, loaded, ship) {
     await saveShip(ship);
     return;
   }
-  await blockShip(ship, review.summary || "Reviewer needs a human semantic decision.", "build");
+  await blockShip(ship, stored.summary || "Reviewer needs a human semantic decision.", "build");
 }
 
-async function finalHumanReview(pi, ctx, project, ship) {
+function finalizerSystem() {
+  return [
+    "Write the concise human-facing title and Markdown body for one approved PR.",
+    "Summarize intent, material changes, validation, and real review focus. Omit implementation trivia, logs, agent prose, and boilerplate.",
+    "Do not edit files or GitHub. Return only JSON: {\"title\":\"...\",\"body\":\"...\"}.",
+  ].join("\n");
+}
+
+async function finalizeCandidate(ctx, project, ship) {
+  const profile = await resolvedRoleProfile(ctx, "ship");
+  const result = await runVisibleAgent(ctx, {
+    title: "PR finalizer", subtitle: `${profile.model || "model"}/${profile.thinking || "default"}`, profile,
+    system: finalizerSystem(),
+    prompt: [
+      `Approved spec: ${path.join(project.dir, "spec.md")}`,
+      `Review: ${path.join(project.dir, "review.toon")}`,
+      `Exact candidate: PR #${ship.data.candidate.pr}, HEAD ${ship.data.candidate.head}`,
+      "Inspect the exact Git diff/history as needed, then return the title/body JSON.",
+    ].join("\n\n"),
+    tools: ["read", "grep", "find", "ls"],
+    env: { DEV_WORKFLOW_CHILD: "1" },
+  });
+  if (result?.aborted) throw new Error("Finalizer was interrupted; approval is preserved.");
+  if (result.code !== 0) throw new Error(`Finalizer failed: ${result.stderr || result.stdout}`);
+  const draft = parseWorkerJson(result.stdout);
+  if (!draft.title || !draft.body) throw new Error("Finalizer must return title and body.");
+  await gh(ctx.cwd, ["pr", "edit", String(ship.data.candidate.pr), "--title", String(draft.title), "--body", String(draft.body)]);
+  await gh(ctx.cwd, ["pr", "ready", String(ship.data.candidate.pr)]);
+}
+
+async function finalHumanReview(ctx, project, loaded, ship) {
   const review = await decodeToon(path.join(project.dir, "review.toon"));
   const candidate = ship.data.candidate;
   if (!ctx.hasUI || ctx.mode !== "tui") throw new Error("Final human review requires interactive Pi.");
 
   if (ship.data.approved_head !== candidate.head) {
     const decision = await ctx.ui.custom((tui, theme, _kb, done) => new RichBriefView(tui, theme, {
-      mode: "review",
-      title: `${project.name} ready`,
-      subtitle: `PR #${candidate.pr} · ${candidate.head.slice(0, 12)}`,
+      mode: "review", title: `${project.name} ready`, subtitle: `PR #${candidate.pr} · ${candidate.head.slice(0, 12)}`,
       metrics: [{ label: "Repair rounds", value: String(ship.data.repair_round) }],
       sections: [
         { label: "Review", markdown: review.summary || "Machine review passed." },
         { label: "Focus", markdown: (review.review_focus || []).map((item) => `- ${item}`).join("\n") || "No additional focus." },
         { label: "Validation", markdown: (review.validation || []).map((item) => `- ${item}`).join("\n") || "Local and remote gates passed." },
-      ],
-      repairs: [],
+      ], repairs: [],
     }, done));
-
     if (!decision || decision.action === "cancel") return;
     if (decision.action === "feedback") {
       const feedback = await ctx.ui.editor("Final review feedback", "");
-      await runWorkflowChild(ctx, "review", "dev-review", project, `Human final-review feedback:\n${feedback || ""}\nPlan repairs or block; do not pass silently.`);
-      const next = await decodeToon(path.join(project.dir, "review.toon"));
-      if (next.status === "repairs_planned") {
+      const generated = await runShipReviewer(ctx, project, ship, feedback || "");
+      const status = await persistShipReview(project, loaded, ship, generated);
+      if (status === "repairs_planned") {
         ship.data.repair_round = 0;
         ship.data.verified_head = null;
         ship.data.candidate = null;
@@ -858,10 +975,9 @@ async function finalHumanReview(pi, ctx, project, ship) {
         await saveShip(ship);
         return;
       }
-      await blockShip(ship, next.summary || "Human feedback requires replanning.", "build");
+      await blockShip(ship, generated.summary || "Human feedback requires replanning.", "build");
       return;
     }
-
     ship.data.approved_head = candidate.head;
     await saveShip(ship);
   }
@@ -869,7 +985,7 @@ async function finalHumanReview(pi, ctx, project, ship) {
   let pr = await ghJson(ctx.cwd, ["pr", "view", String(candidate.pr), "--json", "isDraft,headRefOid,url"]);
   if (pr.headRefOid !== candidate.head) throw new Error("PR moved while finalizing.");
   if (pr.isDraft) {
-    await runWorkflowChild(ctx, "ship", "dev-ship", project, `Finalize approved exact candidate HEAD ${candidate.head}.`);
+    await finalizeCandidate(ctx, project, ship);
     pr = await ghJson(ctx.cwd, ["pr", "view", String(candidate.pr), "--json", "isDraft,headRefOid,url"]);
   }
   if (pr.headRefOid !== candidate.head) throw new Error("PR moved while finalizing.");
@@ -877,7 +993,6 @@ async function finalHumanReview(pi, ctx, project, ship) {
   ship.data.phase = "done";
   await saveShip(ship);
 }
-
 async function driveShip(pi, ctx, args) {
   await ensureIgnored(ctx.cwd);
   const tokens = String(args || "").trim().split(/\s+/).filter(Boolean);
@@ -926,7 +1041,7 @@ async function driveShip(pi, ctx, args) {
       continue;
     }
     if (ship.data.phase === "human") {
-      await finalHumanReview(pi, ctx, project, ship);
+      await finalHumanReview(ctx, project, loaded, ship);
       if (ship.data.phase === "human" || ship.data.phase === "blocked") return;
       continue;
     }
