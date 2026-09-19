@@ -36,7 +36,7 @@ class PiWorkflowAssets(unittest.TestCase):
         self.assertIn('name: "workflow_brief"', ext)
         self.assertNotIn("Lavish", workflow)
 
-    def test_manual_skills_are_compact_and_single_purpose(self):
+    def test_manual_skills_are_compact_and_preserve_semantics(self):
         skills = ROOT / "dotfiles/.agents/skills"
         expected = {"dev-spec", "dev-plan", "dev-prepare", "dev-review"}
         self.assertEqual({p.name for p in skills.iterdir() if p.is_dir()}, expected)
@@ -45,11 +45,33 @@ class PiWorkflowAssets(unittest.TestCase):
             self.assertLess(len(text.encode()), 2000)
             self.assertNotIn("DEV_WORKFLOW_SHIP", text)
 
+        spec = (skills / "dev-spec/SKILL.md").read_text()
+        plan = (skills / "dev-plan/SKILL.md").read_text()
         prepare = (skills / "dev-prepare/SKILL.md").read_text()
         review = (skills / "dev-review/SKILL.md").read_text()
-        self.assertIn("Do not invent product changes", prepare)
-        self.assertIn("terminal CI/checks", review)
-        self.assertIn("repairs/RNNN.toon", review)
+
+        self.assertIn("Challenge ambiguity", spec)
+        self.assertIn("human decides", spec)
+        self.assertIn("open decisions", spec)
+        self.assertIn("Do not design implementation tasks", spec)
+
+        self.assertIn("Git outranks stale workflow pointers", plan)
+        self.assertIn("One plan = one fresh Builder + one coherent commit", plan)
+        self.assertIn("Dispatched plans are immutable", plan)
+        self.assertIn("supersedes", plan)
+        self.assertIn("not ordinary debugging", plan)
+
+        self.assertIn("all approved plans/repairs complete", prepare)
+        self.assertIn("final integration tests", prepare)
+        self.assertIn("mechanical/minimal", prepare)
+        self.assertIn("Do not invent implementation fixes", prepare)
+
+        self.assertIn("Red CI is evidence", review)
+        self.assertIn("Use approved spec + plans/repairs", review)
+        self.assertIn("bounded/adversarial but conservative", review)
+        self.assertIn("PASS means no material issue found", review)
+        self.assertIn("deselect/filter", review)
+        self.assertIn("never reuse IDs", review)
 
     def test_ship_loop_is_small_deterministic_outer_control(self):
         workflow = (ROOT / "WORKFLOW.md").read_text()
