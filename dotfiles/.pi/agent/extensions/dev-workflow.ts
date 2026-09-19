@@ -992,8 +992,6 @@ async function runLavishFinalReview(ctx, project, ship) {
 async function finalHumanReview(ctx, project, loaded, ship) {
   const review = await decodeToon(path.join(project.dir, "review.toon"));
   const candidate = ship.data.candidate;
-  if (!ctx.hasUI || ctx.mode !== "tui") throw new Error("Final human review requires interactive Pi.");
-
   if (ship.data.approved_head !== candidate.head) {
     const decision = await runLavishFinalReview(ctx, project, ship);
     if (!decision || decision.action === "cancel") return;
