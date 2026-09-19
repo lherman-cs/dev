@@ -1,17 +1,17 @@
-# Pi-first development workflow
+# OMP-native development workflow
 
 ## Design
 
-Pi is the harness. TypeScript owns deterministic lifecycle control; fresh LLM workers own engineering judgment. Keep both sides small.
+OMP is the harness. Native slash commands coordinate native task agents; compact skills own reusable engineering semantics. Do not recreate capabilities OMP already provides.
 
 Hard constraints:
 
 - The human creates and manages worktrees.
-- No orchestrator agent, database, event log, or durable model transcript.
+- No custom orchestrator role, workflow extension, database, or durable model transcript.
 - Git is implementation truth. The approved spec is semantic truth. GitHub is remote-candidate truth.
-- Models never poll, wait, decide workflow phase, or claim their own verification.
-- Every expensive model action is narrow and independently checked where practical.
-- Shipping is restartable. Durable workflow files are compact TOON state under ignored `plans/<project>/`.
+- Specialist work runs through OMP `task`; narrow read-only exploration uses bundled `scout`.
+- Human gates use OMP `ask`. Live progress uses OMP `todo`.
+- Shipping is bounded and restartable from Git, GitHub, and compact ignored project state.
 
 ## Human boundaries
 
@@ -21,7 +21,7 @@ There are three normal human decisions:
 2. `/dev-plan`: approve architecture and small execution contracts.
 3. `/dev-ship`: approve the final exact candidate after automated convergence.
 
-Shipping stops early only when correct behavior is not determined by the approved spec, the repair loop does not converge, or repository/remote reality becomes unsafe to reconcile automatically.
+Use ordinary Markdown for review. Include a fenced Mermaid diagram only when relationships or flow are materially easier to review visually; OMP renders Mermaid natively. Use `ask` for the actual choice/approval rather than inventing another review UI.
 
 ## Lifecycle
 
@@ -29,44 +29,40 @@ Shipping stops early only when correct behavior is not determined by the approve
 human creates worktree
         |
      /dev-spec
-        |  rich brief + approval
+        |  dev-specifier + ask
      /dev-plan
-        |  small immutable plans + rich brief + approval
+        |  dev-planner + ask
      /dev-ship
         |
         |  BUILD
-        |    fresh Builder per pending plan/repair
-        |    deterministic commit/check verification
+        |    sequential dev-builder tasks
+        |    native todo shows progress
         |
         |  PREPARE
-        |    fetch + rebase
-        |    LLM resolves conflicts only when Git needs judgment
-        |    repository final checks
-        |    push/update draft PR
+        |    dev-preparer publishes exact draft candidate
         |
         |  AWAIT
-        |    exact-HEAD GitHub polling only
-        |    no model is alive
+        |    shell/GitHub tooling waits for exact-HEAD terminal signals
         |
         |  REVIEW
-        |    one fresh adversarial Reviewer over complete evidence
-        |        |
-        |        +-- repairs --> BUILD
-        |        +-- semantic ambiguity/non-convergence --> BLOCKED
-        |        `-- pass --> HUMAN
+        |    dev-reviewer
+        |       |
+        |       +-- repairs -> BUILD (bounded)
+        |       +-- semantic ambiguity/non-convergence -> stop
+        |       `-- pass -> HUMAN
         |
         |  HUMAN
-        |    rich final exact-candidate review
-        |        |
-        |        +-- feedback --> REVIEW/BUILD
-        |        `-- approve --> finalize PR + mark ready
+        |    Markdown/Mermaid summary + ask
+        |       |
+        |       +-- feedback -> REVIEW/BUILD
+        |       `-- approve -> finalize PR + mark ready
         |
         `-- DONE
 ```
 
-`/dev-build`, `/dev-prepare`, and `/dev-review` remain lower-level commands for debugging or manual use. The normal post-plan path is `/dev-ship`.
+`/dev-build`, `/dev-prepare`, and `/dev-review` are lower-level entry points for direct control or debugging.
 
-## Minimal durable state
+## Durable state
 
 All workflow artifacts are ignored under `plans/<project>/`:
 
@@ -74,113 +70,76 @@ All workflow artifacts are ignored under `plans/<project>/`:
 spec.md
 project.toon
 progress.toon
-ship.toon
 plans/P001.toon
 plans/P002.toon
 repairs/R001.toon
 review.toon
 ```
 
-`progress.toon` owns only Builder progress: completed IDs, current ID, and accepted HEAD.
+Keep this state small:
 
-`ship.toon` owns only shipping control:
+- `spec.md`: approved semantic contract.
+- `project.toon`: project identity/base, dependencies, final checks, readiness.
+- `plans/*.toon`: immutable implementation contracts.
+- `repairs/*.toon`: immutable review repair contracts.
+- `progress.toon`: completed/current contract IDs and accepted HEAD for restart.
+- `review.toon`: exact reviewed HEAD plus compact findings/approval state.
 
-- phase: `build | prepare | await | review | human | blocked | done`
-- bounded repair round
-- exact HEAD that passed local final gates
-- exact published candidate identity
-- exact HEAD approved by the human
-- last deterministic final-gate failure for recurrence detection
-- blocked reason and resume phase
+Do not persist CI logs, bot transcripts, source copies, generic event history, or model transcripts.
 
-Do not store CI logs, bot transcripts, source copies, model transcripts, or generic event history.
+## Spec and plan
 
-TOON updates are atomic. Operations with external side effects are reconciled before advancing state, so interruption may repeat cheap work but must not destroy or duplicate meaningful work.
+`/dev-spec` and `/dev-plan` delegate to `dev-specifier` and `dev-planner`. Those agents autoload the corresponding compact skill and may spawn `scout` for narrow investigation.
+
+The worker prepares the artifact but never self-approves it. The parent session presents the decision-relevant result, optionally with Mermaid, and uses `ask`. Only the parent may write the approval marker after explicit human approval.
 
 ## Build
 
-`/dev-build` remains deterministic extension code.
+`/dev-build` reads approved plans/repairs and `progress.toon`, exposes the queue through native `todo`, and executes dependency-ready contracts sequentially.
 
-For each dependency-ready approved `Pxxx` or `Rxxx`:
+Each contract gets one fresh `dev-builder` task. If independent verification fails, one `dev-builder-retry` attempt is allowed. The parent session verifies the contract checks, exactly one coherent Conventional Commit from the accepted predecessor, no workflow ID in the commit subject, a clean worktree, and then advances `progress.toon`.
 
-1. persist the current work ID;
-2. launch one fresh `dev-implement` worker for the exact contract;
-3. require exactly one Conventional Commit from the accepted predecessor, with no workflow IDs in its message;
-4. independently rerun declared checks;
-5. require a clean worktree;
-6. advance progress.
-
-A work item gets at most two Builder attempts. Interrupted sessions preserve work and do not justify destructive Git recovery.
+A worker that returns `NEEDS_REPLAN`, or a second failed attempt, stops the build rather than widening scope.
 
 ## Prepare
 
-The shipping controller performs preparation directly:
+`/dev-prepare` delegates operational publication to `dev-preparer`:
 
-1. require a clean worktree;
-2. fetch the configured base, defaulting to `origin/main`;
-3. rebase;
-4. when Git reports conflicts, launch one fresh conflict resolver constrained to the conflicted files and approved spec, then let deterministic code stage and continue the rebase;
-5. run `project.toon.final_checks`, or fall back to root `just check` and `just test`;
-6. if a final gate fails, create one narrow repair contract from the exact failure and loop to Build;
-7. push with `--force-with-lease`;
-8. create or update a draft PR and bind the candidate to exact HEAD/base.
+1. require completed contracts and a clean worktree;
+2. fetch/rebase onto the configured base;
+3. resolve only ordinary integration conflicts;
+4. run final integration checks;
+5. push with lease protection;
+6. create/update a draft PR and report exact pushed HEAD/PR.
 
-A repeated identical final-gate failure blocks instead of blindly generating another repair.
+It does not adversarially review, wait for CI, or invent behavior fixes.
 
-Standalone `/dev-prepare` remains available and stops after publishing.
+## Review
 
-## Await
+`/dev-review` gates on exact HEAD and terminal expected signals, then delegates to read-only `dev-reviewer`.
 
-Awaiting external evidence is traditional tooling only.
+Review is bounded and conservative: concrete material correctness/spec/compatibility/proof gaps only. Red CI is evidence. Repairable findings carry stable root-cause keys and the smallest acceptance checks. Human selection/feedback uses native `ask`; only selected repairs become new immutable `Rxxx` contracts.
 
-The controller polls `gh` for the exact PR HEAD. It waits until checks are terminal, then requires a short quiet period with no PR/check changes so late review-bot feedback can land. No model tokens are consumed while waiting.
+## Ship
 
-If the PR HEAD moves unexpectedly, shipping blocks rather than reviewing stale evidence.
+`/dev-ship` composes the same build and prepare contracts, then waits for exact-HEAD GitHub signals with ordinary tooling rather than a polling subagent.
 
-## Review and automatic repair
+A fresh `dev-reviewer` examines the settled candidate. Automatic repair is limited to two rounds. A repeated root finding or unresolved semantic decision stops convergence.
 
-The autonomous Reviewer receives the approved spec, plans, prior repairs, exact candidate diff/history, local validation, terminal CI, and settled PR/bot feedback. CI may be red or green; terminal red is evidence.
-
-It produces one of:
-
-- `pass`: candidate can enter final human review.
-- `repairs_planned`: all material implementation repairs are written as one narrow immutable repair batch.
-- `blocked`: correct resolution needs a semantic decision or the same previously repaired finding recurred.
-
-Review repairs carry a stable `source.finding_key`. If that root finding recurs after repair, do not spend another automatic cycle on it.
-
-The controller allows at most two automatic repair rounds by default. This is a convergence guard, not a quality target.
-
-Standalone `/dev-review` keeps the richer human-filtered repair workflow.
-
-## Final human review
-
-Machine pass is not final approval.
-
-The controller renders the existing rich Pi review surface for the exact candidate, including summary, review focus, validation, and repair-round count.
-
-Human feedback is sent through the same semantic Reviewer. It must produce repairs or block for a semantic decision; it may not silently pass.
-
-Human approval is persisted against exact HEAD before finalization so an interruption does not require another approval. A fresh finalizer updates the concise PR title/body and marks the draft ready. It never merges.
-
-## Skill boundary
-
-Skills stay tiny, reusable, and single-purpose: Spec, Plan, Implement, manual Prepare, and Review. They never contain runtime modes or route to other skills.
-
-`/dev-build` dispatches `dev-implement` and owns retries/progress/independent verification. `/dev-ship` owns deterministic convergence. Its machine Reviewer reuses `dev-review` semantics with only a structured-output contract; conflict resolver and PR finalizer are narrow internal roles.
-
-## Human review UX
-
-Spec, Plan, and final Review use `workflow_brief`, a reusable Pi TUI surface that should feel closer to a modern web review page than a traditional terminal prompt, with Markdown, diagrams, code/data views, optional images, mouse/keyboard navigation, and feedback.
-
-Spend model tokens on understanding and concise communication, not presentation boilerplate.
+After machine pass, the parent presents a concise exact-candidate summary, with Mermaid only if useful, and uses `ask` for final approval. Human feedback re-enters review; approval is recorded against exact HEAD before the PR is marked ready. Shipping never merges.
 
 ## Explorer
 
-`explore` is a fresh, narrow, read-only subagent primitive. Use it when focused parallel research reduces parent context or improves confidence.
+OMP's bundled `scout` is the universal read-only explorer. The user config routes it through `@explorer`. Main sessions and every workflow task agent may use it, including in parallel, while Agent Hub provides live visibility and steering.
 
-Good tasks include repository invariants, diff impact, CI failure diagnosis, PR feedback verification, tests, and primary external references. Parents receive compact `Conclusion / Evidence / Uncertainty` results rather than transcripts.
+Do not add another Explorer tool or copy scout behavior into skills.
 
-## Models
+## Instruction and model boundaries
 
-`~/.pi/agent/dev-workflow.json` is the only role/model policy. Missing or ambiguous models fail visibly; there is no silent fallback. Model choice is configuration, not workflow semantics.
+- `~/.omp/agent/config.yml`: model roles and harness feature settings.
+- `~/.omp/agent/commands/dev-*.md`: phase sequencing and human gates.
+- `~/.omp/agent/agents/*.md`: worker model/tool/spawn boundaries.
+- `~/.omp/agent/skills/dev-*/SKILL.md`: reusable role semantics.
+- `plans/Pxxx.toon` / `repairs/Rxxx.toon`: one task's scope and acceptance checks.
+
+Role/model choice is configuration, not workflow prose. Native OMP owns task scheduling, todo state, questions, Agent Hub, Mermaid rendering, and tool/runtime integration.

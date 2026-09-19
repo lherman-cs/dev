@@ -1,6 +1,6 @@
 # dev toolbox
 
-Personal development toolbox plus a deliberately small Pi-first engineering workflow.
+Personal development toolbox plus a small OMP-native engineering workflow.
 
 ## Workflow
 
@@ -8,59 +8,50 @@ You create the Git worktree yourself. The normal workflow is:
 
 ```text
 /dev-spec
-    rich semantic brief -> human approval
+    semantic draft -> human approval
 /dev-plan
-    small immutable plans -> rich plan brief -> human approval
+    small immutable plans -> architecture/plan approval
 /dev-ship
-    build
-    -> rebase + local final gates
-    -> push/update draft PR
-    -> wait for exact-HEAD CI/review feedback
-    -> adversarial machine review
-    -> bounded automatic repair loop
-    -> final rich human review
-    -> concise PR + mark ready
+    build -> prepare draft PR -> await exact-HEAD signals
+    -> adversarial review/repair -> final human approval -> ready PR
 ```
 
 `/dev-build`, `/dev-prepare`, and `/dev-review` remain available as lower-level commands.
 
-The shipping loop is deterministic TypeScript, not an orchestrator agent. Models are disposable workers for implementation, rebase-conflict judgment, and substantive review. GitHub waiting/polling uses ordinary `gh` calls and consumes no model tokens.
+The workflow uses OMP primitives directly instead of maintaining a parallel agent runtime:
 
-Durable state stays small and ignored under `plans/<project>/`:
+- native file slash commands under `~/.omp/agent/commands`
+- native task agents under `~/.omp/agent/agents`
+- `task` + Agent Hub for specialist workers
+- bundled `scout` for narrow read-only exploration
+- `todo` for visible phase/task progress
+- `ask` for consequential human decisions and approvals
+- fenced Mermaid in normal Markdown when a diagram reduces review effort
+
+There is no custom workflow TUI, custom subagent implementation, or Pi workflow extension.
+
+Durable project state remains ignored under `plans/<project>/`:
 
 ```text
 spec.md
 project.toon
 progress.toon
-ship.toon
 plans/P001.toon
 repairs/R001.toon
 review.toon
 ```
 
-`progress.toon` tracks Builder execution. `ship.toon` tracks only the small shipping phase/candidate/checkpoint needed for interruption-safe resume. Git remains implementation truth; the approved spec remains semantic truth.
-
-Shipping automatically blocks instead of blindly looping when the same repaired failure recurs, the bounded repair rounds are exhausted, or correct resolution requires a new semantic decision.
-
-## Rich Pi review UX
-
-Human review efficiency is a primary requirement. Spec, Plan, and Review use the `workflow_brief` Pi tool to render a fullscreen, interactive review surface with Markdown, panels/tabs, diagrams, code/data views, selectable repairs, optional inline images, mouse input, and keyboard navigation. The model generates semantic content; the extension owns presentation so rich UX does not require generating HTML/CSS.
-
-Use a terminal with strong fullscreen/mouse/image support such as Ghostty, Kitty, or WezTerm for the best experience. `~/.pi/agent/settings.json` enables fullscreen mode and images.
-
-## Explorer
-
-`explore` is a first-class internal subagent primitive. Specifier, Planner, Builder, and Reviewer should fan out narrow read-only questions when that improves speed, context efficiency, or confidence. Explorer sessions are fresh, use the configured cheap model, may run in parallel, and return compact evidence packets instead of transcripts. Their live activity remains visible in Pi.
+Git remains implementation truth and the approved spec remains semantic truth. OMP session state handles live coordination; the small files above only carry project contracts and restartable progress that must outlive a session.
 
 ## Models
 
-Role/model choice is configuration, not workflow logic. Edit:
+Role/model routing is native OMP configuration in:
 
 ```text
-~/.pi/agent/dev-workflow.json
+~/.omp/agent/config.yml
 ```
 
-Defaults are intentionally different per job (Specifier, Planner, Builder, Builder retry, Explorer, Prepare, Reviewer, Shipper). Missing or ambiguous configured models fail visibly; the workflow never silently falls back to another model.
+The specialist agents reference role aliases such as `@spec`, `@builder`, and `@review`. The bundled `scout` agent is routed through the `@explorer` role, so every workflow agent can delegate narrow exploration without carrying the research transcript in its own context.
 
 See [WORKFLOW.md](WORKFLOW.md) for the contracts.
 
@@ -70,7 +61,7 @@ See [WORKFLOW.md](WORKFLOW.md) for the contracts.
 bash <(curl -L https://raw.githubusercontent.com/lherman-cs/dev/main/install.sh)
 ```
 
-The installer installs Pi and TOON, links this repository's dotfiles, and removes retired workflow assets from older versions.
+The installer installs OMP and TOON, links this repository's dotfiles, and removes retired Pi workflow assets. OMP already supplies the LSP, GitHub, browser/web, task, todo, ask, and subagent surfaces that previously required custom code or Pi plugins.
 
 ## Other toolbox notes
 

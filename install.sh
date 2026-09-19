@@ -24,10 +24,10 @@ if ! command -v brew >/dev/null 2>&1; then
   if [[ -x /opt/homebrew/bin/brew ]]; then eval "$(/opt/homebrew/bin/brew shellenv)"; fi
 fi
 
-log "Installing base tools"
-brew install gcc wl-clipboard curl git git-lfs htop tmux neovim fd fzf ripgrep jq yq gh go nodejs npm protobuf-c sccache pi-coding-agent
+log "Installing base tools + OMP"
+brew install gcc wl-clipboard curl git git-lfs htop tmux neovim fd fzf ripgrep jq yq gh go nodejs npm protobuf-c sccache can1357/tap/omp
 
-log "Installing Pi + TOON"
+log "Installing TOON"
 npm install -g @toon-format/cli
 
 mkdir -p "$WORKSPACE_DIR"
@@ -52,9 +52,7 @@ export PATH="$HOME/.cargo/bin:$PATH"
 log "Installing dev command"
 cargo install --path . --locked
 
-# This workflow intentionally has no compatibility layer. Remove obsolete workflow
-# skill names that would otherwise remain alongside the current command set.
-log "Removing retired workflow skill assets"
+log "Removing retired Pi workflow assets"
 rm -rf \
   "$HOME/.agents/skills/dev-spec" \
   "$HOME/.agents/skills/dev-plan" \
@@ -69,16 +67,6 @@ rm -f "$HOME/.pi/agent/extensions/dev-workflow.ts" "$HOME/.pi/agent/dev-workflow
 log "Linking dotfiles"
 dev reconcile --from "$PWD/dotfiles" --apply
 
-for p in \
-  npm:@narumitw/pi-lsp \
-  npm:@narumitw/pi-github-pr \
-  npm:@narumitw/pi-chrome-devtools \
-  npm:@narumitw/pi-usage \
-  npm:pi-web-access \
-  npm:pi-mcp-adapter; do
-  pi install "$p"
-done
-
 append_shell "source '$HOME/.extend.rc'"
 
 if ! command -v webi >/dev/null 2>&1 && [[ ! -d "$HOME/.local/bin/nerdfont" ]]; then
@@ -86,4 +74,4 @@ if ! command -v webi >/dev/null 2>&1 && [[ ! -d "$HOME/.local/bin/nerdfont" ]]; 
   curl -sS https://webi.sh/nerdfont | sh
 fi
 
-log "Done. Pi workflow commands: /dev-spec /dev-plan /dev-build /dev-prepare /dev-review /dev-ship"
+log "Done. OMP workflow commands: /dev-spec /dev-plan /dev-build /dev-prepare /dev-review /dev-ship"
