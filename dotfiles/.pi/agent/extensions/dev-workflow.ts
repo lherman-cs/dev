@@ -415,8 +415,8 @@ async function validatePlanCommit(cwd, base, plan) {
   const message = await git(cwd, ["log", "-1", "--format=%B"]);
   const subject = message.split("\n", 1)[0];
   if (!CONVENTIONAL_COMMIT_RE.test(subject)) return { ok: false, reason: `commit is not Conventional Commits format: ${subject}` };
-  const workflowId = new RegExp(`(^|[^A-Za-z0-9])${plan.id}([^A-Za-z0-9]|$)`, "i");
-  if (workflowId.test(message)) return { ok: false, reason: `commit message leaks workflow ID ${plan.id}` };
+  const workflowId = /\b[PR]\d{3,}\b/i;
+  if (workflowId.test(message) || /\bPlan-ID\s*:/i.test(message)) return { ok: false, reason: "commit message leaks workflow metadata" };
   const dirty = await statusPorcelain(cwd);
   if (dirty) return { ok: false, reason: `worktree is not clean after Builder:\n${dirty}` };
   const checks = await runChecks(cwd, plan.checks || []);
