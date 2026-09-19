@@ -118,6 +118,9 @@ class PiWorkflowAssets(unittest.TestCase):
         self.assertIn('name: "workflow_brief"', ext)
         self.assertIn("Promise.all", ext)
         self.assertIn("Explorer is read-only", ext)
+        self.assertIn("promptGuidelines", ext)
+        self.assertIn("before substantial read-only factual investigation", ext)
+        self.assertIn("promptSnippet", ext)
         self.assertIn("No model tokens are consumed while waiting", workflow)
 
 

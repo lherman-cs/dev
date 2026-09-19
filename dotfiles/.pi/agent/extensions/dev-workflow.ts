@@ -275,11 +275,15 @@ function makeTempPrompt(text) {
 
 function spawnJsonAgent(cwd, profile, systemPrompt, prompt, tools, onEvent, signal, childEnv) {
   return new Promise((resolve) => {
+    const isExplorer = childEnv?.DEV_WORKFLOW_EXPLORER === "1";
     const tmp = makeTempPrompt(systemPrompt);
     const args = ["--mode", "json", "-p", "--no-session"];
     if (profile.model) args.push("--model", profile.model);
     if (profile.thinking) args.push("--thinking", profile.thinking);
-    if (tools?.length) args.push("--tools", tools.join(","));
+    const allowedTools = isExplorer
+      ? tools
+      : [...new Set([...(tools || []), "explore"])];
+    if (allowedTools?.length) args.push("--tools", allowedTools.join(","));
     args.push("--append-system-prompt", tmp.file, "--", prompt);
     const child = spawn("pi", args, { cwd, env: { ...process.env, ...(childEnv || {}) }, stdio: ["ignore", "pipe", "pipe"] });
     let buffer = "";
@@ -447,7 +451,7 @@ async function runPlan(ctx, project, progress, entry) {
       profile,
       system: readSkill("dev-implement"),
       prompt,
-      tools: ["read", "bash", "edit", "write", "explore"],
+      tools: ["read", "bash", "edit", "write"],
       env: { DEV_WORKFLOW_CHILD: "1" },
     });
     if (result?.aborted) throw new Error(`${plan.id} aborted. Work is preserved; progress was not advanced.`);
@@ -805,7 +809,7 @@ async function runShipReviewer(ctx, project, ship, humanFeedback = "") {
         humanFeedback ? `Human feedback: ${humanFeedback}` : "",
         invalid ? `Previous response was invalid. Correct only its structure:\n${invalid}` : "",
       ].filter(Boolean).join("\n\n"),
-      tools: ["read", "grep", "find", "ls", "explore"],
+      tools: ["read", "grep", "find", "ls"],
       env: { DEV_WORKFLOW_CHILD: "1" },
     });
     if (result?.aborted) throw new Error("Reviewer was interrupted; review state was not advanced.");
@@ -1265,7 +1269,13 @@ function registerExploreTool(pi) {
   pi.registerTool({
     name: "explore",
     label: "Explorer",
-    description: "Delegate narrow read-only repo, CI/PR, or external-reference research to fresh cheap subagents. Prefer several focused tasks in parallel; the parent receives compact evidence packets, not transcripts.",
+    description: "Delegate narrow read-only investigation to fresh isolated subagents and return compact evidence packets.",
+    promptSnippet: "Delegate context-heavy factual investigation to isolated Explorer subagents",
+    promptGuidelines: [
+      "Use explore before substantial read-only factual investigation would otherwise consume your context; keep trivial known-path lookups local.",
+      "Delegate multi-file discovery, caller/dependency tracing, contract/test discovery, CI/PR/log triage, and external-reference research.",
+      "Do not repeat an Explorer's search. Use its compact evidence and inspect only decision-critical anchors; retain your role's judgment and verification responsibilities.",
+    ],
     parameters: Type.Object({
       tasks: Type.Array(Type.Object({
         label: Type.String(),
