@@ -27,8 +27,8 @@ fi
 log "Installing base tools"
 brew install gcc wl-clipboard curl git git-lfs htop tmux neovim fd fzf ripgrep jq yq gh go nodejs npm protobuf-c sccache pi-coding-agent
 
-log "Installing Pi + TOON"
-npm install -g @toon-format/cli
+log "Installing Pi + TOON + Lavish"
+npm install -g @toon-format/cli lavish-axi
 
 mkdir -p "$WORKSPACE_DIR"
 if [[ -d "$DEV_REPO_DIR/.git" ]]; then
