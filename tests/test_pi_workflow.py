@@ -98,7 +98,7 @@ class PiWorkflowAssets(unittest.TestCase):
             self.assertIn(f'"{phase}"', ext)
 
         self.assertIn("CONVENTIONAL_COMMIT_RE", ext)
-        self.assertIn("commit message leaks workflow ID", ext)
+        self.assertIn("commit message leaks workflow metadata", ext)
         self.assertNotIn("Plan-ID:", ext)
         self.assertIn("async function awaitShipSignals", ext)
         self.assertIn("--force-with-lease", ext)
