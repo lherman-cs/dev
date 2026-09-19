@@ -14,102 +14,93 @@ def main():
         checks.append(label)
 
     skills = ROOT / "dotfiles/.agents/skills"
-    expected = {"dev-spec", "dev-plan", "dev-prepare", "dev-review", "dev-ship"}
+    expected = {"dev-spec", "dev-plan", "dev-implement", "dev-prepare", "dev-review"}
     actual = {p.name for p in skills.iterdir() if p.is_dir()}
     check(actual == expected, f"exact workflow skills: {actual}")
 
-    for name in sorted(expected):
-        text = (skills / name / "SKILL.md").read_text()
+    content = {name: (skills / name / "SKILL.md").read_text() for name in expected}
+    for name, text in content.items():
         check(f"name: {name}" in text, f"{name} frontmatter")
-        check(len(text.encode()) < 12000, f"{name} remains compact")
+        check(len(text.encode()) < 2000, f"{name} remains compact")
+        check("DEV_WORKFLOW_SHIP" not in text, f"{name} has no runtime mode")
         check("Codex" not in text and "Lavish" not in text, f"{name} has no retired harness")
 
-    spec = (skills / "dev-spec/SKILL.md").read_text()
-    plan = (skills / "dev-plan/SKILL.md").read_text()
-    prepare = (skills / "dev-prepare/SKILL.md").read_text()
-    review = (skills / "dev-review/SKILL.md").read_text()
-    ship = (skills / "dev-ship/SKILL.md").read_text()
+    check("Challenge ambiguity" in content["dev-spec"] and "open decisions" in content["dev-spec"], "spec semantics")
+    check("Dispatched plans are immutable" in content["dev-plan"] and "supersedes" in content["dev-plan"], "plan replacement semantics")
+    check("Conventional Commit" in content["dev-implement"] and "NEEDS_REPLAN" in content["dev-implement"], "implement contract")
+    check("all approved plans/repairs complete" in content["dev-prepare"] and "mechanical/minimal" in content["dev-prepare"], "prepare boundary")
+    check("Red CI is evidence" in content["dev-review"] and "PASS means no material issue found" in content["dev-review"], "review standard")
 
-    check("workflow_brief" in spec and "explicit approval" in spec, "spec has rich human gate")
-    check("workflow_brief" in plan and "explicit approval" in plan, "plan has rich human gate")
-    check("STOP. Do not wait for CI" in prepare, "prepare pushes and stops")
-    check("GREEN or RED" in review or "GREEN **or RED**" in review, "review accepts terminal red or green CI")
-    check("review-bot" in review and "explore" in review, "review consumes bots and explorers")
-    check("deselect/filter" in review and "repairs/RNNN.toon" in review, "review has human-filtered repair plans")
-    check("mark the draft pr ready" in ship.lower(), "ship is final GitHub handoff")
-    check("Do not merge" in ship, "ship never merges")
+    root_agents = (ROOT / "AGENTS.md").read_text()
+    global_agents = (ROOT / "dotfiles/.pi/agent/AGENTS.md").read_text()
+    for invariant in ["No duplication or contradiction", "Least-privilege scope", "Do not teach defaults"]:
+        check(invariant in root_agents, f"instruction invariant: {invariant}")
+    check(len(global_agents.encode()) < 500, "global prompt contains only user-wide preferences")
+    for generic in ["Fix root causes", "simplest durable design", "Tests must be", "quality, simplicity, robustness"]:
+        check(generic not in global_agents, f"global prompt avoids generic guidance: {generic}")
 
     ext = ROOT / "dotfiles/.pi/agent/extensions/dev-workflow.ts"
     cfg = ROOT / "dotfiles/.pi/agent/dev-workflow.json"
     settings = ROOT / "dotfiles/.pi/agent/settings.json"
-    guidelines = ROOT / "dotfiles/.pi/agent/AGENTS.md"
-    check(ext.is_file(), "Pi extension present")
-    check(cfg.is_file(), "model config present")
-    check(settings.is_file(), "Pi settings present")
-    check(guidelines.is_file(), "global guidelines present")
+    check(ext.is_file() and cfg.is_file() and settings.is_file(), "Pi workflow assets present")
 
     ext_text = ext.read_text()
     for command in ["dev-spec", "dev-plan", "dev-build", "dev-prepare", "dev-review", "dev-ship"]:
         check(f'registerCommand("{command}"' in ext_text, f"Pi command /{command}")
-    check('name: "workflow_brief"' in ext_text, "rich workflow brief tool")
-    check('name: "explore"' in ext_text, "Explorer tool")
-    check("handleMouse(event)" in ext_text and "new Image(" in ext_text and "new Markdown(" in ext_text, "rich mouse/image/markdown UI")
-    check("isMermaid" in ext_text and "code_language" in ext_text and "Evidence / links" in ext_text, "rich diagrams/code/clickable evidence UI")
-    check('ctx.ui.editor("Review feedback"' in ext_text, "multi-line human feedback path")
-    check("resolvedRoleProfile" in ext_text and "${model.provider}/${model.id}" in ext_text, "child agents use resolved exact model identity")
-    check('"--mode", "json"' in ext_text and '"--no-session"' in ext_text, "fresh streamed child sessions")
-    check("Plan-ID:" in ext_text and "max_attempts_per_plan" in ext_text, "bounded deterministic plan commits")
-    check("DEV_WORKFLOW_EXPLORER" in ext_text and "read-only" in ext_text, "Explorer read-only enforcement")
-    check("max_review_repairs" not in ext_text, "no automatic review repair loop")
-    for forbidden in ["sqlite", "event sourcing"]:
-        check(forbidden not in ext_text.lower(), f"extension avoids {forbidden}")
+
+    for required in [
+        'name: "workflow_brief"',
+        'name: "explore"',
+        "handleMouse(event)",
+        "new Image(",
+        "new Markdown(",
+        "resolvedRoleProfile",
+        '"--mode", "json"',
+        '"--no-session"',
+        'readSkill("dev-implement")',
+        'readSkill("dev-review")',
+        "CONVENTIONAL_COMMIT_RE",
+        "async function driveShip",
+        "async function awaitShipSignals",
+        "--force-with-lease",
+        "fs.renameSync(temp, file)",
+    ]:
+        check(required in ext_text, f"extension capability: {required}")
+
+    check("builderSystem" not in ext_text, "implementation semantics are not duplicated in controller")
+    check("DEV_WORKFLOW_SHIP" not in ext_text, "no hidden ship mode")
+    check("Plan-ID:" not in ext_text, "workflow IDs do not leak into commit contract")
+    check("This is the manual review command." in ext_text and "Present one workflow_brief" in ext_text, "manual review UI is invocation-scoped")
 
     config = json.loads(cfg.read_text())
     expected_models = {"spec", "plan", "builder", "builder_retry", "explorer", "prepare", "review", "ship"}
     check(set(config["models"]) == expected_models, "role-specific model matrix")
-    check(config["build"]["max_attempts_per_plan"] == 2, "bounded Builder attempts")
+    check(config["build"]["max_attempts_per_plan"] == 2, "bounded Implementer attempts")
     check(config["explorer"]["max_parallel"] >= 2, "parallel Explorer configured")
-    for role, profile in config["models"].items():
-        check(bool(profile.get("model")) and bool(profile.get("thinking")), f"{role} model is explicit")
+    check(config["ship"]["max_repair_rounds"] == 2, "bounded automatic repair rounds")
+    check(config["ship"]["poll_seconds"] >= 5, "cheap GitHub polling cadence")
 
     pi_settings = json.loads(settings.read_text())
-    check(pi_settings["tuiMode"] == "fullscreen", "fullscreen Pi TUI required")
+    check(pi_settings["tuiMode"] == "fullscreen", "fullscreen Pi TUI")
     check(pi_settings["terminal"]["showImages"] is True, "terminal images enabled")
 
     workflow = (ROOT / "WORKFLOW.md").read_text()
     readme = (ROOT / "README.md").read_text()
-    for text in [workflow, readme]:
-        check("/dev-prepare" in text, "documented prepare stage")
-        check("workflow_brief" in text, "documented rich Pi review UX")
-        check("Explorer" in text, "documented Explorer primitive")
-    check("CI may be GREEN **or RED**" in workflow, "terminal CI is review evidence")
-    check("never waits/polls" in workflow, "prepare does not wait")
-    check("No orchestrator agent" in workflow, "no orchestrator")
+    check("No model tokens are consumed while waiting" in workflow, "await is traditional tooling only")
+    check("ship.toon" in workflow and "progress.toon" in workflow, "minimal durable state documented")
+    check("Conventional Commit" in workflow and "no workflow IDs" in workflow, "clean Git history documented")
+    check("workflow_brief" in workflow and "Explorer" in readme, "review UX and Explorer documented")
 
-    check(not (ROOT / "install-legacy.sh").exists(), "legacy installer removed")
-    check(not (ROOT / "workflow-questionnaire.md").exists(), "historical questionnaire removed")
-    check(not (ROOT / "skill-requirements.md").exists(), "duplicated workflow requirements removed")
-    check(not (skills / "dev-project").exists(), "orchestrator skill removed")
-    check(not (skills / "dev-build").exists(), "build is extension driver, not skill")
+    check(not (skills / "dev-project").exists(), "no orchestrator skill")
+    check(not (skills / "dev-build").exists(), "build is controller, not skill")
+    check(not (skills / "dev-ship").exists(), "ship is controller, not skill")
     check("/plans/" in (ROOT / ".gitignore").read_text(), "workflow artifacts ignored")
 
-    guidelines = (ROOT / "dotfiles" / ".pi" / "agent" / "AGENTS.md").read_text()
-    for required in [
-        "Do not use em dashes",
-        "quality, simplicity, robustness, scalability, and long-term maintainability",
-        "reproduce the failure as close as practical to the user-visible boundary",
-        "Tests must be fast, deterministic, and useful",
-        "delete before adding",
-    ]:
-        check(required in guidelines, f"engineering guideline: {required}")
-
     for skill_md in skills.glob("dev-*/SKILL.md"):
-        check("/dev-" not in skill_md.read_text(), f"{skill_md.parent.name} does not route to another workflow skill")
-    check("## Skill boundary" in workflow, "workflow owns skill sequencing")
+        check("/dev-" not in skill_md.read_text(), f"{skill_md.parent.name} does not route workflow")
 
     install = (ROOT / "install.sh").read_text()
-    check("@earendil-works/pi-coding-agent" in install, "Pi installed")
-    check("@toon-format/cli" in install, "TOON CLI installed")
+    check("@toon-format/cli" in install and "pi-coding-agent" in install, "Pi + TOON installed")
     check("lavish" not in install.lower(), "no Lavish dependency")
 
     for p in (ROOT / "tests").glob("*.py"):

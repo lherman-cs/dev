@@ -20,7 +20,7 @@ const text = fs.readFileSync(source, 'utf8');
 for (const name of ['dev-spec', 'dev-plan', 'dev-build', 'dev-prepare', 'dev-review', 'dev-ship']) {
   if (!text.includes(`registerCommand("${name}"`)) throw new Error(`missing /${name}`);
 }
-for (const required of ['workflow_brief', 'handleMouse(event)', 'new Image(', 'new Markdown(', 'name: "explore"', 'replacementCtx.sendUserMessage(prompt)', 'resolvedRoleProfile', 'isMermaid', 'ctx.ui.editor("Review feedback"', 'Plan-ID:', '--no-session', '--mode']) {
+for (const required of ['workflow_brief', 'handleMouse(event)', 'new Image(', 'new Markdown(', 'name: "explore"', 'replacementCtx.sendUserMessage(prompt)', 'resolvedRoleProfile', 'isMermaid', 'ctx.ui.editor("Review feedback"', 'CONVENTIONAL_COMMIT_RE', 'readSkill("dev-implement")', '--no-session', '--mode']) {
   if (!text.includes(required)) throw new Error(`missing extension capability: ${required}`);
 }
 
@@ -63,7 +63,7 @@ const prompt=process.argv.at(-1); const m=/^Execution contract: (.+)$/m.exec(pro
 const plan=JSON.parse(fs.readFileSync(m[1],'utf8'));
 fs.writeFileSync(path.join(process.cwd(),\`built-\${plan.id}.txt\`),plan.id+'\\n');
 cp.execFileSync('git',['add',\`built-\${plan.id}.txt\`]);
-cp.execFileSync('git',['-c','user.name=Pi Test','-c','user.email=pi@test.invalid','commit','-m',\`build \${plan.id}\\n\\nPlan-ID: \${plan.id}\`],{stdio:'ignore'});
+cp.execFileSync('git',['-c','user.name=Pi Test','-c','user.email=pi@test.invalid','commit','-m','feat(test): implement contract'],{stdio:'ignore'});
 const message={role:'assistant',content:[{type:'text',text:'implemented '+plan.id}],usage:{totalTokens:1000}};
 process.stdout.write(JSON.stringify({type:'message_end',message})+'\\n');
 `;
@@ -85,6 +85,7 @@ fs.writeFileSync(path.join(planDir, 'P001.toon'), JSON.stringify({ version: 1, i
 fs.writeFileSync(path.join(planDir, 'P002.toon'), JSON.stringify({ version: 1, id: 'P002', title: 'two', depends_on: ['P001'], checks: ['test -f built-P002.txt'] }));
 
 process.env.PI_CODING_AGENT_DIR = agentDir;
+process.env.DEV_WORKFLOW_SKILL_ROOT = path.join(root, 'dotfiles/.agents/skills');
 process.env.PATH = `${bin}:${process.env.PATH}`;
 const { default: extension } = await import(`${pathToFileURL(modulePath).href}?t=${Date.now()}`);
 const commands = new Map();
@@ -145,7 +146,7 @@ const recoveryBase = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repo, enc
 fs.writeFileSync(path.join(planDir, 'P005.toon'), JSON.stringify({ version: 1, id: 'P005', title: 'recover', depends_on: ['P004'], checks: ['test -f built-P005.txt'] }));
 fs.writeFileSync(path.join(repo, 'built-P005.txt'), 'P005\n');
 execFileSync('git', ['add', 'built-P005.txt'], { cwd: repo });
-execFileSync('git', ['-c', 'user.name=Pi Test', '-c', 'user.email=pi@test.invalid', 'commit', '-qm', 'build P005\n\nPlan-ID: P005'], { cwd: repo });
+execFileSync('git', ['-c', 'user.name=Pi Test', '-c', 'user.email=pi@test.invalid', 'commit', '-qm', 'fix(test): recover contract'], { cwd: repo });
 progress.current = 'P005';
 progress.head = recoveryBase;
 fs.writeFileSync(path.join(projectDir, 'progress.toon'), JSON.stringify(progress));
@@ -153,6 +154,12 @@ await commands.get('dev-build').handler('demo', ctx);
 progress = JSON.parse(fs.readFileSync(path.join(projectDir, 'progress.toon'), 'utf8'));
 if (!progress.done.includes('P005') || progress.current !== null) throw new Error(`committed current plan was not recovered: ${JSON.stringify(progress)}`);
 if (!notifications.some(n => n.message.includes('Recovered P005'))) throw new Error('recovery was not reported');
+
+const messages = execFileSync('git', ['log', '--format=%B', `${base}..HEAD`], { cwd: repo, encoding: 'utf8' });
+if (/\b[PR]\d{3}\b/.test(messages)) throw new Error(`workflow ID leaked into commit history:\n${messages}`);
+for (const subject of execFileSync('git', ['log', '--format=%s', `${base}..HEAD`], { cwd: repo, encoding: 'utf8' }).trim().split('\n')) {
+  if (!/^[a-z][a-z0-9-]*(\([^)]+\))?!?: .+/.test(subject)) throw new Error(`non-conventional commit: ${subject}`);
+}
 
 fs.rmSync(tmp, { recursive: true, force: true });
 console.log('Pi extension syntax + deterministic build/repair smoke test: PASS');

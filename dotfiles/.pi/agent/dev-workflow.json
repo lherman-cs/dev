@@ -16,5 +16,10 @@
   "explorer": {
     "max_parallel": 4,
     "max_output_chars": 7000
+  },
+  "ship": {
+    "max_repair_rounds": 2,
+    "poll_seconds": 20,
+    "settle_seconds": 60
   }
 }

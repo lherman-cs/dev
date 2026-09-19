@@ -8,12 +8,22 @@ import { Image, Key, Markdown, matchesKey, truncateToWidth, wrapTextWithAnsi } f
 
 const AGENT_DIR = process.env.PI_CODING_AGENT_DIR || path.join(os.homedir(), ".pi", "agent");
 const CONFIG_PATH = path.join(AGENT_DIR, "dev-workflow.json");
-const SKILL_ROOT = path.join(os.homedir(), ".agents", "skills");
+const SKILL_ROOT = process.env.DEV_WORKFLOW_SKILL_ROOT || path.join(os.homedir(), ".agents", "skills");
 const PLAN_RE = /^P\d+\.toon$/;
 const REPAIR_RE = /^R\d+\.toon$/;
 
 function readConfig() {
   return JSON.parse(fs.readFileSync(CONFIG_PATH, "utf8"));
+}
+
+function skillPath(skill) {
+  return path.join(SKILL_ROOT, skill, "SKILL.md");
+}
+
+function readSkill(skill) {
+  const file = skillPath(skill);
+  if (!fs.existsSync(file)) throw new Error(`Missing installed skill ${file}`);
+  return fs.readFileSync(file, "utf8");
 }
 
 function run(command, args, cwd, input, env) {
@@ -45,7 +55,10 @@ async function writeToon(file, value) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   const r = await run("toon", ["--encode"], path.dirname(file), JSON.stringify(value));
   if (r.code !== 0) throw new Error(`TOON encode failed for ${file}: ${r.stderr.trim()}`);
-  fs.writeFileSync(file, r.stdout.endsWith("\n") ? r.stdout : `${r.stdout}\n`);
+  const encoded = r.stdout.endsWith("\n") ? r.stdout : `${r.stdout}\n`;
+  const temp = `${file}.tmp-${process.pid}`;
+  fs.writeFileSync(temp, encoded);
+  fs.renameSync(temp, file);
 }
 
 function roleConfig(role) {
@@ -85,12 +98,13 @@ async function resolvedRoleProfile(ctx, role) {
   return { ...profile, model: `${model.provider}/${model.id}` };
 }
 
-async function launchSkill(pi, ctx, role, skill, args, fresh) {
+async function launchSkill(pi, ctx, role, skill, args, fresh, invocation = "") {
   const profile = roleConfig(role);
-  const skillPath = path.join(SKILL_ROOT, skill, "SKILL.md");
-  if (!fs.existsSync(skillPath)) throw new Error(`Missing installed skill ${skillPath}`);
+  const file = skillPath(skill);
+  if (!fs.existsSync(file)) throw new Error(`Missing installed skill ${file}`);
   const request = args?.trim() ? `\n\nUser request: ${args.trim()}` : "";
-  const prompt = `Read and follow the exact ${skill} skill at ${skillPath}.${request}`;
+  const extra = invocation ? `\n\nInvocation contract:\n${invocation}` : "";
+  const prompt = `Read and follow the exact ${skill} skill at ${file}.${extra}${request}`;
 
   if (!fresh) {
     await applyRole(pi, ctx, role);
@@ -392,24 +406,17 @@ async function runVisibleAgent(ctx, options) {
   return processPromise || { code: -1, stdout: "", stderr: "agent did not start", aborted: true };
 }
 
-function builderSystem() {
-  return [
-    "You are Builder. Implement exactly the assigned approved plan in the current worktree.",
-    "Inspect repository reality before assuming. Resolve ordinary engineering details yourself.",
-    "Use the explore tool for narrow read-only research when it will reduce context or improve confidence.",
-    "Do not edit plans/ workflow artifacts, change product semantics, rebase, push, reset, stash, clean, or manage worktrees.",
-    "Run the declared plan checks. Produce exactly one coherent commit descended from the supplied base with trailer `Plan-ID: <id>`.",
-    "If retrying and the plan commit already exists, amend it instead of adding another commit.",
-    "If the approved plan is materially wrong or requires a semantic/architecture decision outside its contract, stop and end with NEEDS_REPLAN plus precise evidence.",
-  ].join("\n");
-}
+const CONVENTIONAL_COMMIT_RE = /^[a-z][a-z0-9-]*(\([^)]+\))?!?: .+/;
 
 async function validatePlanCommit(cwd, base, plan) {
   const head = await git(cwd, ["rev-parse", "HEAD"]);
   const count = Number(await git(cwd, ["rev-list", "--count", `${base}..${head}`]));
   if (count !== 1) return { ok: false, reason: `expected exactly one commit for ${plan.id}, found ${count}` };
   const message = await git(cwd, ["log", "-1", "--format=%B"]);
-  if (!message.includes(`Plan-ID: ${plan.id}`)) return { ok: false, reason: `commit is missing Plan-ID: ${plan.id}` };
+  const subject = message.split("\n", 1)[0];
+  if (!CONVENTIONAL_COMMIT_RE.test(subject)) return { ok: false, reason: `commit is not Conventional Commits format: ${subject}` };
+  const workflowId = /\b[PR]\d{3,}\b/i;
+  if (workflowId.test(message) || /\bPlan-ID\s*:/i.test(message)) return { ok: false, reason: "commit message leaks workflow metadata" };
   const dirty = await statusPorcelain(cwd);
   if (dirty) return { ok: false, reason: `worktree is not clean after Builder:\n${dirty}` };
   const checks = await runChecks(cwd, plan.checks || []);
@@ -433,13 +440,12 @@ async function runPlan(ctx, project, progress, entry) {
       `Execution contract: ${entry.file}`,
       `Accepted predecessor: ${base}`,
       failure ? `Previous attempt evidence:\n${failure}` : "",
-      "Implement exactly this approved plan, verify it, and leave exactly one plan commit.",
     ].filter(Boolean).join("\n\n");
     const result = await runVisibleAgent(ctx, {
       title: `${plan.id} · ${plan.title || "Builder"}`,
       subtitle: `${profile.model || "model"}/${profile.thinking || "default"} · attempt ${attempt}/${max}`,
       profile,
-      system: builderSystem(),
+      system: readSkill("dev-implement"),
       prompt,
       tools: ["read", "bash", "edit", "write", "explore"],
       env: { DEV_WORKFLOW_CHILD: "1" },
@@ -486,7 +492,564 @@ async function driveBuild(ctx, args) {
     done.add(next.data.id);
   }
   ctx.ui.setStatus("dev-build", undefined);
-  ctx.ui.notify(`Build complete: ${active.length}/${active.length} approved plans/repairs. Next: /dev-prepare`, "info");
+  ctx.ui.notify(`Build complete: ${active.length}/${active.length} approved plans/repairs.`, "info");
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function shipSettings() {
+  const ship = readConfig().ship || {};
+  return {
+    maxRepairRounds: Math.max(0, Number(ship.max_repair_rounds ?? 2)),
+    pollMs: Math.max(5000, Number(ship.poll_seconds ?? 20) * 1000),
+    settleMs: Math.max(10000, Number(ship.settle_seconds ?? 60) * 1000),
+  };
+}
+
+async function loadShip(project) {
+  const file = path.join(project.dir, "ship.toon");
+  if (!fs.existsSync(file)) {
+    const data = {
+      version: 1,
+      phase: "build",
+      repair_round: 0,
+      verified_head: null,
+      candidate: null,
+      approved_head: null,
+      last_failure: null,
+      blocked: null,
+    };
+    await writeToon(file, data);
+    return { file, data };
+  }
+  return { file, data: await decodeToon(file) };
+}
+
+async function saveShip(ship) {
+  await writeToon(ship.file, ship.data);
+}
+
+async function setShipPhase(ship, phase) {
+  ship.data.phase = phase;
+  await saveShip(ship);
+}
+
+async function blockShip(ship, reason, resume = "build") {
+  ship.data.phase = "blocked";
+  ship.data.blocked = { reason: String(reason).slice(0, 3000), resume };
+  await saveShip(ship);
+}
+
+async function gh(cwd, args) {
+  const r = await run("gh", args, cwd);
+  if (r.code !== 0) throw new Error(`gh ${args.join(" ")} failed: ${(r.stderr || r.stdout).trim()}`);
+  return r.stdout.trim();
+}
+
+async function ghJson(cwd, args) {
+  const text = await gh(cwd, args);
+  return text ? JSON.parse(text) : {};
+}
+
+async function currentPr(cwd) {
+  const r = await run("gh", ["pr", "view", "--json", "number,url,isDraft,headRefOid,baseRefName,updatedAt"], cwd);
+  return r.code === 0 ? JSON.parse(r.stdout) : null;
+}
+
+function nextRepairId(entries) {
+  const ids = entries
+    .map((entry) => /^R(\d+)$/.exec(String(entry.data.id || "")))
+    .filter(Boolean)
+    .map((match) => Number(match[1]));
+  return `R${String((ids.length ? Math.max(...ids) : 0) + 1).padStart(3, "0")}`;
+}
+
+async function planFinalGateRepair(project, loaded, ship, failure) {
+  const settings = shipSettings();
+  const evidence = String(failure.stderr || failure.stdout || "").trim().slice(-1600);
+  const signature = `${failure.command}\n${evidence}`;
+  if (ship.data.last_failure === signature) {
+    await blockShip(ship, `The same final-gate failure survived its repair: ${failure.command}`);
+    return;
+  }
+  if (ship.data.repair_round >= settings.maxRepairRounds) {
+    await blockShip(ship, `Automatic repair limit reached at final gate: ${failure.command}`);
+    return;
+  }
+
+  const id = nextRepairId(loaded.entries);
+  const active = loaded.entries.filter((entry) => !supersededIds(loaded.entries).has(entry.data.id));
+  await writeToon(path.join(project.dir, "repairs", `${id}.toon`), {
+    version: 1,
+    id,
+    title: `Repair final gate: ${failure.command}`,
+    depends_on: active.map((entry) => entry.data.id),
+    goal: `Make the final acceptance command pass while preserving the approved spec: ${failure.command}`,
+    requirements: [
+      "Find and fix the root cause, not only the observed symptom.",
+      "Preserve approved behavior and architecture.",
+      evidence ? `Failure evidence: ${evidence}` : "Reproduce the failure from the declared command.",
+    ],
+    checks: [failure.command],
+    source: { kind: "final_gate" },
+  });
+  ship.data.repair_round += 1;
+  ship.data.last_failure = signature;
+  ship.data.verified_head = null;
+  ship.data.candidate = null;
+  ship.data.approved_head = null;
+  ship.data.phase = "build";
+  await saveShip(ship);
+}
+
+function finalChecks(projectData, cwd) {
+  if (Array.isArray(projectData.final_checks) && projectData.final_checks.length) return projectData.final_checks;
+  if (fs.existsSync(path.join(cwd, "Justfile")) || fs.existsSync(path.join(cwd, "justfile"))) return ["just check", "just test"];
+  return [];
+}
+
+function conflictResolverSystem() {
+  return [
+    "Resolve only the current rebase-conflicted files while preserving the approved spec and existing commit intent.",
+    "Do not run Git sequencing/mutation commands; the controller owns them.",
+    "If resolution needs a new product/API/architecture/scope decision, return NEEDS_HUMAN with evidence.",
+  ].join("\n");
+}
+
+async function resolveConflicts(ctx, project, conflicts) {
+  const profile = await resolvedRoleProfile(ctx, "builder_retry");
+  const result = await runVisibleAgent(ctx, {
+    title: "Rebase conflicts",
+    subtitle: `${profile.model || "model"}/${profile.thinking || "default"} · ${conflicts.length} file(s)`,
+    profile,
+    system: conflictResolverSystem(),
+    prompt: [
+      `Approved spec: ${path.join(project.dir, "spec.md")}`,
+      `Conflicted files:\n${conflicts.map((file) => `- ${file}`).join("\n")}`,
+      "Resolve the files and leave Git sequencing to the controller.",
+    ].join("\n\n"),
+    tools: ["read", "grep", "find", "ls", "edit", "write"],
+    env: { DEV_WORKFLOW_CHILD: "1" },
+  });
+  if (result?.aborted) throw new Error("Conflict resolution was interrupted; the rebase is preserved.");
+  if (/\bNEEDS_HUMAN\b/.test(result.stdout || "")) return { blocked: true, reason: result.stdout };
+  if (result.code !== 0) throw new Error(`Conflict resolver failed: ${result.stderr || result.stdout}`);
+  const remaining = await git(ctx.cwd, ["diff", "--name-only", "--diff-filter=U"]);
+  if (remaining) throw new Error(`Conflict resolver left unresolved files:\n${remaining}`);
+  await git(ctx.cwd, ["add", "-A", "--", ...conflicts]);
+  return { blocked: false };
+}
+
+async function rebaseActive(cwd) {
+  const gitDir = path.resolve(cwd, await git(cwd, ["rev-parse", "--git-dir"]));
+  return fs.existsSync(path.join(gitDir, "rebase-merge")) || fs.existsSync(path.join(gitDir, "rebase-apply"));
+}
+
+async function finishRebase(ctx, project, ship) {
+  while (true) {
+    if (!(await rebaseActive(ctx.cwd))) return true;
+    const conflicts = (await git(ctx.cwd, ["diff", "--name-only", "--diff-filter=U"])).split("\n").filter(Boolean);
+    if (conflicts.length) {
+      const resolved = await resolveConflicts(ctx, project, conflicts);
+      if (resolved.blocked) {
+        await blockShip(ship, resolved.reason || "Rebase requires a semantic decision.", "prepare");
+        return false;
+      }
+    }
+    const continued = await run("git", ["-c", "core.editor=true", "rebase", "--continue"], ctx.cwd, undefined, { GIT_EDITOR: "true" });
+    if (continued.code !== 0) {
+      const more = await git(ctx.cwd, ["diff", "--name-only", "--diff-filter=U"]);
+      if (!more) throw new Error(`git rebase --continue failed: ${(continued.stderr || continued.stdout).trim()}`);
+    }
+  }
+}
+
+async function prepareShipCandidate(ctx, project, loaded, ship) {
+  const baseBranch = loaded.data.base_branch || "main";
+  if (await rebaseActive(ctx.cwd)) {
+    if (!(await finishRebase(ctx, project, ship))) return;
+  } else {
+    const dirty = await statusPorcelain(ctx.cwd);
+    if (dirty) throw new Error(`Prepare requires a clean worktree:\n${dirty}`);
+    await git(ctx.cwd, ["fetch", "origin", baseBranch]);
+    const rebase = await run("git", ["rebase", `origin/${baseBranch}`], ctx.cwd, undefined, { GIT_EDITOR: "true" });
+    if (rebase.code !== 0) {
+      if (!(await rebaseActive(ctx.cwd))) throw new Error(`git rebase failed: ${(rebase.stderr || rebase.stdout).trim()}`);
+      if (!(await finishRebase(ctx, project, ship))) return;
+    }
+  }
+  if (ship.data.phase === "blocked") return;
+
+  const head = await git(ctx.cwd, ["rev-parse", "HEAD"]);
+  const progress = await loadProgress(project, loaded.data);
+  progress.data.current = null;
+  progress.data.head = head;
+  await writeToon(progress.file, progress.data);
+
+  if (ship.data.verified_head !== head) {
+    const checked = await runChecks(ctx.cwd, finalChecks(loaded.data, ctx.cwd));
+    if (!checked.ok) {
+      await planFinalGateRepair(project, loaded, ship, checked);
+      return;
+    }
+    ship.data.verified_head = head;
+    ship.data.last_failure = null;
+    await saveShip(ship);
+  }
+
+  const branch = await git(ctx.cwd, ["branch", "--show-current"]);
+  if (!branch) throw new Error("Shipping requires a named branch.");
+  await git(ctx.cwd, ["push", "--force-with-lease", "-u", "origin", `HEAD:${branch}`]);
+
+  let pr = await currentPr(ctx.cwd);
+  if (!pr) {
+    const title = loaded.data.title || loaded.data.name || branch;
+    await gh(ctx.cwd, ["pr", "create", "--draft", "--base", baseBranch, "--head", branch, "--title", String(title), "--body", "Draft candidate managed by the Pi dev workflow."]);
+    pr = await currentPr(ctx.cwd);
+  }
+  if (!pr || pr.headRefOid !== head) throw new Error("Published PR does not match the verified local HEAD.");
+
+  ship.data.candidate = {
+    head,
+    base: await git(ctx.cwd, ["rev-parse", `origin/${baseBranch}`]),
+    base_branch: baseBranch,
+    pr: pr.number,
+    url: pr.url,
+    published_at: new Date().toISOString(),
+  };
+  ship.data.approved_head = null;
+  ship.data.phase = "await";
+  await saveShip(ship);
+}
+
+function checksPending(checks) {
+  return checks.some((check) => {
+    const bucket = String(check.bucket || "").toLowerCase();
+    const state = String(check.state || "").toUpperCase();
+    return bucket === "pending" || ["QUEUED", "IN_PROGRESS", "PENDING", "WAITING", "EXPECTED", "REQUESTED"].includes(state);
+  });
+}
+
+async function awaitShipSignals(ctx, ship) {
+  const candidate = ship.data.candidate;
+  if (!candidate) throw new Error("Await phase has no candidate.");
+  const settings = shipSettings();
+  let signature = "";
+  let stableSince = 0;
+
+  while (true) {
+    const pr = await ghJson(ctx.cwd, ["pr", "view", String(candidate.pr), "--json", "headRefOid,updatedAt"]);
+    if (pr.headRefOid !== candidate.head) {
+      await blockShip(ship, `PR #${candidate.pr} moved away from candidate ${candidate.head}.`, "prepare");
+      return;
+    }
+
+    const checkResult = await run("gh", ["pr", "checks", String(candidate.pr), "--json", "name,state,bucket,workflow"], ctx.cwd);
+    let checks;
+    try { checks = JSON.parse(checkResult.stdout || "[]"); }
+    catch { throw new Error(`Could not parse PR checks: ${checkResult.stderr || checkResult.stdout}`); }
+    const current = JSON.stringify({ checks, updatedAt: pr.updatedAt });
+    if (checksPending(checks)) {
+      signature = "";
+      stableSince = 0;
+      ctx.ui.setStatus("dev-ship", `await · ${checks.filter((check) => String(check.bucket || "").toLowerCase() === "pending").length} pending`);
+    } else if (current !== signature) {
+      signature = current;
+      stableSince = Date.now();
+      ctx.ui.setStatus("dev-ship", "await · checks terminal, settling feedback");
+    } else if (Date.now() - stableSince >= settings.settleMs) {
+      ship.data.phase = "review";
+      await saveShip(ship);
+      return;
+    }
+    await sleep(settings.pollMs);
+  }
+}
+
+function parseWorkerJson(text) {
+  const raw = String(text || "").trim();
+  const fenced = /^```(?:json)?\s*([\s\S]*?)\s*```$/i.exec(raw);
+  const source = fenced ? fenced[1] : raw;
+  const first = source.indexOf("{");
+  const last = source.lastIndexOf("}");
+  if (first < 0 || last <= first) throw new Error("Worker did not return JSON.");
+  return JSON.parse(source.slice(first, last + 1));
+}
+
+function shipReviewerSystem() {
+  return [
+    readSkill("dev-review"),
+    "",
+    "Controller invocation contract:",
+    "- No human UI. Return only JSON.",
+    '- Schema: {"status":"pass|repairs|blocked","summary":"...","review_focus":["..."],"validation":["..."],"findings":[{"key":"stable.root.cause","title":"...","reason":"...","evidence":["..."],"repair":{"title":"...","goal":"...","requirements":["..."],"checks":["..."]}}]}',
+    "- If human feedback is supplied, it must result in repairs or blocked, never pass.",
+  ].join("\n");
+}
+
+async function runShipReviewer(ctx, project, ship, humanFeedback = "") {
+  const profile = await resolvedRoleProfile(ctx, "review");
+  let invalid = "";
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    const result = await runVisibleAgent(ctx, {
+      title: humanFeedback ? "Final feedback triage" : "Candidate review",
+      subtitle: `${profile.model || "model"}/${profile.thinking || "default"}`,
+      profile,
+      system: shipReviewerSystem(),
+      prompt: [
+        `Approved spec: ${path.join(project.dir, "spec.md")}`,
+        `Project artifacts: ${project.dir}`,
+        `Exact candidate: PR #${ship.data.candidate.pr}, HEAD ${ship.data.candidate.head}, base ${ship.data.candidate.base}`,
+        humanFeedback ? `Human feedback: ${humanFeedback}` : "",
+        invalid ? `Previous response was invalid. Correct only its structure:\n${invalid}` : "",
+      ].filter(Boolean).join("\n\n"),
+      tools: ["read", "grep", "find", "ls", "explore"],
+      env: { DEV_WORKFLOW_CHILD: "1" },
+    });
+    if (result?.aborted) throw new Error("Reviewer was interrupted; review state was not advanced.");
+    if (result.code !== 0) throw new Error(`Reviewer failed: ${result.stderr || result.stdout}`);
+    try {
+      const review = parseWorkerJson(result.stdout);
+      if (!["pass", "repairs", "blocked"].includes(review.status)) throw new Error("invalid status");
+      if (!Array.isArray(review.findings)) throw new Error("findings must be an array");
+      if (humanFeedback && review.status === "pass") throw new Error("human feedback cannot return pass");
+      if (review.status === "repairs" && review.findings.some((finding) => !finding?.key || !finding?.repair?.goal)) throw new Error("repair findings require key and goal");
+      return review;
+    } catch (error) {
+      invalid = `${error instanceof Error ? error.message : String(error)}\n${String(result.stdout).slice(-1800)}`;
+    }
+  }
+  throw new Error(`Reviewer returned invalid structured output twice.\n${invalid}`);
+}
+
+function repairedFindingKeys(entries) {
+  return new Set(entries.map((entry) => entry.data.source?.finding_key).filter(Boolean));
+}
+
+async function persistShipReview(project, loaded, ship, review) {
+  const reviewFile = path.join(project.dir, "review.toon");
+  if (review.status === "pass") {
+    await writeToon(reviewFile, {
+      version: 1, status: "pass", head: ship.data.candidate.head, pr: ship.data.candidate.pr,
+      summary: review.summary || "", review_focus: review.review_focus || [], validation: review.validation || [],
+    });
+    return "pass";
+  }
+  if (review.status === "blocked") {
+    await writeToon(reviewFile, {
+      version: 1, status: "blocked", head: ship.data.candidate.head, pr: ship.data.candidate.pr,
+      summary: review.summary || "", findings: review.findings || [],
+    });
+    return "blocked";
+  }
+
+  const prior = repairedFindingKeys(loaded.entries);
+  const repeated = [...new Set(review.findings.map((finding) => finding.key).filter((key) => prior.has(key)))];
+  if (repeated.length) {
+    await writeToon(reviewFile, {
+      version: 1, status: "blocked", head: ship.data.candidate.head, pr: ship.data.candidate.pr,
+      summary: `Previously repaired finding recurred: ${repeated.join(", ")}`, findings: review.findings,
+    });
+    return "blocked";
+  }
+
+  const active = loaded.entries.filter((entry) => !supersededIds(loaded.entries).has(entry.data.id));
+  let number = Number(nextRepairId(loaded.entries).slice(1));
+  const ids = [];
+  for (const finding of review.findings) {
+    const id = `R${String(number++).padStart(3, "0")}`;
+    ids.push(id);
+    await writeToon(path.join(project.dir, "repairs", `${id}.toon`), {
+      version: 1, id, title: finding.repair.title || finding.title || id,
+      depends_on: active.map((entry) => entry.data.id),
+      goal: finding.repair.goal,
+      requirements: finding.repair.requirements || [finding.reason].filter(Boolean),
+      checks: finding.repair.checks || [],
+      source: { kind: "candidate_review", finding_key: finding.key, candidate: ship.data.candidate.head, evidence: finding.evidence || [] },
+    });
+  }
+  await writeToon(reviewFile, {
+    version: 1, status: "repairs_planned", head: ship.data.candidate.head, pr: ship.data.candidate.pr,
+    summary: review.summary || "", findings: review.findings.map((finding) => ({ key: finding.key, title: finding.title, reason: finding.reason })), repairs: ids,
+  });
+  return "repairs_planned";
+}
+
+async function reviewShipCandidate(ctx, project, loaded, ship) {
+  await git(ctx.cwd, ["fetch", "origin", ship.data.candidate.base_branch]);
+  const currentBase = await git(ctx.cwd, ["rev-parse", `origin/${ship.data.candidate.base_branch}`]);
+  if (currentBase !== ship.data.candidate.base) {
+    ship.data.verified_head = null;
+    ship.data.candidate = null;
+    ship.data.approved_head = null;
+    ship.data.phase = "prepare";
+    await saveShip(ship);
+    return;
+  }
+
+  const reviewFile = path.join(project.dir, "review.toon");
+  let stored = fs.existsSync(reviewFile) ? await decodeToon(reviewFile) : null;
+  if (!stored || stored.head !== ship.data.candidate.head || !["pass", "repairs_planned", "blocked"].includes(stored.status)) {
+    const generated = await runShipReviewer(ctx, project, ship);
+    await persistShipReview(project, loaded, ship, generated);
+    stored = await decodeToon(reviewFile);
+  }
+
+  if (stored.status === "pass") {
+    ship.data.phase = "human";
+    await saveShip(ship);
+    return;
+  }
+  if (stored.status === "repairs_planned") {
+    if (ship.data.repair_round >= shipSettings().maxRepairRounds) {
+      await blockShip(ship, "Automatic repair-round limit reached.", "build");
+      return;
+    }
+    ship.data.repair_round += 1;
+    ship.data.verified_head = null;
+    ship.data.candidate = null;
+    ship.data.approved_head = null;
+    ship.data.phase = "build";
+    await saveShip(ship);
+    return;
+  }
+  await blockShip(ship, stored.summary || "Reviewer needs a human semantic decision.", "build");
+}
+
+function finalizerSystem() {
+  return [
+    "Return the approved PR's concise human-facing title and Markdown body.",
+    "Do not edit files or GitHub. Return only JSON: {\"title\":\"...\",\"body\":\"...\"}.",
+  ].join("\n");
+}
+
+async function finalizeCandidate(ctx, project, ship) {
+  const profile = await resolvedRoleProfile(ctx, "ship");
+  const result = await runVisibleAgent(ctx, {
+    title: "PR finalizer", subtitle: `${profile.model || "model"}/${profile.thinking || "default"}`, profile,
+    system: finalizerSystem(),
+    prompt: [
+      `Approved spec: ${path.join(project.dir, "spec.md")}`,
+      `Review: ${path.join(project.dir, "review.toon")}`,
+      `Exact candidate: PR #${ship.data.candidate.pr}, HEAD ${ship.data.candidate.head}`,
+    ].join("\n\n"),
+    tools: ["read", "grep", "find", "ls"],
+    env: { DEV_WORKFLOW_CHILD: "1" },
+  });
+  if (result?.aborted) throw new Error("Finalizer was interrupted; approval is preserved.");
+  if (result.code !== 0) throw new Error(`Finalizer failed: ${result.stderr || result.stdout}`);
+  const draft = parseWorkerJson(result.stdout);
+  if (!draft.title || !draft.body) throw new Error("Finalizer must return title and body.");
+  await gh(ctx.cwd, ["pr", "edit", String(ship.data.candidate.pr), "--title", String(draft.title), "--body", String(draft.body)]);
+  await gh(ctx.cwd, ["pr", "ready", String(ship.data.candidate.pr)]);
+}
+
+async function finalHumanReview(ctx, project, loaded, ship) {
+  const review = await decodeToon(path.join(project.dir, "review.toon"));
+  const candidate = ship.data.candidate;
+  if (!ctx.hasUI || ctx.mode !== "tui") throw new Error("Final human review requires interactive Pi.");
+
+  if (ship.data.approved_head !== candidate.head) {
+    const decision = await ctx.ui.custom((tui, theme, _kb, done) => new RichBriefView(tui, theme, {
+      mode: "review", title: `${project.name} ready`, subtitle: `PR #${candidate.pr} · ${candidate.head.slice(0, 12)}`,
+      metrics: [{ label: "Repair rounds", value: String(ship.data.repair_round) }],
+      sections: [
+        { label: "Review", markdown: review.summary || "Machine review passed." },
+        { label: "Focus", markdown: (review.review_focus || []).map((item) => `- ${item}`).join("\n") || "No additional focus." },
+        { label: "Validation", markdown: (review.validation || []).map((item) => `- ${item}`).join("\n") || "Local and remote gates passed." },
+      ], repairs: [],
+    }, done));
+    if (!decision || decision.action === "cancel") return;
+    if (decision.action === "feedback") {
+      const feedback = await ctx.ui.editor("Final review feedback", "");
+      const generated = await runShipReviewer(ctx, project, ship, feedback || "");
+      const status = await persistShipReview(project, loaded, ship, generated);
+      if (status === "repairs_planned") {
+        ship.data.repair_round = 0;
+        ship.data.verified_head = null;
+        ship.data.candidate = null;
+        ship.data.phase = "build";
+        await saveShip(ship);
+        return;
+      }
+      await blockShip(ship, generated.summary || "Human feedback requires replanning.", "build");
+      return;
+    }
+    ship.data.approved_head = candidate.head;
+    await saveShip(ship);
+  }
+
+  let pr = await ghJson(ctx.cwd, ["pr", "view", String(candidate.pr), "--json", "isDraft,headRefOid,url"]);
+  if (pr.headRefOid !== candidate.head) throw new Error("PR moved while finalizing.");
+  if (pr.isDraft) {
+    await finalizeCandidate(ctx, project, ship);
+    pr = await ghJson(ctx.cwd, ["pr", "view", String(candidate.pr), "--json", "isDraft,headRefOid,url"]);
+  }
+  if (pr.headRefOid !== candidate.head) throw new Error("PR moved while finalizing.");
+  if (pr.isDraft) throw new Error("Finalizer did not mark the PR ready; approval is preserved for retry.");
+  ship.data.phase = "done";
+  await saveShip(ship);
+}
+async function driveShip(ctx, args) {
+  await ensureIgnored(ctx.cwd);
+  const tokens = String(args || "").trim().split(/\s+/).filter(Boolean);
+  const resume = tokens.includes("--resume");
+  const project = await chooseProject(ctx, tokens.filter((token) => token !== "--resume").join(" "));
+  if (!project) return;
+  const ship = await loadShip(project);
+
+  if (ship.data.phase === "blocked") {
+    if (!resume) {
+      ctx.ui.notify(`Shipping blocked: ${ship.data.blocked?.reason || "human decision required"}. Resolve it, then run /dev-ship --resume.`, "warning");
+      return;
+    }
+    ship.data.phase = ship.data.blocked?.resume || "build";
+    ship.data.blocked = null;
+    await saveShip(ship);
+  }
+
+  while (true) {
+    const loaded = await loadProject(project);
+    ctx.ui.setStatus("dev-ship", `${project.name} · ${ship.data.phase}`);
+
+    if (ship.data.phase === "build") {
+      try {
+        await driveBuild(ctx, project.name);
+      } catch (error) {
+        await blockShip(ship, error instanceof Error ? error.message : String(error), "build");
+        return;
+      }
+      await setShipPhase(ship, "prepare");
+      continue;
+    }
+    if (ship.data.phase === "prepare") {
+      await prepareShipCandidate(ctx, project, loaded, ship);
+      if (ship.data.phase === "blocked") return;
+      continue;
+    }
+    if (ship.data.phase === "await") {
+      await awaitShipSignals(ctx, ship);
+      if (ship.data.phase === "blocked") return;
+      continue;
+    }
+    if (ship.data.phase === "review") {
+      await reviewShipCandidate(ctx, project, loaded, ship);
+      if (ship.data.phase === "blocked") return;
+      continue;
+    }
+    if (ship.data.phase === "human") {
+      await finalHumanReview(ctx, project, loaded, ship);
+      if (ship.data.phase === "human" || ship.data.phase === "blocked") return;
+      continue;
+    }
+    if (ship.data.phase === "done") {
+      ctx.ui.notify(`Shipping complete: ${ship.data.candidate?.url || "PR ready"}`, "info");
+      return;
+    }
+    throw new Error(`Unknown shipping phase: ${ship.data.phase}`);
+  }
 }
 
 class RichBriefView {
@@ -674,11 +1237,9 @@ const briefSchema = Type.Object({
 
 function explorerSystem(capability) {
   return [
-    "You are Explorer: a fresh, narrow, evidence-oriented read-only subagent.",
-    "Answer only the assigned question. Inspect before assuming. Prefer primary/repository evidence.",
-    "Do not edit/write files, commit, rebase, push, change PRs/issues, or run destructive commands.",
-    capability === "external" ? "For CI/GitHub/web research you may use read-only gh/curl/git commands. Never invoke mutation endpoints or commands." : "Stay within repository inspection unless the task explicitly requires external evidence.",
-    "Return a compact result with: Conclusion; Evidence (paths/symbols/commands/URLs); Uncertainty. Do not dump logs or whole files.",
+    "Answer only the assigned narrow question; read-only.",
+    capability === "external" ? "External read-only gh/curl/git is allowed." : "Stay within repository inspection.",
+    "Return: Conclusion; Evidence; Uncertainty.",
   ].join("\n");
 }
 
@@ -820,10 +1381,20 @@ export default function (pi) {
   });
   pi.registerCommand("dev-review", {
     description: "Synthesize completed CI + bot/PR signals, adversarial review, and human-approved narrow repairs",
-    handler: async (args, ctx) => launchSkill(pi, ctx, "review", "dev-review", args, true),
+    handler: async (args, ctx) => launchSkill(pi, ctx, "review", "dev-review", args, true, [
+      "This is the manual review command.",
+      "Present one workflow_brief with candidate summary, architecture/behavior impact, CI + PR/bot signals, validation, risks, conclusion, and repair proposals if needed.",
+      "If clean, only explicit human approval writes review.toon status pass bound to exact HEAD/PR.",
+      "For repairs, let the human inspect, deselect/filter, or give feedback; only selected explicit approvals become new immutable repairs/RNNN.toon IDs, then write review.toon status repairs_approved.",
+      "Never reuse a repair ID.",
+    ].join("\n")),
   });
   pi.registerCommand("dev-ship", {
-    description: "Finalize the reviewed exact HEAD as the human-facing GitHub PR",
-    handler: async (args, ctx) => launchSkill(pi, ctx, "ship", "dev-ship", args, true),
+    description: "Drive the robust build-to-ready-PR shipping loop",
+    handler: async (args, ctx) => {
+      try { await driveShip(ctx, args); }
+      catch (error) { ctx.ui.notify(error instanceof Error ? error.message : String(error), "error"); }
+      finally { ctx.ui.setStatus("dev-ship", undefined); }
+    },
   });
 }
