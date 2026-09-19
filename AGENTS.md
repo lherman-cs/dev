@@ -8,7 +8,7 @@ Every instruction has exactly one owner:
 
 - `dotfiles/.pi/agent/AGENTS.md`: universal engineering behavior that should apply to every role and repository.
 - Repository/local `AGENTS.md`: repository-specific architecture, commands, ownership, and conventions.
-- `dotfiles/.agents/skills/dev-*/SKILL.md`: one role's authority, required artifacts/output, and stop conditions.
+- `dotfiles/.agents/skills/dev-*/SKILL.md`: one reusable role's authority, decision standard, role-specific invariants, and stop conditions.
 - `dotfiles/.pi/agent/extensions/dev-workflow.ts`: deterministic lifecycle mechanics plus tiny contracts for internal workers that do not have a skill.
 - `plans/Pxxx.toon` / `repairs/Rxxx.toon`: task-specific scope, constraints, dependencies, and acceptance checks.
 - `WORKFLOW.md`: documentation of the lifecycle, not an additional prompt policy source.
@@ -20,7 +20,7 @@ Before adding an instruction, find its owner. Strengthen or replace the existing
 - Higher/shared layers define invariants; narrower layers may specialize within their owned scope but must not contradict them.
 - Skills must not repeat universal engineering guidance from the global `AGENTS.md`. Assume it is already inherited.
 - Skills are single-purpose and mode-free. No environment-variable modes or alternate personas inside a skill.
-- Controller prompts must not restate global engineering policy or skill semantics. They provide only invocation data, output schemas, tool/side-effect boundaries, or contracts for genuinely internal roles.
+- Controller prompts must not restate global engineering policy or reusable skill semantics. They provide only invocation data, presentation/output schemas, tool/side-effect boundaries, or contracts for genuinely internal roles.
 - A reusable semantic role belongs in a skill. Deterministic sequencing, retries, polling, Git/GitHub mechanics, and independent verification belong in code.
 - Task contracts must not contain workflow policy or generic engineering philosophy.
 - Project `AGENTS.md` files may add repository facts/conventions, but must not redefine workflow lifecycle or role outputs.
@@ -28,8 +28,8 @@ Before adding an instruction, find its owner. Strengthen or replace the existing
 
 ## Workflow boundaries
 
-- `dev-spec`, `dev-plan`, `dev-implement`, `dev-prepare`, and `dev-review` are semantic skills.
-- `/dev-build` is a deterministic controller that dispatches `dev-implement`; implementation behavior lives in the skill.
+- `dev-spec`, `dev-plan`, `dev-implement`, `dev-prepare`, and `dev-review` are semantic skills. Invocation-specific UI or output encoding is supplied by the command/controller, not hidden as a mode inside the skill.
+- `/dev-build` is a deterministic controller that dispatches `dev-implement`; implementation behavior lives in the skill. Plan/repair-to-commit mapping stays in ignored workflow state, never commit messages.
 - `/dev-ship` is a deterministic controller. Its conflict resolver and PR finalizer are narrow internal roles. Its machine Reviewer reuses `dev-review` semantics and adds only a structured-output contract.
 - Models never own workflow phase, retries, polling, checkpoints, GitHub waiting, or acceptance of their own claims.
 
