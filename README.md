@@ -4,42 +4,43 @@ Personal development toolbox plus a deliberately small Pi-first engineering work
 
 ## Workflow
 
-You create the Git worktree yourself. The workflow starts inside that worktree:
+You create the Git worktree yourself. The normal workflow is:
 
 ```text
 /dev-spec
-    rich Pi spec brief -> human approval
+    rich semantic brief -> human approval
 /dev-plan
-    small immutable plans -> rich Pi plan brief -> human approval
-/dev-build
-    fresh visible Builder per approved plan/repair -> one commit each
-/dev-prepare
-    rebase + local final checks + push/update draft PR -> STOP
-    CI + review bots run asynchronously
-/dev-review                 # you invoke after external signals are terminal
-    CI (red or green) + bot/PR feedback + adversarial review
-    -> rich human review/repair brief
-    -> PASS or human-approved narrow repair plans
-/dev-build                  # only when repairs were approved
-    ...
-/dev-ship                   # only after exact HEAD has PASS review
-    finalize concise PR description + mark ready for human review
+    small immutable plans -> rich plan brief -> human approval
+/dev-ship
+    build
+    -> rebase + local final gates
+    -> push/update draft PR
+    -> wait for exact-HEAD CI/review feedback
+    -> adversarial machine review
+    -> bounded automatic repair loop
+    -> final rich human review
+    -> concise PR + mark ready
 ```
 
-There is no orchestrator agent, database, durable transcript, per-plan reviewer, hidden auto-repair loop, or backwards-compatibility layer. Git is implementation truth. The approved spec is semantic truth.
+`/dev-build`, `/dev-prepare`, and `/dev-review` remain available as lower-level commands.
 
-Workflow state is intentionally small and ignored by Git under `plans/<project>/`:
+The shipping loop is deterministic TypeScript, not an orchestrator agent. Models are disposable workers for implementation, rebase-conflict judgment, and substantive review. GitHub waiting/polling uses ordinary `gh` calls and consumes no model tokens.
+
+Durable state stays small and ignored under `plans/<project>/`:
 
 ```text
 spec.md
 project.toon
 progress.toon
+ship.toon
 plans/P001.toon
-repairs/R001.toon     # only when review repairs are approved
+repairs/R001.toon
 review.toon
 ```
 
-`progress.toon` is owned by the Pi build driver and contains only pointers such as completed IDs/current ID/accepted HEAD.
+`progress.toon` tracks Builder execution. `ship.toon` tracks only the small shipping phase/candidate/checkpoint needed for interruption-safe resume. Git remains implementation truth; the approved spec remains semantic truth.
+
+Shipping automatically blocks instead of blindly looping when the same repaired failure recurs, the bounded repair rounds are exhausted, or correct resolution requires a new semantic decision.
 
 ## Rich Pi review UX
 
