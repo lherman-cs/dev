@@ -14,7 +14,7 @@ def main():
         checks.append(label)
 
     skills = ROOT / "dotfiles/.agents/skills"
-    expected = {"dev-spec", "dev-plan", "dev-prepare", "dev-review"}
+    expected = {"dev-spec", "dev-plan", "dev-implement", "dev-prepare", "dev-review"}
     actual = {p.name for p in skills.iterdir() if p.is_dir()}
     check(actual == expected, f"exact workflow skills: {actual}")
 
@@ -26,16 +26,18 @@ def main():
 
     spec = (skills / "dev-spec/SKILL.md").read_text()
     plan = (skills / "dev-plan/SKILL.md").read_text()
+    implement = (skills / "dev-implement/SKILL.md").read_text()
     prepare = (skills / "dev-prepare/SKILL.md").read_text()
     review = (skills / "dev-review/SKILL.md").read_text()
 
-    check("workflow_brief" in spec and "explicit approval" in spec, "spec has rich human gate")
+    check("workflow_brief" in spec and "explicit human approval" in spec, "spec has rich human gate")
     check("workflow_brief" in plan and "explicit approval" in plan, "plan has rich human gate")
     check("all approved plans/repairs complete" in prepare and "mechanical/minimal" in prepare, "standalone prepare stays mechanical")
     check("Red CI is evidence" in review and "PASS means no material issue found" in review, "review is conservative and terminal-red aware")
-    check("Use approved spec + plans/repairs" in review and "deselect/filter" in review, "review consumes full evidence and keeps human repair control")
+    check("Use approved spec + plans/repairs" in review and "stable root-cause key" in review, "review owns reusable review semantics")
     check("Challenge ambiguity" in spec and "open decisions" in spec, "spec preserves challenge and decision requirements")
     check("Dispatched plans are immutable" in plan and "supersedes" in plan and "not ordinary debugging" in plan, "plan preserves immutable replacement semantics")
+    check("Conventional Commit" in implement and "workflow IDs/metadata out of the commit message" in implement and "NEEDS_REPLAN" in implement, "implement owns commit and escalation semantics")
 
     ext = ROOT / "dotfiles/.pi/agent/extensions/dev-workflow.ts"
     cfg = ROOT / "dotfiles/.pi/agent/dev-workflow.json"
@@ -56,7 +58,8 @@ def main():
     check('ctx.ui.editor("Review feedback"' in ext_text, "multi-line human feedback path")
     check("resolvedRoleProfile" in ext_text and "${model.provider}/${model.id}" in ext_text, "child agents use resolved exact model identity")
     check('"--mode", "json"' in ext_text and '"--no-session"' in ext_text, "fresh streamed child sessions")
-    check("Plan-ID:" in ext_text and "max_attempts_per_plan" in ext_text, "bounded deterministic plan commits")
+    check("Plan-ID:" not in ext_text and "CONVENTIONAL_COMMIT_RE" in ext_text and "max_attempts_per_plan" in ext_text, "bounded conventional plan commits without workflow metadata")
+    check('readSkill("dev-implement")' in ext_text and 'readSkill("dev-review")' in ext_text, "controllers reuse semantic skills")
     check("DEV_WORKFLOW_EXPLORER" in ext_text and "read-only" in ext_text, "Explorer read-only enforcement")
     check("async function driveShip" in ext_text and "async function awaitShipSignals" in ext_text, "deterministic shipping driver")
     check("DEV_WORKFLOW_SHIP" not in ext_text, "no hidden ship mode")
@@ -99,14 +102,11 @@ def main():
     check("/plans/" in (ROOT / ".gitignore").read_text(), "workflow artifacts ignored")
 
     guidelines = (ROOT / "dotfiles" / ".pi" / "agent" / "AGENTS.md").read_text()
-    for required in [
-        "Do not use em dashes",
-        "quality, simplicity, robustness, scalability, and long-term maintainability",
-        "reproduce the failure as close as practical to the user-visible boundary",
-        "Tests must be fast, deterministic, and useful",
-        "delete before adding",
-    ]:
-        check(required in guidelines, f"engineering guideline: {required}")
+    root_agents = (ROOT / "AGENTS.md").read_text()
+    check(len(guidelines.encode()) < 500, "global preferences remain tiny")
+    check("Conventional Commit" not in guidelines and "Pxxx" not in guidelines, "workflow specifics stay out of global preferences")
+    for required in ["No duplication or contradiction", "Least-privilege scope", "Do not teach defaults"]:
+        check(required in root_agents, f"instruction invariant: {required}")
 
     for skill_md in skills.glob("dev-*/SKILL.md"):
         check("/dev-" not in skill_md.read_text(), f"{skill_md.parent.name} does not route to another workflow skill")
