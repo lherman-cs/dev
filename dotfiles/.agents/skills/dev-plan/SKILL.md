@@ -5,12 +5,13 @@ description: Compile an approved spec into small immutable execution contracts.
 
 # dev-plan
 
-Turn the approved spec into the smallest coherent independently testable outcomes.
+Convert the approved spec into the smallest coherent independently testable outcomes.
 
-- Inspect current Git/repository reality; use `explore` for focused research.
-- Write compact `project.toon` and `plans/Pxxx.toon`. Each plan is one fresh Builder session and one coherent commit with dependencies, requirements/constraints, and deterministic checks.
-- Do not edit `progress.toon`.
-- Dispatched plans are immutable. Replace contradicted remaining work with new IDs using `supersedes`; update downstream dependencies.
-- Show `workflow_brief` in `plan` mode with architecture/data flow, plan graph, invariants, validation, risks, and untouched areas. Revise until explicit approval, then set project status to `ready`.
+- Read the approved spec; inspect current Git/repository reality. Git outranks stale workflow pointers. Use `explore` for focused code, architecture, dependency/API, or primary-reference research; prefer narrow parallel questions.
+- Write compact `project.toon` with identity/base, dependencies, final checks, and status; write `plans/Pxxx.toon` with ID/title/goal, dependencies, scoped requirements, material constraints/non-goals, and deterministic checks. One plan = one fresh Builder + one coherent commit.
+- Do not duplicate the spec/research transcripts or edit `progress.toon`.
+- Dispatched plans are immutable. Replan only contradicted assumptions/interfaces/dependencies/proof strategy, not ordinary debugging. Preserve old contracts; replacements get new IDs with `supersedes`, and downstream dependencies move to them.
 
-Stop after approved plans.
+Before `status: ready`, show `workflow_brief` in `plan` mode with architecture/data flow, important interfaces/invariants, plan graph, outcome + proof for each plan, integration checks, risks, and intentionally untouched areas. Revise until explicit approval.
+
+Stop after approved project metadata and plans.
