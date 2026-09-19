@@ -14,30 +14,26 @@ def main():
         checks.append(label)
 
     skills = ROOT / "dotfiles/.agents/skills"
-    expected = {"dev-spec", "dev-plan", "dev-prepare", "dev-review", "dev-ship"}
+    expected = {"dev-spec", "dev-plan", "dev-prepare", "dev-review"}
     actual = {p.name for p in skills.iterdir() if p.is_dir()}
     check(actual == expected, f"exact workflow skills: {actual}")
 
     for name in sorted(expected):
         text = (skills / name / "SKILL.md").read_text()
         check(f"name: {name}" in text, f"{name} frontmatter")
-        check(len(text.encode()) < 12000, f"{name} remains compact")
+        check(len(text.encode()) < 2000, f"{name} remains compact")
         check("Codex" not in text and "Lavish" not in text, f"{name} has no retired harness")
 
     spec = (skills / "dev-spec/SKILL.md").read_text()
     plan = (skills / "dev-plan/SKILL.md").read_text()
     prepare = (skills / "dev-prepare/SKILL.md").read_text()
     review = (skills / "dev-review/SKILL.md").read_text()
-    ship = (skills / "dev-ship/SKILL.md").read_text()
 
     check("workflow_brief" in spec and "explicit approval" in spec, "spec has rich human gate")
     check("workflow_brief" in plan and "explicit approval" in plan, "plan has rich human gate")
-    check("Do not wait for CI" in prepare, "standalone prepare pushes and stops")
-    check("GREEN or RED" in review or "GREEN **or RED**" in review, "review accepts terminal red or green CI")
-    check("review-bot" in review and "explore" in review, "review consumes bots and explorers")
-    check("deselect/filter" in review and "repairs/RNNN.toon" in review, "review has human-filtered repair plans")
-    check("mark the draft pr ready" in ship.lower(), "ship is final GitHub handoff")
-    check("Do not merge" in ship, "ship never merges")
+    check("Do not invent product changes" in prepare, "standalone prepare stays mechanical")
+    check("terminal CI/checks" in review and "red is evidence" in review, "review accepts terminal red or green CI")
+    check("explore" in review and "repairs/RNNN.toon" in review, "review consumes evidence and produces human-approved repairs")
 
     ext = ROOT / "dotfiles/.pi/agent/extensions/dev-workflow.ts"
     cfg = ROOT / "dotfiles/.pi/agent/dev-workflow.json"
@@ -61,7 +57,8 @@ def main():
     check("Plan-ID:" in ext_text and "max_attempts_per_plan" in ext_text, "bounded deterministic plan commits")
     check("DEV_WORKFLOW_EXPLORER" in ext_text and "read-only" in ext_text, "Explorer read-only enforcement")
     check("async function driveShip" in ext_text and "async function awaitShipSignals" in ext_text, "deterministic shipping driver")
-    check("DEV_WORKFLOW_SHIP" in ext_text and "--force-with-lease" in ext_text, "ship loop composes disposable workers and safe publish")
+    check("DEV_WORKFLOW_SHIP" not in ext_text, "no hidden ship mode")
+    check("shipReviewerSystem" in ext_text and "finalizerSystem" in ext_text and "--force-with-lease" in ext_text, "ship workers have explicit internal contracts")
     check("fs.renameSync(temp, file)" in ext_text, "workflow TOON writes are atomic")
     for forbidden in ["sqlite", "event sourcing"]:
         check(forbidden not in ext_text.lower(), f"extension avoids {forbidden}")
@@ -96,6 +93,7 @@ def main():
     check(not (ROOT / "skill-requirements.md").exists(), "duplicated workflow requirements removed")
     check(not (skills / "dev-project").exists(), "orchestrator skill removed")
     check(not (skills / "dev-build").exists(), "build is extension driver, not skill")
+    check(not (skills / "dev-ship").exists(), "ship is extension driver, not skill")
     check("/plans/" in (ROOT / ".gitignore").read_text(), "workflow artifacts ignored")
 
     guidelines = (ROOT / "dotfiles" / ".pi" / "agent" / "AGENTS.md").read_text()
