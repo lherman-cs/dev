@@ -1,6 +1,6 @@
 # Agent instruction architecture
 
-This repository treats prompt/instruction design as code. Keep instructions small, non-overlapping, and contradiction-free.
+This repository treats prompt/instruction design as code. Apply least privilege: every instruction belongs at the narrowest scope that needs it. Keep instructions small, non-overlapping, and contradiction-free.
 
 ## Ownership
 
@@ -13,11 +13,11 @@ Every instruction has exactly one owner:
 - `plans/Pxxx.toon` / `repairs/Rxxx.toon`: task-specific scope, constraints, dependencies, and acceptance checks.
 - `WORKFLOW.md`: documentation of the lifecycle, not an additional prompt policy source.
 
-Before adding an instruction, find its owner. Strengthen or replace the existing instruction there; do not copy it into another layer.
+Before adding an instruction, find the lowest-scope owner that needs it. Strengthen or replace the instruction there; never promote it to a broader layer for convenience and never copy it into another layer.
 
 ## Composition rules
 
-- Higher/shared layers define invariants; narrower layers may specialize within their owned scope but must not contradict them.
+- Broader layers contain only invariants needed by every descendant. Narrower layers add only what their role/repository/task needs; they must not contradict broader invariants.
 - Skills must not repeat universal engineering guidance from the global `AGENTS.md`. Assume it is already inherited.
 - Skills are single-purpose and mode-free. No environment-variable modes or alternate personas inside a skill.
 - Controller prompts must not restate global engineering policy or reusable skill semantics. They provide only invocation data, presentation/output schemas, tool/side-effect boundaries, or contracts for genuinely internal roles.
@@ -37,7 +37,7 @@ Before adding an instruction, find its owner. Strengthen or replace the existing
 
 When changing agent instructions:
 
-1. Identify the owning layer.
+1. Identify the narrowest owning layer.
 2. Search all other active instruction sources for overlap or contradiction.
 3. Delete duplicated wording instead of trying to keep copies synchronized.
 4. Keep skills compact by removing inherited guidance, not semantic requirements.
