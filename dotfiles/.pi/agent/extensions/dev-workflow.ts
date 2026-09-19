@@ -45,7 +45,10 @@ async function writeToon(file, value) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   const r = await run("toon", ["--encode"], path.dirname(file), JSON.stringify(value));
   if (r.code !== 0) throw new Error(`TOON encode failed for ${file}: ${r.stderr.trim()}`);
-  fs.writeFileSync(file, r.stdout.endsWith("\n") ? r.stdout : `${r.stdout}\n`);
+  const encoded = r.stdout.endsWith("\n") ? r.stdout : `${r.stdout}\n`;
+  const temp = `${file}.tmp-${process.pid}`;
+  fs.writeFileSync(temp, encoded);
+  fs.renameSync(temp, file);
 }
 
 function roleConfig(role) {
@@ -486,7 +489,434 @@ async function driveBuild(ctx, args) {
     done.add(next.data.id);
   }
   ctx.ui.setStatus("dev-build", undefined);
-  ctx.ui.notify(`Build complete: ${active.length}/${active.length} approved plans/repairs. Next: /dev-prepare`, "info");
+  ctx.ui.notify(`Build complete: ${active.length}/${active.length} approved plans/repairs.`, "info");
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function shipSettings() {
+  const ship = readConfig().ship || {};
+  return {
+    maxRepairRounds: Math.max(0, Number(ship.max_repair_rounds ?? 2)),
+    pollMs: Math.max(5000, Number(ship.poll_seconds ?? 20) * 1000),
+    settleMs: Math.max(10000, Number(ship.settle_seconds ?? 60) * 1000),
+  };
+}
+
+async function loadShip(project) {
+  const file = path.join(project.dir, "ship.toon");
+  if (!fs.existsSync(file)) {
+    const data = {
+      version: 1,
+      phase: "build",
+      repair_round: 0,
+      verified_head: null,
+      candidate: null,
+      approved_head: null,
+      last_failure: null,
+      blocked: null,
+    };
+    await writeToon(file, data);
+    return { file, data };
+  }
+  return { file, data: await decodeToon(file) };
+}
+
+async function saveShip(ship) {
+  await writeToon(ship.file, ship.data);
+}
+
+async function setShipPhase(ship, phase) {
+  ship.data.phase = phase;
+  await saveShip(ship);
+}
+
+async function blockShip(ship, reason, resume = "build") {
+  ship.data.phase = "blocked";
+  ship.data.blocked = { reason: String(reason).slice(0, 3000), resume };
+  await saveShip(ship);
+}
+
+async function gh(cwd, args) {
+  const r = await run("gh", args, cwd);
+  if (r.code !== 0) throw new Error(`gh ${args.join(" ")} failed: ${(r.stderr || r.stdout).trim()}`);
+  return r.stdout.trim();
+}
+
+async function ghJson(cwd, args) {
+  const text = await gh(cwd, args);
+  return text ? JSON.parse(text) : {};
+}
+
+async function currentPr(cwd) {
+  const r = await run("gh", ["pr", "view", "--json", "number,url,isDraft,headRefOid,baseRefName,updatedAt"], cwd);
+  return r.code === 0 ? JSON.parse(r.stdout) : null;
+}
+
+function nextRepairId(entries) {
+  const ids = entries
+    .map((entry) => /^R(\d+)$/.exec(String(entry.data.id || "")))
+    .filter(Boolean)
+    .map((match) => Number(match[1]));
+  return `R${String((ids.length ? Math.max(...ids) : 0) + 1).padStart(3, "0")}`;
+}
+
+async function planFinalGateRepair(project, loaded, ship, failure) {
+  const settings = shipSettings();
+  const evidence = String(failure.stderr || failure.stdout || "").trim().slice(-1600);
+  const signature = `${failure.command}\n${evidence}`;
+  if (ship.data.last_failure === signature) {
+    await blockShip(ship, `The same final-gate failure survived its repair: ${failure.command}`);
+    return;
+  }
+  if (ship.data.repair_round >= settings.maxRepairRounds) {
+    await blockShip(ship, `Automatic repair limit reached at final gate: ${failure.command}`);
+    return;
+  }
+
+  const id = nextRepairId(loaded.entries);
+  const active = loaded.entries.filter((entry) => !supersededIds(loaded.entries).has(entry.data.id));
+  await writeToon(path.join(project.dir, "repairs", `${id}.toon`), {
+    version: 1,
+    id,
+    title: `Repair final gate: ${failure.command}`,
+    depends_on: active.map((entry) => entry.data.id),
+    goal: `Make the final acceptance command pass while preserving the approved spec: ${failure.command}`,
+    requirements: [
+      "Find and fix the root cause, not only the observed symptom.",
+      "Preserve approved behavior and architecture.",
+      evidence ? `Failure evidence: ${evidence}` : "Reproduce the failure from the declared command.",
+    ],
+    checks: [failure.command],
+    source: { kind: "final_gate" },
+  });
+  ship.data.repair_round += 1;
+  ship.data.last_failure = signature;
+  ship.data.verified_head = null;
+  ship.data.candidate = null;
+  ship.data.approved_head = null;
+  ship.data.phase = "build";
+  await saveShip(ship);
+}
+
+function finalChecks(projectData, cwd) {
+  if (Array.isArray(projectData.final_checks) && projectData.final_checks.length) return projectData.final_checks;
+  if (fs.existsSync(path.join(cwd, "Justfile")) || fs.existsSync(path.join(cwd, "justfile"))) return ["just check", "just test"];
+  return [];
+}
+
+function conflictResolverSystem() {
+  return [
+    "You resolve only the current Git rebase conflicts.",
+    "Preserve the approved spec and the intent of already-approved commits on top of the new base.",
+    "Inspect repository context before editing. Ordinary integration adaptation is expected.",
+    "Edit conflicted files only. Do not run git add, commit, rebase, reset, clean, push, stash, or manage worktrees.",
+    "If resolution requires a new product/API/architecture/scope decision not fixed by the approved spec, do not guess; end with NEEDS_HUMAN and concise evidence.",
+  ].join("\n");
+}
+
+async function resolveConflicts(ctx, project, conflicts) {
+  const profile = await resolvedRoleProfile(ctx, "builder_retry");
+  const result = await runVisibleAgent(ctx, {
+    title: "Rebase conflicts",
+    subtitle: `${profile.model || "model"}/${profile.thinking || "default"} · ${conflicts.length} file(s)`,
+    profile,
+    system: conflictResolverSystem(),
+    prompt: [
+      `Approved spec: ${path.join(project.dir, "spec.md")}`,
+      `Conflicted files:\n${conflicts.map((file) => `- ${file}`).join("\n")}`,
+      "Resolve the files and leave Git sequencing to the controller.",
+    ].join("\n\n"),
+    tools: ["read", "grep", "find", "ls", "edit", "write"],
+    env: { DEV_WORKFLOW_CHILD: "1" },
+  });
+  if (result?.aborted) throw new Error("Conflict resolution was interrupted; the rebase is preserved.");
+  if (/\bNEEDS_HUMAN\b/.test(result.stdout || "")) return { blocked: true, reason: result.stdout };
+  if (result.code !== 0) throw new Error(`Conflict resolver failed: ${result.stderr || result.stdout}`);
+  const remaining = await git(ctx.cwd, ["diff", "--name-only", "--diff-filter=U"]);
+  if (remaining) throw new Error(`Conflict resolver left unresolved files:\n${remaining}`);
+  await git(ctx.cwd, ["add", "-A", "--", ...conflicts]);
+  return { blocked: false };
+}
+
+async function finishRebase(ctx, project, ship) {
+  while (true) {
+    const gitDir = await git(ctx.cwd, ["rev-parse", "--git-dir"]);
+    const active = fs.existsSync(path.join(ctx.cwd, gitDir, "rebase-merge")) || fs.existsSync(path.join(ctx.cwd, gitDir, "rebase-apply"));
+    if (!active) return true;
+    const conflicts = (await git(ctx.cwd, ["diff", "--name-only", "--diff-filter=U"])).split("\n").filter(Boolean);
+    if (conflicts.length) {
+      const resolved = await resolveConflicts(ctx, project, conflicts);
+      if (resolved.blocked) {
+        await blockShip(ship, resolved.reason || "Rebase requires a semantic decision.", "prepare");
+        return false;
+      }
+    }
+    const continued = await run("git", ["-c", "core.editor=true", "rebase", "--continue"], ctx.cwd, undefined, { GIT_EDITOR: "true" });
+    if (continued.code !== 0) {
+      const more = await git(ctx.cwd, ["diff", "--name-only", "--diff-filter=U"]);
+      if (!more) throw new Error(`git rebase --continue failed: ${(continued.stderr || continued.stdout).trim()}`);
+    }
+  }
+}
+
+async function prepareShipCandidate(ctx, project, loaded, ship) {
+  const dirty = await statusPorcelain(ctx.cwd);
+  if (dirty) throw new Error(`Prepare requires a clean worktree:\n${dirty}`);
+
+  const baseBranch = loaded.data.base_branch || "main";
+  await git(ctx.cwd, ["fetch", "origin", baseBranch]);
+  const rebase = await run("git", ["rebase", `origin/${baseBranch}`], ctx.cwd, undefined, { GIT_EDITOR: "true" });
+  if (rebase.code !== 0 && !(await finishRebase(ctx, project, ship))) return;
+  if (ship.data.phase === "blocked") return;
+
+  const head = await git(ctx.cwd, ["rev-parse", "HEAD"]);
+  const progress = await loadProgress(project, loaded.data);
+  progress.data.current = null;
+  progress.data.head = head;
+  await writeToon(progress.file, progress.data);
+
+  if (ship.data.verified_head !== head) {
+    const checked = await runChecks(ctx.cwd, finalChecks(loaded.data, ctx.cwd));
+    if (!checked.ok) {
+      await planFinalGateRepair(project, loaded, ship, checked);
+      return;
+    }
+    ship.data.verified_head = head;
+    ship.data.last_failure = null;
+    await saveShip(ship);
+  }
+
+  const branch = await git(ctx.cwd, ["branch", "--show-current"]);
+  if (!branch) throw new Error("Shipping requires a named branch.");
+  await git(ctx.cwd, ["push", "--force-with-lease", "-u", "origin", `HEAD:${branch}`]);
+
+  let pr = await currentPr(ctx.cwd);
+  if (!pr) {
+    const title = loaded.data.title || loaded.data.name || branch;
+    await gh(ctx.cwd, ["pr", "create", "--draft", "--base", baseBranch, "--head", branch, "--title", String(title), "--body", "Draft candidate managed by the Pi dev workflow."]);
+    pr = await currentPr(ctx.cwd);
+  }
+  if (!pr || pr.headRefOid !== head) throw new Error("Published PR does not match the verified local HEAD.");
+
+  ship.data.candidate = {
+    head,
+    base: await git(ctx.cwd, ["rev-parse", `origin/${baseBranch}`]),
+    base_branch: baseBranch,
+    pr: pr.number,
+    url: pr.url,
+    published_at: new Date().toISOString(),
+  };
+  ship.data.approved_head = null;
+  ship.data.phase = "await";
+  await saveShip(ship);
+}
+
+function checksPending(checks) {
+  return checks.some((check) => {
+    const bucket = String(check.bucket || "").toLowerCase();
+    const state = String(check.state || "").toUpperCase();
+    return bucket === "pending" || ["QUEUED", "IN_PROGRESS", "PENDING", "WAITING", "EXPECTED", "REQUESTED"].includes(state);
+  });
+}
+
+async function awaitShipSignals(ctx, ship) {
+  const candidate = ship.data.candidate;
+  if (!candidate) throw new Error("Await phase has no candidate.");
+  const settings = shipSettings();
+  let signature = "";
+  let stableSince = 0;
+
+  while (true) {
+    const pr = await ghJson(ctx.cwd, ["pr", "view", String(candidate.pr), "--json", "headRefOid,updatedAt"]);
+    if (pr.headRefOid !== candidate.head) {
+      await blockShip(ship, `PR #${candidate.pr} moved away from candidate ${candidate.head}.`, "prepare");
+      return;
+    }
+
+    const checks = await ghJson(ctx.cwd, ["pr", "checks", String(candidate.pr), "--json", "name,state,bucket,workflow"]);
+    const current = JSON.stringify({ checks, updatedAt: pr.updatedAt });
+    if (checksPending(checks)) {
+      signature = "";
+      stableSince = 0;
+      ctx.ui.setStatus("dev-ship", `await · ${checks.filter((check) => String(check.bucket || "").toLowerCase() === "pending").length} pending`);
+    } else if (current !== signature) {
+      signature = current;
+      stableSince = Date.now();
+      ctx.ui.setStatus("dev-ship", "await · checks terminal, settling feedback");
+    } else if (Date.now() - stableSince >= settings.settleMs) {
+      ship.data.phase = "review";
+      await saveShip(ship);
+      return;
+    }
+    await sleep(settings.pollMs);
+  }
+}
+
+async function runWorkflowChild(ctx, role, skill, project, extra = "") {
+  const profile = await resolvedRoleProfile(ctx, role);
+  const skillPath = path.join(SKILL_ROOT, skill, "SKILL.md");
+  const result = await runVisibleAgent(ctx, {
+    title: skill,
+    subtitle: `${profile.model || "model"}/${profile.thinking || "default"}`,
+    profile,
+    system: `Read and follow the exact ${skill} skill at ${skillPath}. You are running as a disposable worker inside the deterministic dev-ship controller.`,
+    prompt: [`Project: ${project.name}`, extra].filter(Boolean).join("\n\n"),
+    tools: ["read", "grep", "find", "ls", "bash", "write", "explore"],
+    env: { DEV_WORKFLOW_CHILD: "1", DEV_WORKFLOW_SHIP: "1" },
+  });
+  if (result?.aborted) throw new Error(`${skill} was interrupted; durable state was not advanced.`);
+  if (result.code !== 0) throw new Error(`${skill} failed: ${result.stderr || result.stdout}`);
+  return result;
+}
+
+async function reviewShipCandidate(ctx, project, loaded, ship) {
+  await git(ctx.cwd, ["fetch", "origin", ship.data.candidate.base_branch]);
+  const currentBase = await git(ctx.cwd, ["rev-parse", `origin/${ship.data.candidate.base_branch}`]);
+  if (currentBase !== ship.data.candidate.base) {
+    ship.data.verified_head = null;
+    ship.data.candidate = null;
+    ship.data.approved_head = null;
+    ship.data.phase = "prepare";
+    await saveShip(ship);
+    return;
+  }
+
+  await runWorkflowChild(ctx, "review", "dev-review", project, `Autonomously review exact candidate HEAD ${ship.data.candidate.head}.`);
+  const reviewFile = path.join(project.dir, "review.toon");
+  if (!fs.existsSync(reviewFile)) throw new Error("Autonomous reviewer did not write review.toon.");
+  const review = await decodeToon(reviewFile);
+  if (review.head !== ship.data.candidate.head) throw new Error("Reviewer wrote stale candidate state.");
+
+  if (review.status === "pass") {
+    ship.data.phase = "human";
+    await saveShip(ship);
+    return;
+  }
+  if (review.status === "repairs_planned") {
+    if (ship.data.repair_round >= shipSettings().maxRepairRounds) {
+      await blockShip(ship, "Automatic repair-round limit reached.", "build");
+      return;
+    }
+    ship.data.repair_round += 1;
+    ship.data.verified_head = null;
+    ship.data.candidate = null;
+    ship.data.approved_head = null;
+    ship.data.phase = "build";
+    await saveShip(ship);
+    return;
+  }
+  await blockShip(ship, review.summary || "Reviewer needs a human semantic decision.", "build");
+}
+
+async function finalHumanReview(pi, ctx, project, ship) {
+  const review = await decodeToon(path.join(project.dir, "review.toon"));
+  const candidate = ship.data.candidate;
+  if (!ctx.hasUI || ctx.mode !== "tui") throw new Error("Final human review requires interactive Pi.");
+
+  if (ship.data.approved_head !== candidate.head) {
+    const decision = await ctx.ui.custom((tui, theme, _kb, done) => new RichBriefView(tui, theme, {
+      mode: "review",
+      title: `${project.name} ready`,
+      subtitle: `PR #${candidate.pr} · ${candidate.head.slice(0, 12)}`,
+      metrics: [{ label: "Repair rounds", value: String(ship.data.repair_round) }],
+      sections: [
+        { label: "Review", markdown: review.summary || "Machine review passed." },
+        { label: "Focus", markdown: (review.review_focus || []).map((item) => `- ${item}`).join("\n") || "No additional focus." },
+        { label: "Validation", markdown: (review.validation || []).map((item) => `- ${item}`).join("\n") || "Local and remote gates passed." },
+      ],
+      repairs: [],
+    }, done));
+
+    if (!decision || decision.action === "cancel") return;
+    if (decision.action === "feedback") {
+      const feedback = await ctx.ui.editor("Final review feedback", "");
+      await runWorkflowChild(ctx, "review", "dev-review", project, `Human final-review feedback:\n${feedback || ""}\nPlan repairs or block; do not pass silently.`);
+      const next = await decodeToon(path.join(project.dir, "review.toon"));
+      if (next.status === "repairs_planned") {
+        ship.data.repair_round = 0;
+        ship.data.verified_head = null;
+        ship.data.candidate = null;
+        ship.data.phase = "build";
+        await saveShip(ship);
+        return;
+      }
+      await blockShip(ship, next.summary || "Human feedback requires replanning.", "build");
+      return;
+    }
+
+    ship.data.approved_head = candidate.head;
+    await saveShip(ship);
+  }
+
+  await runWorkflowChild(ctx, "ship", "dev-ship", project, `Finalize approved exact candidate HEAD ${candidate.head}.`);
+  const pr = await ghJson(ctx.cwd, ["pr", "view", String(candidate.pr), "--json", "isDraft,headRefOid,url"]);
+  if (pr.headRefOid !== candidate.head) throw new Error("PR moved while finalizing.");
+  if (pr.isDraft) throw new Error("Finalizer did not mark the PR ready; approval is preserved for retry.");
+  ship.data.phase = "done";
+  await saveShip(ship);
+}
+
+async function driveShip(pi, ctx, args) {
+  await ensureIgnored(ctx.cwd);
+  const tokens = String(args || "").trim().split(/\s+/).filter(Boolean);
+  const resume = tokens.includes("--resume");
+  const project = await chooseProject(ctx, tokens.filter((token) => token !== "--resume").join(" "));
+  if (!project) return;
+  const ship = await loadShip(project);
+
+  if (ship.data.phase === "blocked") {
+    if (!resume) {
+      ctx.ui.notify(`Shipping blocked: ${ship.data.blocked?.reason || "human decision required"}. Resolve it, then run /dev-ship --resume.`, "warning");
+      return;
+    }
+    ship.data.phase = ship.data.blocked?.resume || "build";
+    ship.data.blocked = null;
+    await saveShip(ship);
+  }
+
+  while (true) {
+    const loaded = await loadProject(project);
+    ctx.ui.setStatus("dev-ship", `${project.name} · ${ship.data.phase}`);
+
+    if (ship.data.phase === "build") {
+      try {
+        await driveBuild(ctx, project.name);
+      } catch (error) {
+        await blockShip(ship, error instanceof Error ? error.message : String(error), "build");
+        return;
+      }
+      await setShipPhase(ship, "prepare");
+      continue;
+    }
+    if (ship.data.phase === "prepare") {
+      await prepareShipCandidate(ctx, project, loaded, ship);
+      if (ship.data.phase === "blocked") return;
+      continue;
+    }
+    if (ship.data.phase === "await") {
+      await awaitShipSignals(ctx, ship);
+      if (ship.data.phase === "blocked") return;
+      continue;
+    }
+    if (ship.data.phase === "review") {
+      await reviewShipCandidate(ctx, project, loaded, ship);
+      if (ship.data.phase === "blocked") return;
+      continue;
+    }
+    if (ship.data.phase === "human") {
+      await finalHumanReview(pi, ctx, project, ship);
+      if (ship.data.phase === "human" || ship.data.phase === "blocked") return;
+      continue;
+    }
+    if (ship.data.phase === "done") {
+      ctx.ui.notify(`Shipping complete: ${ship.data.candidate?.url || "PR ready"}`, "info");
+      return;
+    }
+    throw new Error(`Unknown shipping phase: ${ship.data.phase}`);
+  }
 }
 
 class RichBriefView {
@@ -823,7 +1253,11 @@ export default function (pi) {
     handler: async (args, ctx) => launchSkill(pi, ctx, "review", "dev-review", args, true),
   });
   pi.registerCommand("dev-ship", {
-    description: "Finalize the reviewed exact HEAD as the human-facing GitHub PR",
-    handler: async (args, ctx) => launchSkill(pi, ctx, "ship", "dev-ship", args, true),
+    description: "Drive the robust build-to-ready-PR shipping loop",
+    handler: async (args, ctx) => {
+      try { await driveShip(pi, ctx, args); }
+      catch (error) { ctx.ui.notify(error instanceof Error ? error.message : String(error), "error"); }
+      finally { ctx.ui.setStatus("dev-ship", undefined); }
+    },
   });
 }
