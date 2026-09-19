@@ -32,7 +32,7 @@ def main():
 
     check("workflow_brief" in spec and "explicit approval" in spec, "spec has rich human gate")
     check("workflow_brief" in plan and "explicit approval" in plan, "plan has rich human gate")
-    check("STOP. Do not wait for CI" in prepare, "prepare pushes and stops")
+    check("Do not wait for CI" in prepare, "standalone prepare pushes and stops")
     check("GREEN or RED" in review or "GREEN **or RED**" in review, "review accepts terminal red or green CI")
     check("review-bot" in review and "explore" in review, "review consumes bots and explorers")
     check("deselect/filter" in review and "repairs/RNNN.toon" in review, "review has human-filtered repair plans")
@@ -60,7 +60,9 @@ def main():
     check('"--mode", "json"' in ext_text and '"--no-session"' in ext_text, "fresh streamed child sessions")
     check("Plan-ID:" in ext_text and "max_attempts_per_plan" in ext_text, "bounded deterministic plan commits")
     check("DEV_WORKFLOW_EXPLORER" in ext_text and "read-only" in ext_text, "Explorer read-only enforcement")
-    check("max_review_repairs" not in ext_text, "no automatic review repair loop")
+    check("async function driveShip" in ext_text and "async function awaitShipSignals" in ext_text, "deterministic shipping driver")
+    check("DEV_WORKFLOW_SHIP" in ext_text and "--force-with-lease" in ext_text, "ship loop composes disposable workers and safe publish")
+    check("fs.renameSync(temp, file)" in ext_text, "workflow TOON writes are atomic")
     for forbidden in ["sqlite", "event sourcing"]:
         check(forbidden not in ext_text.lower(), f"extension avoids {forbidden}")
 
@@ -69,6 +71,8 @@ def main():
     check(set(config["models"]) == expected_models, "role-specific model matrix")
     check(config["build"]["max_attempts_per_plan"] == 2, "bounded Builder attempts")
     check(config["explorer"]["max_parallel"] >= 2, "parallel Explorer configured")
+    check(config["ship"]["max_repair_rounds"] == 2, "bounded automatic repair rounds")
+    check(config["ship"]["poll_seconds"] >= 5, "cheap GitHub polling cadence")
     for role, profile in config["models"].items():
         check(bool(profile.get("model")) and bool(profile.get("thinking")), f"{role} model is explicit")
 
@@ -82,8 +86,9 @@ def main():
         check("/dev-prepare" in text, "documented prepare stage")
         check("workflow_brief" in text, "documented rich Pi review UX")
         check("Explorer" in text, "documented Explorer primitive")
-    check("CI may be GREEN **or RED**" in workflow, "terminal CI is review evidence")
-    check("never waits/polls" in workflow, "prepare does not wait")
+    check("CI may be red or green" in workflow, "terminal CI is review evidence")
+    check("No model tokens are consumed while waiting" in workflow, "await is traditional tooling only")
+    check("ship.toon" in workflow, "minimal durable ship state documented")
     check("No orchestrator agent" in workflow, "no orchestrator")
 
     check(not (ROOT / "install-legacy.sh").exists(), "legacy installer removed")
