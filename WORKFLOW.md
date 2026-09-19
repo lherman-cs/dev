@@ -140,7 +140,7 @@ If the PR HEAD moves unexpectedly, shipping blocks rather than reviewing stale e
 
 ## Review and automatic repair
 
-The autonomous Reviewer receives the approved spec, plans, prior repairs, exact candidate diff/history, local validation, terminal CI, and settled PR/bot feedback.
+The autonomous Reviewer receives the approved spec, plans, prior repairs, exact candidate diff/history, local validation, terminal CI, and settled PR/bot feedback. CI may be red or green; terminal red is evidence.
 
 It produces one of:
 
@@ -172,7 +172,7 @@ The deterministic shipping controller may invoke a skill as a disposable worker,
 
 ## Human review UX
 
-Spec, Plan, and final Review use `workflow_brief`, a reusable Pi TUI surface with Markdown, diagrams, code/data views, optional images, mouse/keyboard navigation, and feedback.
+Spec, Plan, and final Review use `workflow_brief`, a reusable Pi TUI surface that should feel closer to a modern web review page than a traditional terminal prompt, with Markdown, diagrams, code/data views, optional images, mouse/keyboard navigation, and feedback.
 
 Spend model tokens on understanding and concise communication, not presentation boilerplate.
 
