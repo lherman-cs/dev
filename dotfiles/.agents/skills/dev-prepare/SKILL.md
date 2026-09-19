@@ -1,16 +1,16 @@
 ---
 name: dev-prepare
-description: Manually prepare and publish a completed candidate without waiting for external review.
+description: Manually create the exact remote review candidate, then stop.
 ---
 
 # dev-prepare
 
-Lower-level manual candidate preparation.
+Operational candidate preparation only.
 
-1. Require completed approved work and a clean worktree.
-2. Fetch/rebase onto the configured base. Resolve ordinary integration conflicts; stop on a semantic decision.
-3. Run repository/project final checks.
-4. Push and create/update a draft PR.
-5. Confirm the exact pushed HEAD/PR, then stop.
+- Require all approved plans/repairs complete according to Git + `progress.toon`, and a clean worktree.
+- Fetch/rebase onto the configured base (default `origin/main`). Resolve ordinary integration conflicts; stop if resolution needs a new semantic/product/architecture decision.
+- Run project/repository final integration tests plus relevant docs, lint, format, and other declared checks.
+- Preparation changes must be mechanical/minimal. If behavior must change, stop with precise evidence rather than patching around it.
+- Push, create/update a **draft** PR with a concise provisional body, and confirm exact pushed HEAD/PR so external checks can start.
 
-Do not invent product changes, wait/poll CI or bots, perform adversarial review, mark ready, or merge.
+Then stop. Do not invent implementation fixes, adversarially review, wait/poll CI or bots, mark ready, or merge.
