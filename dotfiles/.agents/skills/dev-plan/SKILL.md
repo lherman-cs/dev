@@ -12,4 +12,6 @@ Convert the approved spec into the smallest coherent independently testable outc
 - Do not duplicate the spec/research transcripts or edit `progress.toon`.
 - Dispatched plans are immutable. Replan only contradicted assumptions/interfaces/dependencies/proof strategy, not ordinary debugging. Preserve old contracts; replacements get new IDs with `supersedes`, and downstream dependencies move to them.
 
-Only explicit human approval may set `status: ready`. Stop after approved project metadata and plans.
+Before `status: ready`, show `workflow_brief` in `plan` mode with architecture/data flow, important interfaces/invariants, plan graph, outcome + proof for each plan, integration checks, risks, and intentionally untouched areas. Revise until explicit approval.
+
+Stop after approved project metadata and plans.

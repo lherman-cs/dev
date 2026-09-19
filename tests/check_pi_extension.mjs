@@ -20,11 +20,8 @@ const text = fs.readFileSync(source, 'utf8');
 for (const name of ['dev-spec', 'dev-plan', 'dev-build', 'dev-prepare', 'dev-review', 'dev-ship']) {
   if (!text.includes(`registerCommand("${name}"`)) throw new Error(`missing /${name}`);
 }
-for (const required of ['name: "explore"', 'resolvedRoleProfile', 'CONVENTIONAL_COMMIT_RE', 'readSkill("dev-implement")', 'readSkill("dev-review")', 'lavishReviewInvocation', 'runLavishFinalReview', 'lavish-axi --help', '--no-session', '--mode']) {
+for (const required of ['workflow_brief', 'handleMouse(event)', 'new Image(', 'new Markdown(', 'name: "explore"', 'replacementCtx.sendUserMessage(prompt)', 'resolvedRoleProfile', 'isMermaid', 'ctx.ui.editor("Review feedback"', 'CONVENTIONAL_COMMIT_RE', 'readSkill("dev-implement")', '--no-session', '--mode']) {
   if (!text.includes(required)) throw new Error(`missing extension capability: ${required}`);
-}
-for (const retired of ['workflow_brief', 'RichBriefView', 'getMarkdownTheme', 'new Image(']) {
-  if (text.includes(retired)) throw new Error(`retired review UI still present: ${retired}`);
 }
 
 // Stub Pi modules so the extension can be loaded without installing Pi in CI.
@@ -100,8 +97,7 @@ const pi = {
   on: () => {},
 };
 extension(pi);
-if (!tools.has('explore')) throw new Error('expected Explorer tool');
-if (tools.has('workflow_brief')) throw new Error('retired workflow_brief tool still registered');
+if (!tools.has('explore') || !tools.has('workflow_brief')) throw new Error('expected rich/explorer tools');
 const ctx = {
   cwd: repo, hasUI: false, mode: 'print',
   modelRegistry: {
