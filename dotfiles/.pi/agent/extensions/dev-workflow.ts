@@ -643,8 +643,8 @@ async function resolveConflicts(ctx, project, conflicts) {
 
 async function finishRebase(ctx, project, ship) {
   while (true) {
-    const gitDir = await git(ctx.cwd, ["rev-parse", "--git-dir"]);
-    const active = fs.existsSync(path.join(ctx.cwd, gitDir, "rebase-merge")) || fs.existsSync(path.join(ctx.cwd, gitDir, "rebase-apply"));
+    const gitDir = path.resolve(ctx.cwd, await git(ctx.cwd, ["rev-parse", "--git-dir"]));
+    const active = fs.existsSync(path.join(gitDir, "rebase-merge")) || fs.existsSync(path.join(gitDir, "rebase-apply"));
     if (!active) return true;
     const conflicts = (await git(ctx.cwd, ["diff", "--name-only", "--diff-filter=U"])).split("\n").filter(Boolean);
     if (conflicts.length) {
@@ -736,7 +736,10 @@ async function awaitShipSignals(ctx, ship) {
       return;
     }
 
-    const checks = await ghJson(ctx.cwd, ["pr", "checks", String(candidate.pr), "--json", "name,state,bucket,workflow"]);
+    const checkResult = await run("gh", ["pr", "checks", String(candidate.pr), "--json", "name,state,bucket,workflow"], ctx.cwd);
+    let checks;
+    try { checks = JSON.parse(checkResult.stdout || "[]"); }
+    catch { throw new Error(`Could not parse PR checks: ${checkResult.stderr || checkResult.stdout}`); }
     const current = JSON.stringify({ checks, updatedAt: pr.updatedAt });
     if (checksPending(checks)) {
       signature = "";
