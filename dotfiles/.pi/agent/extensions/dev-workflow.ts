@@ -641,11 +641,14 @@ async function resolveConflicts(ctx, project, conflicts) {
   return { blocked: false };
 }
 
+async function rebaseActive(cwd) {
+  const gitDir = path.resolve(cwd, await git(cwd, ["rev-parse", "--git-dir"]));
+  return fs.existsSync(path.join(gitDir, "rebase-merge")) || fs.existsSync(path.join(gitDir, "rebase-apply"));
+}
+
 async function finishRebase(ctx, project, ship) {
   while (true) {
-    const gitDir = path.resolve(ctx.cwd, await git(ctx.cwd, ["rev-parse", "--git-dir"]));
-    const active = fs.existsSync(path.join(gitDir, "rebase-merge")) || fs.existsSync(path.join(gitDir, "rebase-apply"));
-    if (!active) return true;
+    if (!(await rebaseActive(ctx.cwd))) return true;
     const conflicts = (await git(ctx.cwd, ["diff", "--name-only", "--diff-filter=U"])).split("\n").filter(Boolean);
     if (conflicts.length) {
       const resolved = await resolveConflicts(ctx, project, conflicts);
@@ -663,13 +666,19 @@ async function finishRebase(ctx, project, ship) {
 }
 
 async function prepareShipCandidate(ctx, project, loaded, ship) {
-  const dirty = await statusPorcelain(ctx.cwd);
-  if (dirty) throw new Error(`Prepare requires a clean worktree:\n${dirty}`);
-
   const baseBranch = loaded.data.base_branch || "main";
-  await git(ctx.cwd, ["fetch", "origin", baseBranch]);
-  const rebase = await run("git", ["rebase", `origin/${baseBranch}`], ctx.cwd, undefined, { GIT_EDITOR: "true" });
-  if (rebase.code !== 0 && !(await finishRebase(ctx, project, ship))) return;
+  if (await rebaseActive(ctx.cwd)) {
+    if (!(await finishRebase(ctx, project, ship))) return;
+  } else {
+    const dirty = await statusPorcelain(ctx.cwd);
+    if (dirty) throw new Error(`Prepare requires a clean worktree:\n${dirty}`);
+    await git(ctx.cwd, ["fetch", "origin", baseBranch]);
+    const rebase = await run("git", ["rebase", `origin/${baseBranch}`], ctx.cwd, undefined, { GIT_EDITOR: "true" });
+    if (rebase.code !== 0) {
+      if (!(await rebaseActive(ctx.cwd))) throw new Error(`git rebase failed: ${(rebase.stderr || rebase.stdout).trim()}`);
+      if (!(await finishRebase(ctx, project, ship))) return;
+    }
+  }
   if (ship.data.phase === "blocked") return;
 
   const head = await git(ctx.cwd, ["rev-parse", "HEAD"]);
@@ -787,10 +796,13 @@ async function reviewShipCandidate(ctx, project, loaded, ship) {
     return;
   }
 
-  await runWorkflowChild(ctx, "review", "dev-review", project, `Autonomously review exact candidate HEAD ${ship.data.candidate.head}.`);
   const reviewFile = path.join(project.dir, "review.toon");
-  if (!fs.existsSync(reviewFile)) throw new Error("Autonomous reviewer did not write review.toon.");
-  const review = await decodeToon(reviewFile);
+  let review = fs.existsSync(reviewFile) ? await decodeToon(reviewFile) : null;
+  if (!review || review.head !== ship.data.candidate.head || !["pass", "repairs_planned", "blocked"].includes(review.status)) {
+    await runWorkflowChild(ctx, "review", "dev-review", project, `Autonomously review exact candidate HEAD ${ship.data.candidate.head}.`);
+    if (!fs.existsSync(reviewFile)) throw new Error("Autonomous reviewer did not write review.toon.");
+    review = await decodeToon(reviewFile);
+  }
   if (review.head !== ship.data.candidate.head) throw new Error("Reviewer wrote stale candidate state.");
 
   if (review.status === "pass") {
@@ -854,8 +866,12 @@ async function finalHumanReview(pi, ctx, project, ship) {
     await saveShip(ship);
   }
 
-  await runWorkflowChild(ctx, "ship", "dev-ship", project, `Finalize approved exact candidate HEAD ${candidate.head}.`);
-  const pr = await ghJson(ctx.cwd, ["pr", "view", String(candidate.pr), "--json", "isDraft,headRefOid,url"]);
+  let pr = await ghJson(ctx.cwd, ["pr", "view", String(candidate.pr), "--json", "isDraft,headRefOid,url"]);
+  if (pr.headRefOid !== candidate.head) throw new Error("PR moved while finalizing.");
+  if (pr.isDraft) {
+    await runWorkflowChild(ctx, "ship", "dev-ship", project, `Finalize approved exact candidate HEAD ${candidate.head}.`);
+    pr = await ghJson(ctx.cwd, ["pr", "view", String(candidate.pr), "--json", "isDraft,headRefOid,url"]);
+  }
   if (pr.headRefOid !== candidate.head) throw new Error("PR moved while finalizing.");
   if (pr.isDraft) throw new Error("Finalizer did not mark the PR ready; approval is preserved for retry.");
   ship.data.phase = "done";
