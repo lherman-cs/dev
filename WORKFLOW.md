@@ -105,8 +105,8 @@ For each dependency-ready approved `Pxxx` or `Rxxx`:
 
 1. persist the current work ID;
 2. launch a fresh Builder with the configured model;
-3. allow narrow read-only `explore` fan-out;
-4. require one coherent commit with `Plan-ID: <id>`;
+3. launch the reusable `dev-implement` role for the exact contract;
+4. require exactly one Conventional Commit from the accepted predecessor, with no workflow IDs in its message;
 5. independently rerun declared checks;
 6. require a clean worktree;
 7. advance progress.
@@ -166,9 +166,9 @@ Human approval is persisted against exact HEAD before finalization so an interru
 
 ## Skill boundary
 
-Skills stay tiny and single-purpose: human-invoked Spec, Plan, manual Prepare, and manual Review. They never contain runtime modes or route to other skills.
+Skills stay tiny, reusable, and single-purpose: Spec, Plan, Implement, manual Prepare, and Review. They never contain runtime modes or route to other skills.
 
-`/dev-build` and `/dev-ship` are deterministic extension commands. Shipping's narrow conflict-resolver, machine-reviewer, and PR-finalizer contracts live directly beside the controller code instead of hiding alternate behavior in skills.
+`/dev-build` dispatches `dev-implement` and owns retries/progress/independent verification. `/dev-ship` owns deterministic convergence. Its machine Reviewer reuses `dev-review` semantics with only a structured-output contract; conflict resolver and PR finalizer are narrow internal roles.
 
 ## Human review UX
 
