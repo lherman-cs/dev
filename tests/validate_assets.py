@@ -31,9 +31,11 @@ def main():
 
     check("workflow_brief" in spec and "explicit approval" in spec, "spec has rich human gate")
     check("workflow_brief" in plan and "explicit approval" in plan, "plan has rich human gate")
-    check("Do not invent product changes" in prepare, "standalone prepare stays mechanical")
-    check("terminal CI/checks" in review and "red is evidence" in review, "review accepts terminal red or green CI")
-    check("explore" in review and "repairs/RNNN.toon" in review, "review consumes evidence and produces human-approved repairs")
+    check("all approved plans/repairs complete" in prepare and "mechanical/minimal" in prepare, "standalone prepare stays mechanical")
+    check("Red CI is evidence" in review and "PASS means no material issue found" in review, "review is conservative and terminal-red aware")
+    check("Use approved spec + plans/repairs" in review and "deselect/filter" in review, "review consumes full evidence and keeps human repair control")
+    check("Challenge ambiguity" in spec and "open decisions" in spec, "spec preserves challenge and decision requirements")
+    check("Dispatched plans are immutable" in plan and "supersedes" in plan and "not ordinary debugging" in plan, "plan preserves immutable replacement semantics")
 
     ext = ROOT / "dotfiles/.pi/agent/extensions/dev-workflow.ts"
     cfg = ROOT / "dotfiles/.pi/agent/dev-workflow.json"
