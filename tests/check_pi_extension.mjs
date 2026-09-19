@@ -47,6 +47,7 @@ export const wrapTextWithAnsi=(s)=>[String(s)];
 const bin = path.join(tmp, 'bin');
 const repo = path.join(tmp, 'repo');
 const agentDir = path.join(tmp, 'agent');
+const piArgsLog = path.join(tmp, 'pi-args.jsonl');
 fs.mkdirSync(bin); fs.mkdirSync(repo); fs.mkdirSync(agentDir, { recursive: true });
 fs.copyFileSync(path.join(root, 'dotfiles/.pi/agent/dev-workflow.json'), path.join(agentDir, 'dev-workflow.json'));
 
@@ -59,7 +60,13 @@ fs.writeFileSync(path.join(bin, 'toon'), fakeToon, { mode: 0o755 });
 
 const fakePi = `#!/usr/bin/env node
 const fs=require('fs'),cp=require('child_process'),path=require('path');
-const prompt=process.argv.at(-1); const m=/^Execution contract: (.+)$/m.exec(prompt); if(!m) process.exit(2);
+if(process.env.PI_ARGS_LOG) fs.appendFileSync(process.env.PI_ARGS_LOG,JSON.stringify(process.argv.slice(2))+'\\n');
+const prompt=process.argv.at(-1); const m=/^Execution contract: (.+)$/m.exec(prompt);
+if(!m){
+  const message={role:'assistant',content:[{type:'text',text:'Conclusion: scoped fact\\nEvidence: test\\nUncertainty: none'}],usage:{totalTokens:100}};
+  process.stdout.write(JSON.stringify({type:'message_end',message})+'\\n');
+  process.exit(0);
+}
 const plan=JSON.parse(fs.readFileSync(m[1],'utf8'));
 fs.writeFileSync(path.join(process.cwd(),\`built-\${plan.id}.txt\`),plan.id+'\\n');
 cp.execFileSync('git',['add',\`built-\${plan.id}.txt\`]);
@@ -87,6 +94,7 @@ fs.writeFileSync(path.join(planDir, 'P002.toon'), JSON.stringify({ version: 1, i
 process.env.PI_CODING_AGENT_DIR = agentDir;
 process.env.DEV_WORKFLOW_SKILL_ROOT = path.join(root, 'dotfiles/.agents/skills');
 process.env.PATH = `${bin}:${process.env.PATH}`;
+process.env.PI_ARGS_LOG = piArgsLog;
 const { default: extension } = await import(`${pathToFileURL(modulePath).href}?t=${Date.now()}`);
 const commands = new Map();
 const tools = new Map();
@@ -98,6 +106,8 @@ const pi = {
 };
 extension(pi);
 if (!tools.has('explore') || !tools.has('workflow_brief')) throw new Error('expected rich/explorer tools');
+if (!text.includes('childEnv?.DEV_WORKFLOW_EXPLORER === "1"')) throw new Error('Explorer availability is not centralized at worker launch');
+if (!text.includes('promptGuidelines: [')) throw new Error('Explorer guidance must use Pi promptGuidelines');
 const ctx = {
   cwd: repo, hasUI: false, mode: 'print',
   modelRegistry: {
@@ -114,6 +124,16 @@ const ctx = {
   },
 };
 await commands.get('dev-build').handler('', ctx);
+let invocations = fs.readFileSync(piArgsLog, 'utf8').trim().split('\n').filter(Boolean).map(JSON.parse);
+if (!invocations.some(args => args.includes('read,bash,edit,write,explore'))) throw new Error('non-Explorer worker did not receive explore automatically');
+
+await tools.get('explore').execute('test', { tasks: [{ label: 'leaf', task: 'Find one scoped fact.' }] }, undefined, undefined, ctx);
+invocations = fs.readFileSync(piArgsLog, 'utf8').trim().split('\n').filter(Boolean).map(JSON.parse);
+const explorerInvocation = invocations.at(-1);
+const explorerToolsIndex = explorerInvocation.indexOf('--tools');
+if (explorerToolsIndex < 0) throw new Error('Explorer worker missing explicit tool allowlist');
+if (explorerInvocation[explorerToolsIndex + 1].split(',').includes('explore')) throw new Error('Explorer must remain a leaf');
+
 let progress = JSON.parse(fs.readFileSync(path.join(projectDir, 'progress.toon'), 'utf8'));
 if (JSON.stringify(progress.done) !== JSON.stringify(['P001', 'P002'])) throw new Error(`unexpected initial progress ${JSON.stringify(progress)}`);
 if (progress.current !== null) throw new Error('current plan was not cleared');
