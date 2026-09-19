@@ -3,8 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { Type } from "typebox";
-import { getMarkdownTheme } from "@earendil-works/pi-coding-agent";
-import { Image, Key, Markdown, matchesKey, truncateToWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
+import { Key, matchesKey, truncateToWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 
 const AGENT_DIR = process.env.PI_CODING_AGENT_DIR || path.join(os.homedir(), ".pi", "agent");
 const CONFIG_PATH = path.join(AGENT_DIR, "dev-workflow.json");
@@ -96,6 +95,15 @@ async function resolvedRoleProfile(ctx, role) {
   if (!profile.model) return { ...profile };
   const model = await resolveModel(ctx, profile.model);
   return { ...profile, model: `${model.provider}/${model.id}` };
+}
+
+function lavishReviewInvocation(stage) {
+  return [
+    `Use Lavish for this ${stage} human-review gate.`,
+    "Run `lavish-axi --help`, then `lavish-axi design` and every matching `lavish-axi playbook <id>` before authoring HTML.",
+    `Write/update plans/<project>/${stage}-review.html, open it with lavish-axi <file>, then use lavish-axi poll <file> for feedback.`,
+    "Revise and poll until explicit human approval or the review is ended. Follow the CLI next_step guidance for reconnect/end handling.",
+  ].join("\n");
 }
 
 async function launchSkill(pi, ctx, role, skill, args, fresh, invocation = "") {
@@ -946,25 +954,48 @@ async function finalizeCandidate(ctx, project, ship) {
   await gh(ctx.cwd, ["pr", "ready", String(ship.data.candidate.pr)]);
 }
 
-async function finalHumanReview(ctx, project, loaded, ship) {
-  const review = await decodeToon(path.join(project.dir, "review.toon"));
-  const candidate = ship.data.candidate;
-  if (!ctx.hasUI || ctx.mode !== "tui") throw new Error("Final human review requires interactive Pi.");
+function lavishFinalReviewSystem() {
+  return [
+    "Conduct the exact-candidate human review through Lavish.",
+    "Run `lavish-axi --help`, `lavish-axi design`, and all matching playbooks before authoring HTML; those commands own presentation guidance.",
+    "Use only the supplied spec, review state, exact diff/history, and validation evidence. Do not make new engineering judgments.",
+    "Write/update exactly the requested HTML artifact, open it with Lavish, and poll for human feedback.",
+    "The artifact must tell the human to send APPROVE when satisfied; otherwise annotations/messages are feedback.",
+    'Return only JSON after the human responds: {"action":"approve|feedback|cancel","feedback":"..."}.',
+  ].join("\n");
+}
 
+async function runLavishFinalReview(ctx, project, ship) {
+  const profile = await resolvedRoleProfile(ctx, "ship");
+  const artifact = path.join(project.dir, "final-review.html");
+  const result = await runVisibleAgent(ctx, {
+    title: "Lavish final review",
+    subtitle: `${profile.model || "model"}/${profile.thinking || "default"}`,
+    profile,
+    system: lavishFinalReviewSystem(),
+    prompt: [
+      `Approved spec: ${path.join(project.dir, "spec.md")}`,
+      `Review state: ${path.join(project.dir, "review.toon")}`,
+      `Exact candidate: PR #${ship.data.candidate.pr}, HEAD ${ship.data.candidate.head}`,
+      `Artifact: ${artifact}`,
+    ].join("\n\n"),
+    tools: ["read", "grep", "find", "ls", "bash", "write"],
+    env: { DEV_WORKFLOW_CHILD: "1" },
+  });
+  if (result?.aborted) return { action: "cancel", feedback: "" };
+  if (result.code !== 0) throw new Error(`Lavish review failed: ${result.stderr || result.stdout}`);
+  const decision = parseWorkerJson(result.stdout);
+  if (!["approve", "feedback", "cancel"].includes(decision.action)) throw new Error("Lavish review returned invalid action.");
+  return { action: decision.action, feedback: String(decision.feedback || "") };
+}
+
+async function finalHumanReview(ctx, project, loaded, ship) {
+  const candidate = ship.data.candidate;
   if (ship.data.approved_head !== candidate.head) {
-    const decision = await ctx.ui.custom((tui, theme, _kb, done) => new RichBriefView(tui, theme, {
-      mode: "review", title: `${project.name} ready`, subtitle: `PR #${candidate.pr} · ${candidate.head.slice(0, 12)}`,
-      metrics: [{ label: "Repair rounds", value: String(ship.data.repair_round) }],
-      sections: [
-        { label: "Review", markdown: review.summary || "Machine review passed." },
-        { label: "Focus", markdown: (review.review_focus || []).map((item) => `- ${item}`).join("\n") || "No additional focus." },
-        { label: "Validation", markdown: (review.validation || []).map((item) => `- ${item}`).join("\n") || "Local and remote gates passed." },
-      ], repairs: [],
-    }, done));
+    const decision = await runLavishFinalReview(ctx, project, ship);
     if (!decision || decision.action === "cancel") return;
     if (decision.action === "feedback") {
-      const feedback = await ctx.ui.editor("Final review feedback", "");
-      const generated = await runShipReviewer(ctx, project, ship, feedback || "");
+      const generated = await runShipReviewer(ctx, project, ship, decision.feedback || "");
       const status = await persistShipReview(project, loaded, ship, generated);
       if (status === "repairs_planned") {
         ship.data.repair_round = 0;
@@ -1051,189 +1082,6 @@ async function driveShip(ctx, args) {
     throw new Error(`Unknown shipping phase: ${ship.data.phase}`);
   }
 }
-
-class RichBriefView {
-  constructor(tui, theme, params, done) {
-    this.tui = tui;
-    this.theme = theme;
-    this.params = params;
-    this.done = done;
-    this.sections = Array.isArray(params.sections) && params.sections.length ? params.sections : [{ label: "Overview", markdown: params.summary || "" }];
-    this.repairs = Array.isArray(params.repairs) ? params.repairs : [];
-    this.tabs = [...this.sections.map((s, i) => ({ kind: "section", label: s.label || `Section ${i + 1}`, index: i }))];
-    if (this.repairs.length) this.tabs.push({ kind: "repairs", label: `Repairs (${this.repairs.length})`, index: 0 });
-    this.tab = 0;
-    this.repairCursor = 0;
-    this.selected = new Set(this.repairs.filter((r) => r.selected !== false).map((r) => r.id));
-    this.sidebarWidth = 24;
-  }
-  current() { return this.tabs[this.tab] || this.tabs[0]; }
-  finish(action) { this.done({ action, selectedRepairIds: [...this.selected] }); }
-  renderContent(width) {
-    const theme = this.theme;
-    const tab = this.current();
-    if (tab.kind === "repairs") {
-      const lines = [theme.fg("accent", theme.bold("Proposed repairs")), ""];
-      this.repairs.forEach((r, i) => {
-        const active = i === this.repairCursor;
-        const checked = this.selected.has(r.id) ? "☑" : "☐";
-        const severity = r.severity ? ` ${String(r.severity).toUpperCase()}` : "";
-        const prefix = active ? theme.fg("accent", "›") : " ";
-        lines.push(`${prefix} ${checked} ${theme.bold(`${r.id} ${r.title || ""}`)}${theme.fg(r.severity === "critical" ? "error" : r.severity === "important" ? "warning" : "muted", severity)}`);
-      });
-      const activeRepair = this.repairs[this.repairCursor];
-      if (activeRepair) {
-        lines.push("", theme.fg("dim", "─".repeat(Math.max(1, Math.min(width, 72)))));
-        lines.push(theme.fg("accent", theme.bold(`${activeRepair.id} · ${activeRepair.title || "Repair details"}`)));
-        const text = [activeRepair.summary, activeRepair.detail].filter(Boolean).join("\n\n");
-        const md = new Markdown(text || "", 0, 0, getMarkdownTheme());
-        lines.push(...md.render(Math.max(20, width)));
-        if (activeRepair.evidence?.length) {
-          lines.push("", theme.fg("accent", theme.bold("Evidence")));
-          lines.push(...activeRepair.evidence.map((e) => theme.fg("dim", `• ${e}`)));
-        }
-      }
-      return lines;
-    }
-    const section = this.sections[tab.index] || {};
-    const lines = [];
-    if (section.markdown) {
-      const md = new Markdown(section.markdown, 0, 0, getMarkdownTheme());
-      lines.push(...md.render(Math.max(20, width)));
-    }
-    if (section.diagram) {
-      lines.push("", theme.fg("accent", theme.bold("Diagram")));
-      const diagram = String(section.diagram).trim();
-      const isMermaid = /^(flowchart|graph|sequenceDiagram|classDiagram|stateDiagram|erDiagram|journey|gantt|mindmap|timeline|quadrantChart)\b/m.test(diagram);
-      if (isMermaid) {
-        const md = new Markdown(`\`\`\`mermaid\n${diagram}\n\`\`\``, 0, 0, getMarkdownTheme());
-        lines.push(...md.render(Math.max(20, width)));
-      } else {
-        for (const raw of diagram.split("\n")) lines.push(theme.fg("muted", raw));
-      }
-    }
-    if (section.code) {
-      lines.push("", theme.fg("accent", theme.bold("Code / data")));
-      const language = String(section.code_language || "text").replace(/[^a-zA-Z0-9_+.#-]/g, "");
-      const md = new Markdown(`\`\`\`${language}\n${String(section.code)}\n\`\`\``, 0, 0, getMarkdownTheme());
-      lines.push(...md.render(Math.max(20, width)));
-    }
-    if (Array.isArray(section.links) && section.links.length) {
-      lines.push("", theme.fg("accent", theme.bold("Evidence / links")));
-      const mdText = section.links.map((link) => `- [${String(link.label).replace(/[\[\]]/g, "")}](${String(link.url)})`).join("\n");
-      const md = new Markdown(mdText, 0, 0, getMarkdownTheme());
-      lines.push(...md.render(Math.max(20, width)));
-    }
-    if (section.image_path && fs.existsSync(section.image_path)) {
-      try {
-        const ext = path.extname(section.image_path).toLowerCase();
-        const mime = ext === ".jpg" || ext === ".jpeg" ? "image/jpeg" : ext === ".webp" ? "image/webp" : "image/png";
-        const img = new Image(fs.readFileSync(section.image_path).toString("base64"), mime, { fallbackColor: (value) => this.theme.fg("dim", value) }, { maxWidthCells: Math.max(20, width), maxHeightCells: 26, filename: path.basename(section.image_path) });
-        lines.push("", ...img.render(Math.max(20, width)));
-      } catch {
-        lines.push(theme.fg("warning", `[image unavailable: ${section.image_path}]`));
-      }
-    }
-    return lines.length ? lines : [theme.fg("muted", "No content")];
-  }
-  render(width) {
-    const theme = this.theme;
-    const lines = [];
-    const mode = String(this.params.mode || "brief").toUpperCase();
-    lines.push(theme.bg("customMessageBg", theme.fg("accent", theme.bold(` ${mode} · ${this.params.title || "Review"} `))));
-    if (this.params.subtitle) lines.push(theme.fg("muted", ` ${this.params.subtitle}`));
-    if (Array.isArray(this.params.metrics) && this.params.metrics.length) {
-      const metricLine = this.params.metrics.map((m) => `${theme.fg("dim", m.label)} ${theme.bold(String(m.value))}`).join(theme.fg("dim", "   ·   "));
-      lines.push(` ${truncateToWidth(metricLine, Math.max(1, width - 2))}`);
-    }
-    lines.push(theme.fg("dim", "─".repeat(Math.max(1, width))));
-
-    const wide = width >= 92;
-    const sideWidth = wide ? Math.min(this.sidebarWidth, Math.max(20, Math.floor(width * 0.24))) : width;
-    const mainWidth = wide ? Math.max(30, width - sideWidth - 3) : width;
-    const sidebar = this.tabs.map((t, i) => `${i === this.tab ? theme.fg("accent", "●") : theme.fg("dim", "○")} ${t.label}`);
-    const content = this.renderContent(mainWidth - 2);
-    this.lastWide = wide;
-    this.lastSideWidth = sideWidth;
-    this.bodyStart = lines.length;
-    this.repairListStart = this.bodyStart + 2;
-
-    if (wide) {
-      const rows = Math.max(sidebar.length + 2, content.length);
-      for (let i = 0; i < rows; i++) {
-        const left = i < sidebar.length ? ` ${sidebar[i]}` : "";
-        const right = i < content.length ? content[i] : "";
-        lines.push(`${truncateToWidth(left, sideWidth, "").padEnd(sideWidth)} ${theme.fg("dim", "│")} ${truncateToWidth(right, mainWidth)}`);
-      }
-    } else {
-      lines.push(` ${this.tabs.map((t, i) => i === this.tab ? theme.fg("accent", `[${t.label}]`) : t.label).join("  ")}`);
-      lines.push(theme.fg("dim", "─".repeat(Math.max(1, width))));
-      lines.push(...content.map((l) => truncateToWidth(l, width)));
-    }
-    lines.push("", theme.fg("dim", "←→/Tab sections · ↑↓ repairs · Space toggle · A approve · F feedback · Esc cancel · mouse/wheel supported in fullscreen"));
-    return lines.map((line) => truncateToWidth(line, width));
-  }
-  invalidate() {}
-  handleInput(data) {
-    const tab = this.current();
-    if (matchesKey(data, Key.left) || matchesKey(data, Key.shift("tab"))) this.tab = (this.tab - 1 + this.tabs.length) % this.tabs.length;
-    else if (matchesKey(data, Key.right) || matchesKey(data, Key.tab)) this.tab = (this.tab + 1) % this.tabs.length;
-    else if (tab?.kind === "repairs" && (matchesKey(data, Key.up) || data === "k")) this.repairCursor = Math.max(0, this.repairCursor - 1);
-    else if (tab?.kind === "repairs" && (matchesKey(data, Key.down) || data === "j")) this.repairCursor = Math.min(this.repairs.length - 1, this.repairCursor + 1);
-    else if (tab?.kind === "repairs" && (matchesKey(data, Key.space) || data === "x")) {
-      const id = this.repairs[this.repairCursor]?.id;
-      if (id) this.selected.has(id) ? this.selected.delete(id) : this.selected.add(id);
-    } else if (data.toLowerCase?.() === "a") this.finish("approve");
-    else if (data.toLowerCase?.() === "f") this.finish("feedback");
-    else if (matchesKey(data, Key.escape) || data.toLowerCase?.() === "q") this.finish("cancel");
-    this.tui.requestRender();
-  }
-  handleMouse(event) {
-    // Leave wheel events unhandled so Pi's fullscreen ScrollView provides natural page scrolling.
-    if (event.type === "wheel") return undefined;
-    if (event.type !== "click" || event.button !== "left") return undefined;
-    if (this.lastWide && event.y >= this.bodyStart && event.y < this.bodyStart + this.tabs.length && event.x < this.lastSideWidth + 2) {
-      this.tab = event.y - this.bodyStart;
-      return { handled: true, render: true, focus: true };
-    }
-    if (this.current()?.kind === "repairs" && this.lastWide && event.x > this.lastSideWidth + 2) {
-      const index = event.y - this.repairListStart;
-      if (index >= 0 && this.repairs[index]) {
-        this.repairCursor = index;
-        const id = this.repairs[index].id;
-        this.selected.has(id) ? this.selected.delete(id) : this.selected.add(id);
-        return { handled: true, render: true, focus: true };
-      }
-    }
-    return { handled: true, focus: true };
-  }
-}
-
-const briefSchema = Type.Object({
-  mode: Type.Union([Type.Literal("spec"), Type.Literal("plan"), Type.Literal("review")]),
-  title: Type.String(),
-  subtitle: Type.Optional(Type.String()),
-  summary: Type.Optional(Type.String()),
-  metrics: Type.Optional(Type.Array(Type.Object({ label: Type.String(), value: Type.String() }))),
-  sections: Type.Array(Type.Object({
-    label: Type.String(),
-    markdown: Type.Optional(Type.String()),
-    diagram: Type.Optional(Type.String()),
-    code: Type.Optional(Type.String()),
-    code_language: Type.Optional(Type.String()),
-    links: Type.Optional(Type.Array(Type.Object({ label: Type.String(), url: Type.String() }))),
-    image_path: Type.Optional(Type.String()),
-  })),
-  repairs: Type.Optional(Type.Array(Type.Object({
-    id: Type.String(),
-    title: Type.String(),
-    severity: Type.Optional(Type.String()),
-    summary: Type.Optional(Type.String()),
-    detail: Type.Optional(Type.String()),
-    evidence: Type.Optional(Type.Array(Type.String())),
-    selected: Type.Optional(Type.Boolean()),
-  }))),
-});
 
 function explorerSystem(capability) {
   return [
@@ -1340,32 +1188,15 @@ export default function (pi) {
   if (process.env.DEV_WORKFLOW_EXPLORER === "1") return;
   registerExploreTool(pi);
 
-  pi.registerTool({
-    name: "workflow_brief",
-    label: "Workflow Brief",
-    description: "Render the mandatory rich human review surface for spec, plan, or project review. Use this instead of plain prose approval. Supports tabs, Markdown, diagrams, optional terminal images, keyboard/mouse interaction, and selectable repair proposals.",
-    parameters: briefSchema,
-    executionMode: "sequential",
-    async execute(_id, params, _signal, _onUpdate, ctx) {
-      if (!ctx.hasUI || ctx.mode !== "tui") return { content: [{ type: "text", text: "ERROR: workflow_brief requires interactive Pi TUI." }], details: { action: "unavailable" }, isError: true };
-      const result = await ctx.ui.custom((tui, theme, _kb, done) => new RichBriefView(tui, theme, params, done));
-      if (!result || result.action === "cancel") return { content: [{ type: "text", text: JSON.stringify({ action: "cancel" }) }], details: result || { action: "cancel" } };
-      let feedback;
-      if (result.action === "feedback") feedback = await ctx.ui.editor("Review feedback", "");
-      const response = { action: result.action, selectedRepairIds: result.selectedRepairIds || [], feedback: feedback || "" };
-      return { content: [{ type: "text", text: JSON.stringify(response) }], details: response };
-    },
-  });
-
   if (process.env.DEV_WORKFLOW_CHILD === "1") return;
 
   pi.registerCommand("dev-spec", {
-    description: "Define and approve project semantics with a rich Pi brief",
-    handler: async (args, ctx) => launchSkill(pi, ctx, "spec", "dev-spec", args, false),
+    description: "Define and approve project semantics in Lavish",
+    handler: async (args, ctx) => launchSkill(pi, ctx, "spec", "dev-spec", args, false, lavishReviewInvocation("spec")),
   });
   pi.registerCommand("dev-plan", {
-    description: "Compile the approved spec into small plans and approve them in rich Pi UI",
-    handler: async (args, ctx) => launchSkill(pi, ctx, "plan", "dev-plan", args, true),
+    description: "Compile and approve implementation plans in Lavish",
+    handler: async (args, ctx) => launchSkill(pi, ctx, "plan", "dev-plan", args, true, lavishReviewInvocation("plan")),
   });
   pi.registerCommand("dev-build", {
     description: "Drive fresh visible Builders through every approved plan/repair",
@@ -1382,10 +1213,9 @@ export default function (pi) {
   pi.registerCommand("dev-review", {
     description: "Synthesize completed CI + bot/PR signals, adversarial review, and human-approved narrow repairs",
     handler: async (args, ctx) => launchSkill(pi, ctx, "review", "dev-review", args, true, [
-      "This is the manual review command.",
-      "Present one workflow_brief with candidate summary, architecture/behavior impact, CI + PR/bot signals, validation, risks, conclusion, and repair proposals if needed.",
+      lavishReviewInvocation("review"),
       "If clean, only explicit human approval writes review.toon status pass bound to exact HEAD/PR.",
-      "For repairs, let the human inspect, deselect/filter, or give feedback; only selected explicit approvals become new immutable repairs/RNNN.toon IDs, then write review.toon status repairs_approved.",
+      "For repairs, incorporate human Lavish annotations/messages; only explicitly approved repairs become new immutable repairs/RNNN.toon IDs, then write review.toon status repairs_approved.",
       "Never reuse a repair ID.",
     ].join("\n")),
   });
