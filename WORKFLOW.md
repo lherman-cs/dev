@@ -29,9 +29,9 @@ Shipping stops early only when correct behavior is not determined by the approve
 human creates worktree
         |
      /dev-spec
-        |  rich brief + approval
+        |  Lavish browser review + approval
      /dev-plan
-        |  small immutable plans + rich brief + approval
+        |  small immutable plans + Lavish review + approval
      /dev-ship
         |
         |  BUILD
@@ -56,7 +56,7 @@ human creates worktree
         |        `-- pass --> HUMAN
         |
         |  HUMAN
-        |    rich final exact-candidate review
+        |    Lavish final exact-candidate review
         |        |
         |        +-- feedback --> REVIEW/BUILD
         |        `-- approve --> finalize PR + mark ready
@@ -79,6 +79,7 @@ plans/P001.toon
 plans/P002.toon
 repairs/R001.toon
 review.toon
+*-review.html             local Lavish review artifacts
 ```
 
 `progress.toon` owns only Builder progress: completed IDs, current ID, and accepted HEAD.
@@ -157,7 +158,7 @@ Standalone `/dev-review` keeps the richer human-filtered repair workflow.
 
 Machine pass is not final approval.
 
-The controller renders the existing rich Pi review surface for the exact candidate, including summary, review focus, validation, and repair-round count.
+The controller opens a Lavish browser review for the exact candidate. The artifact includes the machine-review summary, review focus, validation, exact candidate identity, and repair-round count.
 
 Human feedback is sent through the same semantic Reviewer. It must produce repairs or block for a semantic decision; it may not silently pass.
 
@@ -171,9 +172,11 @@ Skills stay tiny, reusable, and single-purpose: Spec, Plan, Implement, manual Pr
 
 ## Human review UX
 
-Spec, Plan, and final Review use `workflow_brief`, a reusable Pi TUI surface that should feel closer to a modern web review page than a traditional terminal prompt, with Markdown, diagrams, code/data views, optional images, mouse/keyboard navigation, and feedback.
+Spec, Plan, manual Review, and final Ship approval use Lavish in the local browser.
 
-Spend model tokens on understanding and concise communication, not presentation boilerplate.
+The command/controller owns this presentation mechanism. Semantic skills do not mention Lavish. For each review gate the agent reads current guidance from `lavish-axi --help`, `lavish-axi design`, and the matching `lavish-axi playbook` commands, writes the local HTML artifact under `plans/<project>/`, opens it, and polls for annotations/messages until explicit approval or review end.
+
+Do not copy Lavish design guidance into skills or workflow prompts. The Lavish CLI is the presentation authority, so review UI guidance stays current without growing the workflow instruction surface.
 
 ## Explorer
 
