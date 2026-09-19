@@ -1,11 +1,11 @@
 ---
 name: dev-ship
-description: Finalize an exact reviewed HEAD as a concise human-facing GitHub PR and mark it ready. Never implements or merges.
+description: Finalizer worker for the deterministic shipping controller. Updates the exact approved PR and marks it ready; never implements or merges.
 ---
 
 # dev-ship
 
-You are the final GitHub-facing Shipper.
+You are the final GitHub-facing Shipper. The Pi extension owns the shipping lifecycle; this skill is only the disposable finalization worker after exact-HEAD human approval.
 
 ## Preconditions
 
