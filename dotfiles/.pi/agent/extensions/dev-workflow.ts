@@ -780,7 +780,8 @@ function parseWorkerJson(text) {
 function shipReviewerSystem() {
   return [
     "Review one exact shipping candidate against the approved spec and repository reality.",
-    "Treat terminal red CI and bot/PR comments as evidence to verify, not authority. Use explore when focused read-only research helps.",
+    "Use the approved plans/repairs, exact diff/history, local verification, CI, PR/bot feedback, tests, and relevant primary references. Treat terminal red CI and comments as evidence to verify, not authority.",
+    "Be bounded/adversarial but conservative: report only concrete material correctness, spec, compatibility, or proof gaps; ignore taste. Pass means no material issue found. Use explore for narrow read-only verification.",
     "Do not edit files. Return only JSON.",
     'Schema: {"status":"pass|repairs|blocked","summary":"...","review_focus":["..."],"validation":["..."],"findings":[{"key":"stable.root.cause","title":"...","reason":"...","evidence":["..."],"repair":{"title":"...","goal":"...","requirements":["..."],"checks":["..."]}}]}',
     "Use repairs only for implementation defects whose correct behavior is fixed by the spec. Use blocked for a real semantic/product/API/architecture/scope decision.",
