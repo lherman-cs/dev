@@ -104,12 +104,11 @@ TOON updates are atomic. Operations with external side effects are reconciled be
 For each dependency-ready approved `Pxxx` or `Rxxx`:
 
 1. persist the current work ID;
-2. launch a fresh Builder with the configured model;
-3. launch the reusable `dev-implement` role for the exact contract;
-4. require exactly one Conventional Commit from the accepted predecessor, with no workflow IDs in its message;
-5. independently rerun declared checks;
-6. require a clean worktree;
-7. advance progress.
+2. launch one fresh `dev-implement` worker for the exact contract;
+3. require exactly one Conventional Commit from the accepted predecessor, with no workflow IDs in its message;
+4. independently rerun declared checks;
+5. require a clean worktree;
+6. advance progress.
 
 A work item gets at most two Builder attempts. Interrupted sessions preserve work and do not justify destructive Git recovery.
 
