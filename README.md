@@ -8,9 +8,9 @@ You create the Git worktree yourself. The normal workflow is:
 
 ```text
 /dev-spec
-    rich semantic brief -> human approval
+    semantic spec -> Lavish browser review -> human approval
 /dev-plan
-    small immutable plans -> rich plan brief -> human approval
+    small immutable plans -> Lavish browser review -> human approval
 /dev-ship
     build
     -> rebase + local final gates
@@ -18,7 +18,7 @@ You create the Git worktree yourself. The normal workflow is:
     -> wait for exact-HEAD CI/review feedback
     -> adversarial machine review
     -> bounded automatic repair loop
-    -> final rich human review
+    -> final Lavish browser review
     -> concise PR + mark ready
 ```
 
@@ -42,11 +42,13 @@ review.toon
 
 Shipping automatically blocks instead of blindly looping when the same repaired failure recurs, the bounded repair rounds are exhausted, or correct resolution requires a new semantic decision.
 
-## Rich Pi review UX
+## Lavish review UX
 
-Human review efficiency is a primary requirement. Spec, Plan, and Review use the `workflow_brief` Pi tool to render a fullscreen, interactive review surface with Markdown, panels/tabs, diagrams, code/data views, selectable repairs, optional inline images, mouse input, and keyboard navigation. The model generates semantic content; the extension owns presentation so rich UX does not require generating HTML/CSS.
+Human review happens in Lavish's local browser editor, not a custom terminal renderer.
 
-Use a terminal with strong fullscreen/mouse/image support such as Ghostty, Kitty, or WezTerm for the best experience. `~/.pi/agent/settings.json` enables fullscreen mode and images.
+Spec, Plan, manual Review, and final Ship approval create ignored HTML artifacts under `plans/<project>/`, open them with `lavish-axi`, and consume annotations/messages through `lavish-axi poll`. The agent reads `lavish-axi --help`, `design`, and matching playbooks at review time, so UI guidance remains owned by Lavish rather than duplicated in workflow skills.
+
+The bootstrap installs `lavish-axi` globally alongside TOON.
 
 ## Explorer
 
