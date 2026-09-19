@@ -1,23 +1,27 @@
 # Pi-first development workflow
 
-## Design constraints
+## Design
 
-The workflow is intentionally easy to change as we learn. Pi is the harness; skills contain semantic role instructions; a single small extension supplies rich UI, isolated child-agent execution, model routing, Explorer, and deterministic build progress. Do not grow this into a generic workflow engine.
+Pi is the harness. TypeScript owns deterministic lifecycle control; fresh LLM workers own engineering judgment. Keep both sides small.
 
 Hard constraints:
 
-- The human creates/manages worktrees.
-- No orchestrator agent.
-- No SQLite/database/event log.
-- No durable model transcripts or copied source/diffs/logs.
-- No per-plan LLM review.
-- No automatic build -> review -> repair loop. The human invokes every major stage.
-- New implementation work enters through an approved plan or approved review repair.
-- Git is implementation truth; the approved spec is semantic truth.
+- The human creates and manages worktrees.
+- No orchestrator agent, database, event log, or durable model transcript.
+- Git is implementation truth. The approved spec is semantic truth. GitHub is remote-candidate truth.
+- Models never poll, wait, decide workflow phase, or claim their own verification.
+- Every expensive model action is narrow and independently checked where practical.
+- Shipping is restartable. Durable workflow files are compact TOON state under ignored `plans/<project>/`.
 
-## Skill boundary
+## Human boundaries
 
-`WORKFLOW.md` owns lifecycle sequencing. Individual skills own only their stage contract: prerequisites, work, outputs, and stop conditions. A skill may explain why it stopped, but it must not select, invoke, or conditionally route to another workflow skill. The human chooses the next stage. This keeps skills independently revisable and prevents the workflow graph from being duplicated across prompts.
+There are three normal human decisions:
+
+1. `/dev-spec`: approve intended behavior, invariants, scope, and non-goals.
+2. `/dev-plan`: approve architecture and small execution contracts.
+3. `/dev-ship`: approve the final exact candidate after automated convergence.
+
+Shipping stops early only when correct behavior is not determined by the approved spec, the repair loop does not converge, or repository/remote reality becomes unsafe to reconcile automatically.
 
 ## Lifecycle
 
@@ -25,186 +29,159 @@ Hard constraints:
 human creates worktree
         |
      /dev-spec
-        |  rich spec brief + explicit human approval
+        |  rich brief + approval
      /dev-plan
-        |  rich plan brief + explicit human approval
-     /dev-build
-        |  fresh visible Builder / plan or repair / commit
-   /dev-prepare
-        |  rebase + local final checks + push/update DRAFT PR
-        |  STOP -- no waiting
-        v
-   CI + review bots run asynchronously
+        |  small immutable plans + rich brief + approval
+     /dev-ship
         |
-   human waits until relevant signals are terminal
+        |  BUILD
+        |    fresh Builder per pending plan/repair
+        |    deterministic commit/check verification
         |
-    /dev-review
-        |  consumes CI RED/GREEN + bot/PR feedback + diff + spec + tests
-        |  adversarial review + rich human brief
+        |  PREPARE
+        |    fetch + rebase
+        |    LLM resolves conflicts only when Git needs judgment
+        |    repository final checks
+        |    push/update draft PR
         |
-        +-- PASS -------------------------------> /dev-ship
+        |  AWAIT
+        |    exact-HEAD GitHub polling only
+        |    no model is alive
         |
-        `-- repairs proposed
-              | rich repair brief: inspect/filter/feedback
-              | explicit human approval
-              v
-         repairs/Rxxx.toon
-              |
-          human invokes /dev-build
-              |
-          /dev-prepare -> external signals -> /dev-review
+        |  REVIEW
+        |    one fresh adversarial Reviewer over complete evidence
+        |        |
+        |        +-- repairs --> BUILD
+        |        +-- semantic ambiguity/non-convergence --> BLOCKED
+        |        `-- pass --> HUMAN
+        |
+        |  HUMAN
+        |    rich final exact-candidate review
+        |        |
+        |        +-- feedback --> REVIEW/BUILD
+        |        `-- approve --> finalize PR + mark ready
+        |
+        `-- DONE
 ```
 
-Nothing automatically crosses the human-trigger boundaries.
+`/dev-build`, `/dev-prepare`, and `/dev-review` remain lower-level commands for debugging or manual use. The normal post-plan path is `/dev-ship`.
 
-## Human review UX is a primary product requirement
-
-Spec, Plan, and Review/Repair must feel closer to a modern web review page than a traditional terminal prompt. `workflow_brief` is a reusable Pi TUI surface and should support:
-
-- fullscreen responsive panes/tabs/cards/tables/trees;
-- rich Markdown and syntax-readable code/data;
-- architecture/data-flow diagrams;
-- before/after representations where useful;
-- optional inline screenshots/images when they materially improve understanding;
-- mouse and keyboard navigation;
-- collapsible/drill-down organization and concise evidence links;
-- selectable repair proposals plus a feedback path;
-- graceful fallback when the terminal cannot render an image.
-
-Spend model tokens on understanding and concise human communication, not HTML/CSS/layout boilerplate. The model emits semantic sections/diagrams/repairs; the extension renders them. Richness and human review speed matter more than minimizing every presentation token.
-
-## Explorer is a first-class primitive
-
-`explore` is available to intelligent workflow roles, including Builder children. Explorers are fresh, narrow, read-only, cheap, evidence-oriented subagents. They should be heavily used when they reduce the parent model's context or latency.
-
-Good fan-out examples:
-
-- repository code paths/invariants/symbol ownership;
-- diff impact and compatibility questions;
-- CI failure diagnosis and minimal relevant log evidence;
-- completed bot/PR feedback synthesis;
-- tests/coverage gaps;
-- current upstream/API documentation and primary references.
-
-Prefer several narrow Explorer tasks in parallel over one broad research session. The parent gets compact `Conclusion / Evidence / Uncertainty` packets, never full child transcripts. Explorer activity is visible in Pi. External-capability Explorers may use read-only `gh`, `curl`, and Git commands; the extension blocks obvious mutation commands.
-
-## Artifacts
+## Minimal durable state
 
 All workflow artifacts are ignored under `plans/<project>/`:
 
 ```text
-spec.md                   semantic authority; human approved
-project.toon              project/base/dependencies/final checks/status
-progress.toon             tiny extension-owned execution pointer
-plans/P001.toon           immutable approved implementation contract
+spec.md
+project.toon
+progress.toon
+ship.toon
+plans/P001.toon
 plans/P002.toon
-repairs/R001.toon         immutable human-approved review repair contract
-review.toon               compact exact-HEAD review state/provenance
+repairs/R001.toon
+review.toon
 ```
 
-Do not store raw CI logs, bot transcripts, LLM transcripts, source copies, giant summaries, or generated HTML.
+`progress.toon` owns only Builder progress: completed IDs, current ID, and accepted HEAD.
 
-`progress.toon` contains only the minimum needed to resume deterministic build driving: project, completed work IDs, current work ID, and accepted HEAD. Human Git edits are reality; the workflow never resets/cleans them away.
+`ship.toon` owns only shipping control:
 
-## Spec
+- phase: `build | prepare | await | review | human | blocked | done`
+- bounded repair round
+- exact HEAD that passed local final gates
+- exact published candidate identity
+- exact HEAD approved by the human
+- last deterministic final-gate failure for recurrence detection
+- blocked reason and resume phase
 
-`/dev-spec` starts semantic alignment. Specifier inspects reality, challenges assumptions, records decisions/non-goals/invariants/acceptance evidence, and may propose splitting the request into independently mergeable/testable projects. The human decides and creates any additional worktrees.
+Do not store CI logs, bot transcripts, source copies, model transcripts, or generic event history.
 
-Before approval, Specifier must render the rich Pi spec brief. Feedback returns directly to Specifier. Only explicit human approval marks `spec.md` APPROVED.
-
-## Plan
-
-`/dev-plan` compiles the approved spec into small execution contracts. One plan is the smallest coherent independently testable outcome suitable for one fresh Builder session and one commit. Planner owns plan TOON; Builders never edit plans.
-
-A dispatched plan is immutable. If a material assumption is contradicted, create replacement IDs for affected remaining work rather than rewriting history. A replacement records `supersedes: <old-id>`; superseded contracts remain as history but are not executable.
-
-Before `project.toon.status` becomes `ready`, Planner must render a rich plan brief containing architecture/dataflow, plan graph, invariants, validation strategy, risks, and intentionally untouched areas. Explicit human approval is required.
+TOON updates are atomic. Operations with external side effects are reconciled before advancing state, so interruption may repeat cheap work but must not destroy or duplicate meaningful work.
 
 ## Build
 
-`/dev-build` is deterministic extension code, not an orchestrator model.
+`/dev-build` remains deterministic extension code.
 
-For each dependency-ready approved `Pxxx` or `Rxxx` contract:
+For each dependency-ready approved `Pxxx` or `Rxxx`:
 
-1. persist `current` in `progress.toon`;
-2. start a fresh isolated Builder child with the configured exact model/reasoning level;
-3. stream its tool activity/output/usage visibly into the parent Pi TUI;
-4. Builder may delegate narrow read-only research to `explore`;
-5. require exactly one new coherent commit with trailer `Plan-ID: <id>`;
-6. independently rerun Planner/Reviewer-declared checks;
-7. require a clean worktree;
-8. advance `progress.toon` and continue.
+1. persist the current work ID;
+2. launch a fresh Builder with the configured model;
+3. allow narrow read-only `explore` fan-out;
+4. require one coherent commit with `Plan-ID: <id>`;
+5. independently rerun declared checks;
+6. require a clean worktree;
+7. advance progress.
 
-A plan gets at most two bounded Builder attempts; the retry may use a stronger configured model. Work is preserved. If the execution contract itself is materially wrong, Builder ends with `NEEDS_REPLAN`; `/dev-build` stops and the human invokes `/dev-plan`. It never summons Planner or Reviewer itself.
+A work item gets at most two Builder attempts. Interrupted sessions preserve work and do not justify destructive Git recovery.
 
 ## Prepare
 
-`/dev-prepare` creates the remote review candidate and then stops:
+The shipping controller performs preparation directly:
 
-1. ensure approved work is complete and the worktree clean;
-2. fetch/rebase onto current base;
-3. run local integrated/final tests, docs checks, lint and format;
-4. stop on semantic conflict or behavior-changing work;
-5. push branch;
-6. create/update a **draft** PR so CI and review bots run;
-7. STOP.
+1. require a clean worktree;
+2. fetch the configured base, defaulting to `origin/main`;
+3. rebase;
+4. when Git reports conflicts, launch one fresh conflict resolver constrained to the conflicted files and approved spec, then let deterministic code stage and continue the rebase;
+5. run `project.toon.final_checks`, or fall back to root `just check` and `just test`;
+6. if a final gate fails, create one narrow repair contract from the exact failure and loop to Build;
+7. push with `--force-with-lease`;
+8. create or update a draft PR and bind the candidate to exact HEAD/base.
 
-It never waits/polls for CI or bot completion and never launches Review. The human decides when the signals are complete.
+A repeated identical final-gate failure blocks instead of blindly generating another repair.
 
-## Review and repair planning
+Standalone `/dev-prepare` remains available and stops after publishing.
 
-The human invokes `/dev-review` after CI and relevant review bots are terminal for the current PR/HEAD. CI may be GREEN **or RED**. Red results are evidence.
+## Await
 
-Reviewer verifies the external-signal gate, then uses the approved spec, plans/repairs, final diff/history, local evidence, completed CI results/log snippets, bot feedback, PR feedback, tests, and relevant external references. It should fan out several focused Explorers in parallel before synthesizing.
+Awaiting external evidence is traditional tooling only.
 
-Review does not edit product code. It renders a rich project review. If clean, human approval records `review.toon.status: pass` bound to exact HEAD.
+The controller polls `gh` for the exact PR HEAD. It waits until checks are terminal, then requires a short quiet period with no PR/check changes so late review-bot feedback can land. No model tokens are consumed while waiting.
 
-If material repairs are needed, Reviewer creates a draft set of very narrow repair proposals and shows them in the rich review UI. The human can inspect, deselect/filter, or provide feedback and have the Reviewer revise them. Only selected explicitly approved repairs become new immutable `repairs/RNNN.toon` files. Reviewer records `review.toon.status: repairs_approved` and stops. The human decides when to run `/dev-build`.
+If the PR HEAD moves unexpectedly, shipping blocks rather than reviewing stale evidence.
 
-After repairs, `/dev-prepare` creates a new candidate, external signals run again, and the human invokes `/dev-review` again. There is no hidden repair loop.
+## Review and automatic repair
 
-## Ship
+The autonomous Reviewer receives the approved spec, plans, prior repairs, exact candidate diff/history, local validation, terminal CI, and settled PR/bot feedback.
 
-`/dev-ship` is specific to the final GitHub handoff. It requires `review.toon.status: pass` for exact current HEAD and the same reviewed CI/bot candidate. If HEAD moved, stop.
+It produces one of:
 
-Shipper updates the PR title/body with a concise high-level human review surface and marks the draft PR ready. Useful sections are:
+- `pass`: candidate can enter final human review.
+- `repairs_planned`: all material implementation repairs are written as one narrow immutable repair batch.
+- `blocked`: correct resolution needs a semantic decision or the same previously repaired finding recurred.
 
-- Intent
-- What changed
-- Architecture / API impact (only when material)
-- Validation, including CI outcome
-- Risks / review focus
-- compact Plan -> commit map when useful
+Review repairs carry a stable `source.finding_key`. If that root finding recurs after repair, do not spend another automatic cycle on it.
 
-Do not dump implementation trivia, logs, or agent prose. Shipper never implements fixes and never merges.
+The controller allows at most two automatic repair rounds by default. This is a convergence guard, not a quality target.
 
-If later human PR feedback requires code, the human invokes `/dev-review` again. Reviewer turns the new evidence into a narrow human-approved repair set; then the same Build -> Prepare -> external signals -> Review cycle repeats.
+Standalone `/dev-review` keeps the richer human-filtered repair workflow.
+
+## Final human review
+
+Machine pass is not final approval.
+
+The controller renders the existing rich Pi review surface for the exact candidate, including summary, review focus, validation, and repair-round count.
+
+Human feedback is sent through the same semantic Reviewer. It must produce repairs or block for a semantic decision; it may not silently pass.
+
+Human approval is persisted against exact HEAD before finalization so an interruption does not require another approval. A fresh finalizer updates the concise PR title/body and marks the draft ready. It never merges.
+
+## Skill boundary
+
+`WORKFLOW.md` owns lifecycle sequencing. Skills own semantic stage contracts.
+
+The deterministic shipping controller may invoke a skill as a disposable worker, but skills do not route to other workflow skills. This keeps lifecycle state in one place and avoids an LLM orchestrator.
+
+## Human review UX
+
+Spec, Plan, and final Review use `workflow_brief`, a reusable Pi TUI surface with Markdown, diagrams, code/data views, optional images, mouse/keyboard navigation, and feedback.
+
+Spend model tokens on understanding and concise communication, not presentation boilerplate.
+
+## Explorer
+
+`explore` is a fresh, narrow, read-only subagent primitive. Use it when focused parallel research reduces parent context or improves confidence.
+
+Good tasks include repository invariants, diff impact, CI failure diagnosis, PR feedback verification, tests, and primary external references. Parents receive compact `Conclusion / Evidence / Uncertainty` results rather than transcripts.
 
 ## Models
 
-`~/.pi/agent/dev-workflow.json` is the only role/model policy. Defaults:
-
-```text
-Specifier      gpt-5.6-sol   medium
-Planner        gpt-5.6-sol   high
-Builder        gpt-5.6-sol   low
-Builder retry  gpt-5.6-sol   medium
-Explorer       gpt-5.6-luna  medium
-Prepare        gpt-5.6-luna  medium
-Reviewer       gpt-6-astra   low
-Shipper        gpt-5.6-luna  medium
-```
-
-The extension sets the configured model/reasoning level explicitly. Missing/ambiguous/unavailable models fail visibly; there is no silent model fallback. Change this matrix freely as models/costs evolve without changing workflow semantics.
-
-## Extension boundary
-
-The Pi extension is allowed to own only harness-level concerns:
-
-- rich fullscreen review UI;
-- exact role/model selection;
-- visible isolated Builder sessions;
-- parallel read-only Explorer sessions;
-- minimal `progress.toon` bookkeeping and deterministic build verification.
-
-Planning, implementation judgment, adversarial review, and shipping semantics remain in small skills. If a future feature does not clearly belong to those harness concerns, prove the need before adding custom code.
+`~/.pi/agent/dev-workflow.json` is the only role/model policy. Missing or ambiguous models fail visibly; there is no silent fallback. Model choice is configuration, not workflow semantics.
