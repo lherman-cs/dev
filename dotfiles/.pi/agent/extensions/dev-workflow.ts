@@ -993,7 +993,7 @@ async function finalHumanReview(ctx, project, loaded, ship) {
   ship.data.phase = "done";
   await saveShip(ship);
 }
-async function driveShip(pi, ctx, args) {
+async function driveShip(ctx, args) {
   await ensureIgnored(ctx.cwd);
   const tokens = String(args || "").trim().split(/\s+/).filter(Boolean);
   const resume = tokens.includes("--resume");
@@ -1389,7 +1389,7 @@ export default function (pi) {
   pi.registerCommand("dev-ship", {
     description: "Drive the robust build-to-ready-PR shipping loop",
     handler: async (args, ctx) => {
-      try { await driveShip(pi, ctx, args); }
+      try { await driveShip(ctx, args); }
       catch (error) { ctx.ui.notify(error instanceof Error ? error.message : String(error), "error"); }
       finally { ctx.ui.setStatus("dev-ship", undefined); }
     },
