@@ -59,6 +59,7 @@ rm -rf \
   "$HOME/.agents/skills/dev-spec" \
   "$HOME/.agents/skills/dev-plan" \
   "$HOME/.agents/skills/dev-build" \
+  "$HOME/.agents/skills/dev-implement" \
   "$HOME/.agents/skills/dev-prepare" \
   "$HOME/.agents/skills/dev-review" \
   "$HOME/.agents/skills/dev-project" \
