@@ -66,9 +66,11 @@ class PiWorkflowAssets(unittest.TestCase):
 
         plan = content["dev-plan"]
         self.assertIn("Git reality outranks stale workflow pointers", plan)
+        self.assertIn("independently testable", plan)
         self.assertIn("Dispatched plans are immutable", plan)
         self.assertIn("supersedes", plan)
         self.assertIn("not ordinary debugging", plan)
+        self.assertNotIn("Conventional Commit", plan)
 
         implement = content["dev-implement"]
         self.assertIn("Conventional Commit", implement)
@@ -103,7 +105,6 @@ class PiWorkflowAssets(unittest.TestCase):
         self.assertIn("approved_head", ext)
         self.assertIn("fs.renameSync(temp, file)", ext)
 
-        # Manual review UI belongs to the command invocation, not dev-review semantics.
         self.assertIn("This is the manual review command.", ext)
         self.assertIn("Present one workflow_brief", ext)
         self.assertIn("deselect/filter", ext)
