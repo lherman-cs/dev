@@ -612,11 +612,9 @@ function finalChecks(projectData, cwd) {
 
 function conflictResolverSystem() {
   return [
-    "You resolve only the current Git rebase conflicts.",
-    "Preserve the approved spec and the intent of already-approved commits on top of the new base.",
-    "Inspect repository context before editing. Ordinary integration adaptation is expected.",
-    "Edit conflicted files only. Do not run git add, commit, rebase, reset, clean, push, stash, or manage worktrees.",
-    "If resolution requires a new product/API/architecture/scope decision not fixed by the approved spec, do not guess; end with NEEDS_HUMAN and concise evidence.",
+    "Resolve only the current rebase-conflicted files while preserving the approved spec and existing commit intent.",
+    "Do not run Git sequencing/mutation commands; the controller owns them.",
+    "If resolution needs a new product/API/architecture/scope decision, return NEEDS_HUMAN with evidence.",
   ].join("\n");
 }
 
@@ -785,9 +783,8 @@ function shipReviewerSystem() {
     readSkill("dev-review"),
     "",
     "Controller invocation contract:",
-    "- Do not edit files or use human UI. Return only JSON.",
+    "- No human UI. Return only JSON.",
     '- Schema: {"status":"pass|repairs|blocked","summary":"...","review_focus":["..."],"validation":["..."],"findings":[{"key":"stable.root.cause","title":"...","reason":"...","evidence":["..."],"repair":{"title":"...","goal":"...","requirements":["..."],"checks":["..."]}}]}',
-    "- Finding keys identify root causes and must stay stable across candidates.",
     "- If human feedback is supplied, it must result in repairs or blocked, never pass.",
   ].join("\n");
 }
@@ -923,8 +920,7 @@ async function reviewShipCandidate(ctx, project, loaded, ship) {
 
 function finalizerSystem() {
   return [
-    "Write the concise human-facing title and Markdown body for one approved PR.",
-    "Summarize intent, material changes, validation, and real review focus. Omit implementation trivia, logs, agent prose, and boilerplate.",
+    "Return the approved PR's concise human-facing title and Markdown body.",
     "Do not edit files or GitHub. Return only JSON: {\"title\":\"...\",\"body\":\"...\"}.",
   ].join("\n");
 }
@@ -938,7 +934,6 @@ async function finalizeCandidate(ctx, project, ship) {
       `Approved spec: ${path.join(project.dir, "spec.md")}`,
       `Review: ${path.join(project.dir, "review.toon")}`,
       `Exact candidate: PR #${ship.data.candidate.pr}, HEAD ${ship.data.candidate.head}`,
-      "Inspect the exact Git diff/history as needed, then return the title/body JSON.",
     ].join("\n\n"),
     tools: ["read", "grep", "find", "ls"],
     env: { DEV_WORKFLOW_CHILD: "1" },
@@ -1242,11 +1237,9 @@ const briefSchema = Type.Object({
 
 function explorerSystem(capability) {
   return [
-    "You are Explorer: a fresh, narrow, evidence-oriented read-only subagent.",
-    "Answer only the assigned question. Inspect before assuming. Prefer primary/repository evidence.",
-    "Do not edit/write files, commit, rebase, push, change PRs/issues, or run destructive commands.",
-    capability === "external" ? "For CI/GitHub/web research you may use read-only gh/curl/git commands. Never invoke mutation endpoints or commands." : "Stay within repository inspection unless the task explicitly requires external evidence.",
-    "Return a compact result with: Conclusion; Evidence (paths/symbols/commands/URLs); Uncertainty. Do not dump logs or whole files.",
+    "Answer only the assigned narrow question; read-only.",
+    capability === "external" ? "External read-only gh/curl/git is allowed." : "Stay within repository inspection.",
+    "Return: Conclusion; Evidence; Uncertainty.",
   ].join("\n");
 }
 
