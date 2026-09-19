@@ -8,12 +8,22 @@ import { Image, Key, Markdown, matchesKey, truncateToWidth, wrapTextWithAnsi } f
 
 const AGENT_DIR = process.env.PI_CODING_AGENT_DIR || path.join(os.homedir(), ".pi", "agent");
 const CONFIG_PATH = path.join(AGENT_DIR, "dev-workflow.json");
-const SKILL_ROOT = path.join(os.homedir(), ".agents", "skills");
+const SKILL_ROOT = process.env.DEV_WORKFLOW_SKILL_ROOT || path.join(os.homedir(), ".agents", "skills");
 const PLAN_RE = /^P\d+\.toon$/;
 const REPAIR_RE = /^R\d+\.toon$/;
 
 function readConfig() {
   return JSON.parse(fs.readFileSync(CONFIG_PATH, "utf8"));
+}
+
+function skillPath(skill) {
+  return path.join(SKILL_ROOT, skill, "SKILL.md");
+}
+
+function readSkill(skill) {
+  const file = skillPath(skill);
+  if (!fs.existsSync(file)) throw new Error(`Missing installed skill ${file}`);
+  return fs.readFileSync(file, "utf8");
 }
 
 function run(command, args, cwd, input, env) {
@@ -88,12 +98,13 @@ async function resolvedRoleProfile(ctx, role) {
   return { ...profile, model: `${model.provider}/${model.id}` };
 }
 
-async function launchSkill(pi, ctx, role, skill, args, fresh) {
+async function launchSkill(pi, ctx, role, skill, args, fresh, invocation = "") {
   const profile = roleConfig(role);
-  const skillPath = path.join(SKILL_ROOT, skill, "SKILL.md");
-  if (!fs.existsSync(skillPath)) throw new Error(`Missing installed skill ${skillPath}`);
+  const file = skillPath(skill);
+  if (!fs.existsSync(file)) throw new Error(`Missing installed skill ${file}`);
   const request = args?.trim() ? `\n\nUser request: ${args.trim()}` : "";
-  const prompt = `Read and follow the exact ${skill} skill at ${skillPath}.${request}`;
+  const extra = invocation ? `\n\nInvocation contract:\n${invocation}` : "";
+  const prompt = `Read and follow the exact ${skill} skill at ${file}.${extra}${request}`;
 
   if (!fresh) {
     await applyRole(pi, ctx, role);
@@ -395,24 +406,17 @@ async function runVisibleAgent(ctx, options) {
   return processPromise || { code: -1, stdout: "", stderr: "agent did not start", aborted: true };
 }
 
-function builderSystem() {
-  return [
-    "You are Builder. Implement exactly the assigned approved plan in the current worktree.",
-    "Inspect repository reality before assuming. Resolve ordinary engineering details yourself.",
-    "Use the explore tool for narrow read-only research when it will reduce context or improve confidence.",
-    "Do not edit plans/ workflow artifacts, change product semantics, rebase, push, reset, stash, clean, or manage worktrees.",
-    "Run the declared plan checks. Produce exactly one coherent commit descended from the supplied base with trailer `Plan-ID: <id>`.",
-    "If retrying and the plan commit already exists, amend it instead of adding another commit.",
-    "If the approved plan is materially wrong or requires a semantic/architecture decision outside its contract, stop and end with NEEDS_REPLAN plus precise evidence.",
-  ].join("\n");
-}
+const CONVENTIONAL_COMMIT_RE = /^[a-z][a-z0-9-]*(\([^)]+\))?!?: .+/;
 
 async function validatePlanCommit(cwd, base, plan) {
   const head = await git(cwd, ["rev-parse", "HEAD"]);
   const count = Number(await git(cwd, ["rev-list", "--count", `${base}..${head}`]));
   if (count !== 1) return { ok: false, reason: `expected exactly one commit for ${plan.id}, found ${count}` };
   const message = await git(cwd, ["log", "-1", "--format=%B"]);
-  if (!message.includes(`Plan-ID: ${plan.id}`)) return { ok: false, reason: `commit is missing Plan-ID: ${plan.id}` };
+  const subject = message.split("\n", 1)[0];
+  if (!CONVENTIONAL_COMMIT_RE.test(subject)) return { ok: false, reason: `commit is not Conventional Commits format: ${subject}` };
+  const workflowId = new RegExp(`(^|[^A-Za-z0-9])${plan.id}([^A-Za-z0-9]|$)`, "i");
+  if (workflowId.test(message)) return { ok: false, reason: `commit message leaks workflow ID ${plan.id}` };
   const dirty = await statusPorcelain(cwd);
   if (dirty) return { ok: false, reason: `worktree is not clean after Builder:\n${dirty}` };
   const checks = await runChecks(cwd, plan.checks || []);
@@ -436,13 +440,12 @@ async function runPlan(ctx, project, progress, entry) {
       `Execution contract: ${entry.file}`,
       `Accepted predecessor: ${base}`,
       failure ? `Previous attempt evidence:\n${failure}` : "",
-      "Implement exactly this approved plan, verify it, and leave exactly one plan commit.",
     ].filter(Boolean).join("\n\n");
     const result = await runVisibleAgent(ctx, {
       title: `${plan.id} · ${plan.title || "Builder"}`,
       subtitle: `${profile.model || "model"}/${profile.thinking || "default"} · attempt ${attempt}/${max}`,
       profile,
-      system: builderSystem(),
+      system: readSkill("dev-implement"),
       prompt,
       tools: ["read", "bash", "edit", "write", "explore"],
       env: { DEV_WORKFLOW_CHILD: "1" },
@@ -779,13 +782,13 @@ function parseWorkerJson(text) {
 
 function shipReviewerSystem() {
   return [
-    "Review one exact shipping candidate against the approved spec and repository reality.",
-    "Use the approved plans/repairs, exact diff/history, local verification, CI, PR/bot feedback, tests, and relevant primary references. Treat terminal red CI and comments as evidence to verify, not authority.",
-    "Be bounded/adversarial but conservative: report only concrete material correctness, spec, compatibility, or proof gaps; ignore taste. Pass means no material issue found. Use explore for narrow read-only verification.",
-    "Do not edit files. Return only JSON.",
-    'Schema: {"status":"pass|repairs|blocked","summary":"...","review_focus":["..."],"validation":["..."],"findings":[{"key":"stable.root.cause","title":"...","reason":"...","evidence":["..."],"repair":{"title":"...","goal":"...","requirements":["..."],"checks":["..."]}}]}',
-    "Use repairs only for implementation defects whose correct behavior is fixed by the spec. Use blocked for a real semantic/product/API/architecture/scope decision.",
-    "Finding keys identify root causes and must stay stable across candidates. If human feedback is supplied, it must result in repairs or blocked, never pass.",
+    readSkill("dev-review"),
+    "",
+    "Controller invocation contract:",
+    "- Do not edit files or use human UI. Return only JSON.",
+    '- Schema: {"status":"pass|repairs|blocked","summary":"...","review_focus":["..."],"validation":["..."],"findings":[{"key":"stable.root.cause","title":"...","reason":"...","evidence":["..."],"repair":{"title":"...","goal":"...","requirements":["..."],"checks":["..."]}}]}',
+    "- Finding keys identify root causes and must stay stable across candidates.",
+    "- If human feedback is supplied, it must result in repairs or blocked, never pass.",
   ].join("\n");
 }
 
@@ -1385,7 +1388,13 @@ export default function (pi) {
   });
   pi.registerCommand("dev-review", {
     description: "Synthesize completed CI + bot/PR signals, adversarial review, and human-approved narrow repairs",
-    handler: async (args, ctx) => launchSkill(pi, ctx, "review", "dev-review", args, true),
+    handler: async (args, ctx) => launchSkill(pi, ctx, "review", "dev-review", args, true, [
+      "This is the manual review command.",
+      "Present one workflow_brief with candidate summary, architecture/behavior impact, CI + PR/bot signals, validation, risks, conclusion, and repair proposals if needed.",
+      "If clean, only explicit human approval writes review.toon status pass bound to exact HEAD/PR.",
+      "For repairs, let the human inspect, deselect/filter, or give feedback; only selected explicit approvals become new immutable repairs/RNNN.toon IDs, then write review.toon status repairs_approved.",
+      "Never reuse a repair ID.",
+    ].join("\n")),
   });
   pi.registerCommand("dev-ship", {
     description: "Drive the robust build-to-ready-PR shipping loop",
