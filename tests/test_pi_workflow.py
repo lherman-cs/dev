@@ -36,18 +36,20 @@ class PiWorkflowAssets(unittest.TestCase):
         self.assertIn('name: "workflow_brief"', ext)
         self.assertNotIn("Lavish", workflow)
 
-    def test_prepare_review_ship_boundaries(self):
-        prepare = (ROOT / "dotfiles/.agents/skills/dev-prepare/SKILL.md").read_text()
-        review = (ROOT / "dotfiles/.agents/skills/dev-review/SKILL.md").read_text()
-        ship = (ROOT / "dotfiles/.agents/skills/dev-ship/SKILL.md").read_text()
-        self.assertIn("Do not wait for CI", prepare)
-        self.assertIn("GREEN or RED", review)
+    def test_manual_skills_are_compact_and_single_purpose(self):
+        skills = ROOT / "dotfiles/.agents/skills"
+        expected = {"dev-spec", "dev-plan", "dev-prepare", "dev-review"}
+        self.assertEqual({p.name for p in skills.iterdir() if p.is_dir()}, expected)
+        for name in expected:
+            text = (skills / name / "SKILL.md").read_text()
+            self.assertLess(len(text.encode()), 2000)
+            self.assertNotIn("DEV_WORKFLOW_SHIP", text)
+
+        prepare = (skills / "dev-prepare/SKILL.md").read_text()
+        review = (skills / "dev-review/SKILL.md").read_text()
+        self.assertIn("Do not invent product changes", prepare)
+        self.assertIn("terminal CI/checks", review)
         self.assertIn("repairs/RNNN.toon", review)
-        self.assertIn("explicitly approved repairs", review)
-        self.assertIn("DEV_WORKFLOW_SHIP=1", review)
-        self.assertIn("source.finding_key", review)
-        self.assertIn("exact current HEAD", ship)
-        self.assertIn("Do not merge", ship)
 
     def test_ship_loop_is_small_deterministic_outer_control(self):
         workflow = (ROOT / "WORKFLOW.md").read_text()
@@ -57,7 +59,9 @@ class PiWorkflowAssets(unittest.TestCase):
         self.assertIn("async function awaitShipSignals", ext)
         self.assertIn("--force-with-lease", ext)
         self.assertIn("approved_head", ext)
-        self.assertIn("DEV_WORKFLOW_SHIP", ext)
+        self.assertNotIn("DEV_WORKFLOW_SHIP", ext)
+        self.assertIn("shipReviewerSystem", ext)
+        self.assertIn("finalizerSystem", ext)
         self.assertIn("fs.renameSync(temp, file)", ext)
         self.assertIn("No orchestrator agent", workflow)
         self.assertIn("No model tokens are consumed while waiting", workflow)
