@@ -101,7 +101,7 @@ function lavishReviewInvocation(stage) {
   return [
     `Use Lavish for this ${stage} human-review gate.`,
     "Run `lavish-axi --help`, then `lavish-axi design` and every matching `lavish-axi playbook <id>` before authoring HTML.",
-    `Write/update plans/<project>/${stage}-review.html, open it with `lavish-axi <file>`, then use `lavish-axi poll <file>` for feedback.`,
+    `Write/update plans/<project>/${stage}-review.html, open it with lavish-axi <file>, then use lavish-axi poll <file> for feedback.`,
     "Revise and poll until explicit human approval or the review is ended. Follow the CLI next_step guidance for reconnect/end handling.",
   ].join("\n");
 }
@@ -990,7 +990,6 @@ async function runLavishFinalReview(ctx, project, ship) {
 }
 
 async function finalHumanReview(ctx, project, loaded, ship) {
-  const review = await decodeToon(path.join(project.dir, "review.toon"));
   const candidate = ship.data.candidate;
   if (ship.data.approved_head !== candidate.head) {
     const decision = await runLavishFinalReview(ctx, project, ship);
