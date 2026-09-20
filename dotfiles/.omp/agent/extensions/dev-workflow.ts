@@ -67,22 +67,22 @@ function findProjects(cwd) {
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
-function projectFromPath(cwd, value) {
-  let current = path.resolve(cwd, value);
-  if (!fs.existsSync(current)) return undefined;
-  if (!fs.statSync(current).isDirectory()) current = path.dirname(current);
+function projectFromTarget(cwd, target) {
+  const raw = String(target || "").trim();
+  if (!raw) return undefined;
 
-  const root = path.resolve(cwd);
-  const relative = path.relative(root, current);
-  if (relative.startsWith("..") || path.isAbsolute(relative)) return undefined;
-
-  while (true) {
-    if (fs.existsSync(path.join(current, "project.toon"))) {
-      return { name: path.basename(current), dir: current };
-    }
-    if (current === root) break;
-    current = path.dirname(current);
+  const normalized = path.normalize(raw).replace(/\\/g, "/");
+  const parts = normalized.split("/").filter(Boolean);
+  const plansIndex = parts.lastIndexOf("plans");
+  if (plansIndex >= 0 && parts[plansIndex + 1]) {
+    const name = parts[plansIndex + 1];
+    return { name, dir: path.join(cwd, "plans", name) };
   }
+
+  if (!raw.includes("/") && !raw.includes("\\")) {
+    return { name: raw, dir: path.join(cwd, "plans", raw) };
+  }
+
   return undefined;
 }
 
@@ -90,21 +90,22 @@ async function chooseProject(ctx, arg) {
   const projects = findProjects(ctx.cwd);
   const target = String(arg || "").trim();
   if (target) {
-    const named = projects.find((project) => project.name === target);
-    if (named) return named;
-    const fromPath = projectFromPath(ctx.cwd, target);
-    if (fromPath) return fromPath;
-    throw new Error(`Unknown project or project path ${target}`);
+    const project = projectFromTarget(ctx.cwd, target);
+    if (project) return project;
+    throw new Error(`Expected a project name or plans/<project>/... path, got ${target}`);
   }
   if (projects.length === 1) return projects[0];
   if (projects.length === 0) throw new Error("No planned project under plans/<project>. Run /dev-spec and /dev-plan first.");
-  if (!ctx.hasUI) throw new Error("Multiple projects found; pass a project name or any path inside it.");
+  if (!ctx.hasUI) throw new Error("Multiple projects found; pass a project name or plans/<project>/... path.");
   const picked = await ctx.ui.select("Project", projects.map((p) => p.name));
   return projects.find((p) => p.name === picked);
 }
 
 async function loadProject(project) {
   const projectFile = path.join(project.dir, "project.toon");
+  if (!fs.existsSync(projectFile)) {
+    throw new Error(`Missing ${projectFile}. Run /dev-plan first.`);
+  }
   const data = await decodeToon(projectFile);
   if (data.status !== "ready") throw new Error(`${projectFile} is not approved/ready.`);
   const plansDir = path.join(project.dir, "plans");
