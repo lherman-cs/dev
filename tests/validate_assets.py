@@ -13,9 +13,10 @@ def main():
 
     omp = ROOT / "dotfiles/.omp/agent"
     ext = omp / "extensions/dev-workflow.ts"
-    cfg = omp / "config.yml"
+    workflow_cfg = omp / "dev-workflow.yml"
     skills = omp / "skills"
-    check(ext.is_file() and cfg.is_file(), "OMP driver + config present")
+    check(ext.is_file() and workflow_cfg.is_file(), "OMP driver + workflow overlay present")
+    check(not (omp / "config.yml").exists(), "user OMP config is not repository-managed")
     check(not (omp / "commands").exists(), "no prompt-relay workflow commands")
     check(not (omp / "agents").exists(), "no relay-only specialist wrappers")
 
@@ -29,8 +30,9 @@ def main():
         check("workflow_brief" not in text and "Lavish" not in text, f"{name} has no retired UI")
 
     driver = ext.read_text()
-    for command in ["dev-spec", "dev-plan", "dev-build", "dev-prepare", "dev-review", "dev-ship"]:
+    for command in ["dev-build", "dev-prepare", "dev-review", "dev-ship"]:
         check(f'registerCommand("{command}"' in driver, f"deterministic /{command} command")
+    check('registerCommand("dev-spec"' not in driver and 'registerCommand("dev-plan"' not in driver, "Spec/Plan are launcher-owned, not extension-relayed")
     for required in [
         'spawn("omp"',
         '"--mode", "json"',
@@ -45,18 +47,20 @@ def main():
         'async function runShipReviewer',
         'async function finalHumanReview',
         'ctx.ui.askDialog',
-        'function recentConversation',
-        'Recent conversation context:',
+        'function workflowConfigArgs',
+        'dev-workflow.local.yml',
         '"task", "hub"',
         'ship.toon',
         '--force-with-lease',
         'CONVENTIONAL_COMMIT_RE',
+        '"ls-files", "--", "plans"',
+        '"rev-parse", "--git-path", "info/exclude"',
     ]:
         check(required in driver, f"driver invariant: {required}")
 
     for forbidden in [
         'workflow_brief', 'RichBriefView', 'registerExploreTool', 'DEV_WORKFLOW_CHILD',
-        'DEV_WORKFLOW_EXPLORER', 'spawn("pi"', 'launchSkill(', 'resolvedRoleProfile(',
+        'DEV_WORKFLOW_EXPLORER', 'spawn("pi"', 'launchSkill(', 'resolvedRoleProfile(', 'recentConversation(',
     ]:
         check(forbidden not in driver, f"retired relay/plumbing absent: {forbidden}")
 
@@ -64,28 +68,43 @@ def main():
     check('role: "review"' in driver and 'role: "ship"' in driver, "review/finalizer are direct workers")
     check('role = attempt === 1 ? "builder" : "builder_retry"' in driver, "builder retry role is deterministic")
 
-    config = cfg.read_text()
-    for role in ["default", "spec", "plan", "builder", "builder_retry", "explorer", "review", "ship"]:
-        check(f"  {role}:" in config, f"OMP model role {role}")
+    config = workflow_cfg.read_text()
+    for role in ["spec", "plan", "builder", "builder_retry", "explorer", "review", "ship"]:
+        check(f"  {role}:" in config, f"workflow model role {role}")
     check('scout: "@explorer"' in config, "OMP scout uses explorer role")
     check("renderMermaid: true" in config, "Mermaid rendering enabled")
 
     workflow = (ROOT / "WORKFLOW.md").read_text()
     readme = (ROOT / "README.md").read_text()
     check("Code decides workflow; models decide engineering" in workflow, "driver invariant documented")
-    check("There is no main-model relay" in workflow, "no orchestrator regression documented")
+    check("dev a spec [prompt]" in workflow and "dev a plan [prompt]" in workflow, "interactive launcher documented")
     check("ship.toon" in workflow and "progress.toon" in workflow, "restartable state documented")
-    check("deterministic driver" in readme.lower(), "README describes deterministic architecture")
+    check("config.yml" in workflow and "never manages" in workflow, "user OMP config ownership documented")
+    check(".git/info/exclude" in workflow, "local workflow-state ignore documented")
 
     root_agents = (ROOT / "AGENTS.md").read_text()
     for invariant in ["No duplication or contradiction", "Least-privilege scope", "Do not teach defaults"]:
         check(invariant in root_agents, f"instruction invariant: {invariant}")
-    check("Do not route deterministic workflow phases through a foreground orchestrator model" in root_agents, "orchestrator regression guard")
+    check("Do not route deterministic phases through a foreground orchestrator model" in root_agents, "orchestrator regression guard")
+    check("Never manage or overwrite `~/.omp/agent/config.yml`" in root_agents, "user OMP config guard")
+
+    src = (ROOT / "src/main.rs").read_text()
+    for required in [
+        '#[command(alias = "a")]',
+        'Some(AgentAction::Spec { prompt }) => exec_omp_role("spec", "dev-spec", prompt)',
+        'Some(AgentAction::Plan { prompt }) => exec_omp_role("plan", "dev-plan", prompt)',
+        'Some(AgentAction::Resume { session }) => exec_omp_resume(session)',
+        'format!("/skill:{skill} {}", prompt.join(" "))',
+        'command.arg("--continue")',
+        'dev-workflow.local.yml',
+    ]:
+        check(required in src, f"dev a launcher invariant: {required}")
 
     install = (ROOT / "install.sh").read_text()
     check("can1357/tap/omp" in install and "@toon-format/cli" in install, "OMP + TOON installed")
     check('"$HOME/.omp/agent/commands"/dev-*.md' in install, "stale relay commands cleaned")
     check('"$HOME/.omp/agent/agents"/dev-*.md' in install, "stale relay agents cleaned")
+    check("preserving ~/.omp/agent/config.yml" in install, "installer explicitly preserves user OMP config")
     check("pi install" not in install and "pi-coding-agent" not in install, "Pi harness/plugins remain removed")
 
     for p in (ROOT / "tests").glob("*.py"):
