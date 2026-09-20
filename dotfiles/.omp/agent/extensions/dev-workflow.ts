@@ -6,7 +6,6 @@ import { spawn } from "node:child_process";
 const AGENT_DIR = process.env.PI_CODING_AGENT_DIR || path.join(os.homedir(), ".omp", "agent");
 const SKILL_ROOT = process.env.DEV_WORKFLOW_SKILL_ROOT || path.join(AGENT_DIR, "skills");
 const WORKFLOW_CONFIG = process.env.DEV_WORKFLOW_CONFIG || path.join(AGENT_DIR, "dev-workflow.yml");
-const WORKFLOW_LOCAL_CONFIG = process.env.DEV_WORKFLOW_LOCAL_CONFIG || path.join(AGENT_DIR, "dev-workflow.local.yml");
 const PLAN_RE = /^P\d+\.toon$/;
 const REPAIR_RE = /^R\d+\.toon$/;
 const BUILD_MAX_ATTEMPTS = 2;
@@ -68,19 +67,38 @@ function findProjects(cwd) {
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
+function projectFromPath(cwd, value) {
+  let current = path.resolve(cwd, value);
+  if (!fs.existsSync(current)) return undefined;
+  if (!fs.statSync(current).isDirectory()) current = path.dirname(current);
+
+  const root = path.resolve(cwd);
+  const relative = path.relative(root, current);
+  if (relative.startsWith("..") || path.isAbsolute(relative)) return undefined;
+
+  while (true) {
+    if (fs.existsSync(path.join(current, "project.toon"))) {
+      return { name: path.basename(current), dir: current };
+    }
+    if (current === root) break;
+    current = path.dirname(current);
+  }
+  return undefined;
+}
+
 async function chooseProject(ctx, arg) {
   const projects = findProjects(ctx.cwd);
-  if (arg?.trim()) {
-    const raw = arg.trim().split(/\s+/)[0];
-    const direct = path.resolve(ctx.cwd, raw);
-    if (fs.existsSync(path.join(direct, "project.toon"))) return { name: path.basename(direct), dir: direct };
-    const match = projects.find((p) => p.name === raw);
-    if (match) return match;
-    throw new Error(`Unknown project ${raw}`);
+  const target = String(arg || "").trim();
+  if (target) {
+    const named = projects.find((project) => project.name === target);
+    if (named) return named;
+    const fromPath = projectFromPath(ctx.cwd, target);
+    if (fromPath) return fromPath;
+    throw new Error(`Unknown project or project path ${target}`);
   }
   if (projects.length === 1) return projects[0];
   if (projects.length === 0) throw new Error("No planned project under plans/<project>. Run /dev-spec and /dev-plan first.");
-  if (!ctx.hasUI) throw new Error("Multiple projects found; pass a project name.");
+  if (!ctx.hasUI) throw new Error("Multiple projects found; pass a project name or any path inside it.");
   const picked = await ctx.ui.select("Project", projects.map((p) => p.name));
   return projects.find((p) => p.name === picked);
 }
@@ -203,9 +221,7 @@ function makeTempPrompt(text) {
 
 function workflowConfigArgs() {
   if (!fs.existsSync(WORKFLOW_CONFIG)) throw new Error(`Missing workflow config ${WORKFLOW_CONFIG}. Re-run install.sh.`);
-  const args = ["--config", WORKFLOW_CONFIG];
-  if (fs.existsSync(WORKFLOW_LOCAL_CONFIG)) args.push("--config", WORKFLOW_LOCAL_CONFIG);
-  return args;
+  return ["--config", WORKFLOW_CONFIG];
 }
 
 function spawnJsonAgent(cwd, role, systemPrompt, prompt, tools, onEvent, signal) {

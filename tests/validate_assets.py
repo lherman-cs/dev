@@ -47,13 +47,14 @@ def main():
         'async function finalHumanReview',
         'ctx.ui.askDialog',
         'function workflowConfigArgs',
-        'dev-workflow.local.yml',
         '"task", "hub"',
         'ship.toon',
         '--force-with-lease',
         'CONVENTIONAL_COMMIT_RE',
         '"ls-files", "--", "plans"',
         '"rev-parse", "--git-path", "info/exclude"',
+        'function projectFromPath',
+        'path.relative(root, current)',
     ]:
         check(required in driver, f"driver invariant: {required}")
 
@@ -95,7 +96,6 @@ def main():
     check('format!("/dev-{phase} {}", prompt.join(" "))' in src, "prompted launch routes through symmetric slash command")
     check('omp_phase_args("spec", &[])' in src and 'omp_phase_args("ship", &[])' in src, "bare launch has no user turn regression tests")
     check('command.arg("--continue")' in src, "dev a resume uses OMP continue")
-    check('dev-workflow.local.yml' in src, "launcher supports unmanaged local workflow overrides")
 
     install = (ROOT / "install.sh").read_text()
     check("can1357/tap/omp" in install and "@toon-format/cli" in install, "OMP + TOON installed")
