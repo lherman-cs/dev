@@ -1,70 +1,95 @@
 # dev toolbox
 
-Personal development toolbox plus an OMP-native engineering workflow with a deterministic driver.
+Personal development toolbox plus an OMP-native engineering workflow.
 
 ## Workflow
 
-You create the Git worktree yourself. The normal workflow is:
+The public UX is symmetric:
 
 ```text
-/dev-spec
-    direct Specifier worker -> OMP review/approval
-/dev-plan
-    direct Planner worker -> OMP review/approval
-/dev-ship
-    deterministic build -> prepare -> await -> review/repair -> human approval -> ready PR
+dev a spec [prompt...]
+dev a plan [prompt...]
+dev a build [prompt...]
+dev a prepare [prompt...]
+dev a review [prompt...]
+dev a ship [prompt...]
+dev a resume [session]
 ```
 
-`/dev-build`, `/dev-prepare`, and `/dev-review` remain available as lower-level commands.
+A bare phase launch selects that phase's configured model/thinking and opens OMP interactively with **no synthetic user turn**. Inside the session, trigger the phase with the matching slash command:
+
+```text
+dev a spec
+> /dev-spec design reconnect semantics
+
+dev a build
+> /dev-build my-project
+```
+
+When a prompt is supplied to the CLI, the launcher submits the same slash command immediately:
+
+```text
+dev a spec "design reconnect semantics"
+# equivalent startup action: /dev-spec design reconnect semantics
+
+dev a ship my-project
+# equivalent startup action: /dev-ship my-project
+```
+
+The six phase roles are explicit:
+
+| Phase | Model / thinking |
+| --- | --- |
+| Spec | Sol medium |
+| Plan | Sol high |
+| Build | Sol low |
+| Prepare | Luna medium |
+| Review | Astra low |
+| Ship | Luna medium |
+
+Build retry uses Sol medium. Bundled `scout` uses Luna medium.
+
+`/dev-spec` and `/dev-plan` are thin friendly aliases for OMP's native `dev-spec` and `dev-plan` skills in the **current session**. They do not spawn another Specifier/Planner. Build/Prepare/Review/Ship are deterministic extension commands.
 
 The core invariant is:
 
 > **Code decides workflow; models decide engineering.**
 
-The OMP extension owns dependency ordering, retries, state recovery, exact-commit validation, rebase/GitHub sequencing, CI waiting, repair convergence, and final approval binding. It launches fresh model workers directly with OMP's non-interactive JSON mode, so there is no foreground orchestrator model relaying every skill or worker result.
+## Configuration
 
-OMP still owns the harness capabilities that should not be duplicated locally:
-
-- model roles
-- `task` / bundled `scout` for worker-local exploration
-- Agent Hub
-- LSP/GitHub/browser/web tooling
-- Markdown + Mermaid rendering
-- native review dialogs
-
-Durable workflow state stays ignored under `plans/<project>/`:
-
-```text
-spec.md
-project.toon
-progress.toon
-ship.toon
-plans/P001.toon
-repairs/R001.toon
-review.toon
-```
-
-Git remains implementation truth; the approved spec remains semantic truth.
-
-## Models
-
-Role/model routing is native OMP configuration in:
+This repository never owns or overwrites:
 
 ```text
 ~/.omp/agent/config.yml
 ```
 
-The driver launches `@spec`, `@plan`, `@builder`, `@builder_retry`, `@review`, and `@ship` directly. Any worker may delegate narrow read-only research to bundled `scout`, which is routed through `@explorer`.
+Workflow defaults are installed separately at:
 
-See [WORKFLOW.md](WORKFLOW.md) for the contracts.
+```text
+~/.omp/agent/dev-workflow.yml
+```
+
+Optional personal workflow overrides may be placed in:
+
+```text
+~/.omp/agent/dev-workflow.local.yml
+```
+
+The local override is not repository-managed. Both `dev a` and isolated workflow workers pass these files as OMP `--config` overlays.
+
+## Workflow state
+
+Durable state lives under `plans/<project>/`. The extension automatically adds `/plans/` to the repository-local `.git/info/exclude` if needed, so the repository's `.gitignore` does not need to change.
+
+If the repository already tracks files under `plans/`, the workflow stops because that is a real namespace collision.
+
+See [WORKFLOW.md](WORKFLOW.md) for the detailed contracts.
 
 ## Bootstrap
 
 ```sh
 bash <(curl -L https://raw.githubusercontent.com/lherman-cs/dev/main/install.sh)
 ```
-
-The installer installs OMP and TOON, links the dotfiles, and removes retired Pi assets plus the temporary prompt-relay OMP commands/agents from the first migration.
 
 ## Other toolbox notes
 
