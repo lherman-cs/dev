@@ -181,6 +181,29 @@ function extractMessageText(message) {
   return message.content.filter((c) => c?.type === "text").map((c) => c.text || "").join("\n").trim();
 }
 
+function recentConversation(ctx, maxChars = 12_000) {
+  const branch = ctx.sessionManager?.getBranch?.() || [];
+  const messages = [];
+  for (const entry of branch) {
+    if (entry?.type !== "message") continue;
+    const message = entry.message;
+    if (message?.role !== "user" && message?.role !== "assistant") continue;
+    let text = "";
+    if (typeof message.content === "string") text = message.content;
+    else if (Array.isArray(message.content)) {
+      text = message.content
+        .filter((part) => part?.type === "text" && typeof part.text === "string")
+        .map((part) => part.text)
+        .join("\n");
+    }
+    text = text.trim();
+    if (text) messages.push(`${message.role === "user" ? "User" : "Assistant"}: ${text}`);
+  }
+  let out = messages.slice(-16).join("\n\n");
+  if (out.length > maxChars) out = out.slice(-maxChars);
+  return out;
+}
+
 function makeTempPrompt(text) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dev-workflow-"));
   const file = path.join(dir, "system.md");
@@ -978,8 +1001,10 @@ async function driveSpec(ctx, args) {
   let feedback = "";
   let projectName = "";
   while (true) {
+    const conversation = recentConversation(ctx);
     const draft = await runDraftWorker(ctx, "spec", "dev-spec", [
       args?.trim() ? `User request: ${args.trim()}` : "Define the requested outcome from the supplied repository context.",
+      conversation ? `Recent conversation context:\n${conversation}` : "",
       projectName ? `Existing project name: ${projectName}` : "",
       feedback ? `Human feedback: ${feedback}` : "",
     ].filter(Boolean).join("\n\n"), '{"project":"plans directory name","summary":"one paragraph","preview":"review Markdown"}');
