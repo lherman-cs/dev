@@ -45,6 +45,8 @@ def main():
         'async function runShipReviewer',
         'async function finalHumanReview',
         'ctx.ui.askDialog',
+        'function recentConversation',
+        'Recent conversation context:',
         '"task", "hub"',
         'ship.toon',
         '--force-with-lease',
