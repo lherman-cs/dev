@@ -156,8 +156,36 @@ enum Commands {
     /// Runs a tui to play a lofi radio
     Radio,
 
+    /// Launch interactive OMP workflow roles
+    #[command(alias = "a")]
+    Agent {
+        #[command(subcommand)]
+        action: Option<AgentAction>,
+    },
+
     /// Show workspace statistics
     Stats,
+}
+
+#[derive(Subcommand)]
+enum AgentAction {
+    /// Start the Specifier role; a prompt immediately invokes dev-spec.
+    #[command(alias = "s", visible_alias = "specifier")]
+    Spec {
+        prompt: Vec<String>,
+    },
+
+    /// Start the Planner role; a prompt immediately invokes dev-plan.
+    #[command(alias = "p", visible_alias = "planner")]
+    Plan {
+        prompt: Vec<String>,
+    },
+
+    /// Resume an existing OMP session while reapplying only the workflow overlay.
+    Resume {
+        /// Optional session id/path. Omitted continues the most recent session.
+        session: Option<String>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -1632,6 +1660,88 @@ fn match_json_path(value: &Value, path: &str, pattern: &Regex) -> bool {
     }
 }
 
+fn omp_workflow_config_paths() -> Result<Vec<PathBuf>> {
+    let home = dirs::home_dir().ok_or_else(|| anyhow!("Could not determine home directory"))?;
+    let agent_dir = home.join(".omp").join("agent");
+    let defaults = agent_dir.join("dev-workflow.yml");
+    if !defaults.is_file() {
+        bail!(
+            "Missing {}. Re-run install.sh to install the OMP workflow assets.",
+            defaults.display()
+        );
+    }
+
+    let mut paths = vec![defaults];
+    let local = agent_dir.join("dev-workflow.local.yml");
+    if local.is_file() {
+        paths.push(local);
+    }
+    Ok(paths)
+}
+
+fn omp_workflow_command() -> Result<Command> {
+    let mut command = Command::new("omp");
+    for config in omp_workflow_config_paths()? {
+        command.arg("--config").arg(config);
+    }
+    Ok(command)
+}
+
+fn run_omp(mut command: Command) -> Result<()> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        Err(command.exec()).context("Failed to exec omp")
+    }
+    #[cfg(not(unix))]
+    {
+        let status = command.status().context("Failed to launch omp")?;
+        if !status.success() {
+            bail!("omp exited with status {status}");
+        }
+        Ok(())
+    }
+}
+
+fn exec_omp_role(role: &str, skill: &str, prompt: Vec<String>) -> Result<()> {
+    let mut command = omp_workflow_command()?;
+    command.arg("--model").arg(format!("@{role}"));
+
+    if !prompt.is_empty() {
+        command
+            .arg("--")
+            .arg(format!("/skill:{skill} {}", prompt.join(" ")));
+    }
+
+    info!("Starting OMP with '{role}' workflow role");
+    run_omp(command)
+}
+
+fn exec_omp_resume(session: Option<String>) -> Result<()> {
+    let mut command = omp_workflow_command()?;
+    match session {
+        Some(session) => {
+            if session.trim().is_empty() {
+                bail!("Session ID/path must not be empty");
+            }
+            command.arg("--resume").arg(session);
+        }
+        None => {
+            command.arg("--continue");
+        }
+    }
+    run_omp(command)
+}
+
+fn cmd_agent(action: Option<AgentAction>) -> Result<()> {
+    match action {
+        None => run_omp(omp_workflow_command()?),
+        Some(AgentAction::Spec { prompt }) => exec_omp_role("spec", "dev-spec", prompt),
+        Some(AgentAction::Plan { prompt }) => exec_omp_role("plan", "dev-plan", prompt),
+        Some(AgentAction::Resume { session }) => exec_omp_resume(session),
+    }
+}
+
 fn run_shell(program: &str) -> Result<()> {
     Command::new(program)
         .status()
@@ -1676,6 +1786,7 @@ fn main() {
             members,
         } => cmd_exec(command, args, parallel, members),
         Commands::Radio => run_shell("cliamp"),
+        Commands::Agent { action } => cmd_agent(action),
         Commands::Stats => cmd_stats(),
     };
 
