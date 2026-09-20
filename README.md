@@ -65,3 +65,30 @@ bash <(curl -L https://raw.githubusercontent.com/lherman-cs/dev/main/install.sh)
 ```
 
 The installer installs OMP and TOON, links the dotfiles, and removes retired Pi assets plus the temporary prompt-relay OMP commands/agents from the first migration.
+
+## Other toolbox notes
+
+### LSP configs
+
+<https://github.com/neovim/nvim-lspconfig/blob/main/CONFIG.md>
+
+### Different SSH keys per project
+
+```text
+Host personal
+    HostName github.com
+    User git
+    IdentityFile ~/.ssh/personal
+    IdentitiesOnly yes
+```
+
+### Missing Nerd symbols
+
+<https://webinstall.dev/nerdfont/>
+
+### Toggle Linux text/graphical mode
+
+```sh
+sudo systemctl isolate multi-user.target
+sudo systemctl isolate graphical.target
+```
