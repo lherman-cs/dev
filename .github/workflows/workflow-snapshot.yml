@@ -1,0 +1,19 @@
+name: workflow validation inputs
+on:
+  push:
+    branches: [fix/omp-workflow-contracts]
+permissions:
+  contents: read
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - run: git archive -o /tmp/dev-source.tar HEAD
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dev-source
+          path: /tmp/dev-source.tar
+          retention-days: 1
