@@ -5,6 +5,8 @@ import { spawn } from "node:child_process";
 
 const AGENT_DIR = process.env.PI_CODING_AGENT_DIR || path.join(os.homedir(), ".omp", "agent");
 const SKILL_ROOT = process.env.DEV_WORKFLOW_SKILL_ROOT || path.join(AGENT_DIR, "skills");
+const WORKFLOW_CONFIG = process.env.DEV_WORKFLOW_CONFIG || path.join(AGENT_DIR, "dev-workflow.yml");
+const WORKFLOW_LOCAL_CONFIG = process.env.DEV_WORKFLOW_LOCAL_CONFIG || path.join(AGENT_DIR, "dev-workflow.local.yml");
 const PLAN_RE = /^P\d+\.toon$/;
 const REPAIR_RE = /^R\d+\.toon$/;
 const BUILD_MAX_ATTEMPTS = 2;
@@ -105,8 +107,22 @@ async function loadProject(project) {
 }
 
 async function ensureIgnored(cwd) {
-  const r = await run("git", ["check-ignore", "-q", "plans"], cwd);
-  if (r.code !== 0) throw new Error("plans/ must be Git-ignored before using the workflow.");
+  const tracked = await git(cwd, ["ls-files", "--", "plans"]);
+  if (tracked) {
+    throw new Error("Workflow state uses plans/, but this repository already tracks files there.");
+  }
+
+  const ignored = await run("git", ["check-ignore", "-q", "--no-index", "plans/"], cwd);
+  if (ignored.code === 0) return;
+
+  const gitPath = await git(cwd, ["rev-parse", "--git-path", "info/exclude"]);
+  const exclude = path.isAbsolute(gitPath) ? gitPath : path.resolve(cwd, gitPath);
+  fs.mkdirSync(path.dirname(exclude), { recursive: true });
+  const current = fs.existsSync(exclude) ? fs.readFileSync(exclude, "utf8") : "";
+  if (!current.split(/\r?\n/).some((line) => line.trim() === "/plans/")) {
+    const prefix = current && !current.endsWith("\n") ? "\n" : "";
+    fs.appendFileSync(exclude, `${prefix}/plans/\n`);
+  }
 }
 
 async function statusPorcelain(cwd) {
@@ -181,29 +197,6 @@ function extractMessageText(message) {
   return message.content.filter((c) => c?.type === "text").map((c) => c.text || "").join("\n").trim();
 }
 
-function recentConversation(ctx, maxChars = 12_000) {
-  const branch = ctx.sessionManager?.getBranch?.() || [];
-  const messages = [];
-  for (const entry of branch) {
-    if (entry?.type !== "message") continue;
-    const message = entry.message;
-    if (message?.role !== "user" && message?.role !== "assistant") continue;
-    let text = "";
-    if (typeof message.content === "string") text = message.content;
-    else if (Array.isArray(message.content)) {
-      text = message.content
-        .filter((part) => part?.type === "text" && typeof part.text === "string")
-        .map((part) => part.text)
-        .join("\n");
-    }
-    text = text.trim();
-    if (text) messages.push(`${message.role === "user" ? "User" : "Assistant"}: ${text}`);
-  }
-  let out = messages.slice(-16).join("\n\n");
-  if (out.length > maxChars) out = out.slice(-maxChars);
-  return out;
-}
-
 function makeTempPrompt(text) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dev-workflow-"));
   const file = path.join(dir, "system.md");
@@ -211,10 +204,19 @@ function makeTempPrompt(text) {
   return { dir, file };
 }
 
+function workflowConfigArgs() {
+  if (!fs.existsSync(WORKFLOW_CONFIG)) {
+    throw new Error(`Missing workflow config ${WORKFLOW_CONFIG}. Re-run install.sh.`);
+  }
+  const args = ["--config", WORKFLOW_CONFIG];
+  if (fs.existsSync(WORKFLOW_LOCAL_CONFIG)) args.push("--config", WORKFLOW_LOCAL_CONFIG);
+  return args;
+}
+
 function spawnJsonAgent(cwd, role, systemPrompt, prompt, tools, onEvent, signal) {
   return new Promise((resolve) => {
     const tmp = makeTempPrompt(systemPrompt);
-    const args = ["--mode", "json", "-p", "--no-session", "--model", `@${role}`];
+    const args = [...workflowConfigArgs(), "--mode", "json", "-p", "--no-session", "--model", `@${role}`];
     const allowedTools = [...new Set([...(tools || []), "task", "hub"])];
     if (allowedTools.length) args.push("--tools", allowedTools.join(","));
     args.push("--append-system-prompt", tmp.file, "--", prompt);
@@ -963,88 +965,6 @@ async function driveShip(ctx, args) {
   }
 }
 
-function draftWorkerSystem(skill, schema) {
-  return [
-    readSkill(skill),
-    "",
-    "Driver invocation contract:",
-    "- Do not ask the human directly.",
-    "- Perform the requested work and write the workflow artifacts.",
-    "- Return only JSON.",
-    `- Schema: ${schema}`,
-    "- preview is concise Markdown for human review and may include a fenced mermaid block only when useful.",
-  ].join("\n");
-}
-
-async function runDraftWorker(ctx, role, skill, prompt, schema) {
-  const result = await runVisibleAgent(ctx, {
-    title: role === "spec" ? "Specifier" : "Planner",
-    role,
-    system: draftWorkerSystem(skill, schema),
-    prompt,
-    tools: ["read", "grep", "glob", "bash", "edit", "write"],
-  });
-  if (result?.aborted) throw new Error(`${role} worker aborted; draft artifacts are preserved.`);
-  if (result.code !== 0) throw new Error(`${role} worker failed: ${result.stderr || result.stdout}`);
-  return parseWorkerJson(result.stdout);
-}
-
-function approveSpecFile(file) {
-  let text = fs.readFileSync(file, "utf8");
-  if (/^Status:\s*.*$/mi.test(text)) text = text.replace(/^Status:\s*.*$/mi, "Status: APPROVED");
-  else text = `Status: APPROVED\n\n${text}`;
-  fs.writeFileSync(file, text);
-}
-
-async function driveSpec(ctx, args) {
-  await ensureIgnored(ctx.cwd);
-  let feedback = "";
-  let projectName = "";
-  while (true) {
-    const conversation = recentConversation(ctx);
-    const draft = await runDraftWorker(ctx, "spec", "dev-spec", [
-      args?.trim() ? `User request: ${args.trim()}` : "Define the requested outcome from the supplied repository context.",
-      conversation ? `Recent conversation context:\n${conversation}` : "",
-      projectName ? `Existing project name: ${projectName}` : "",
-      feedback ? `Human feedback: ${feedback}` : "",
-    ].filter(Boolean).join("\n\n"), '{"project":"plans directory name","summary":"one paragraph","preview":"review Markdown"}');
-    projectName = String(draft.project || "").trim();
-    if (!/^[A-Za-z0-9._-]+$/.test(projectName)) throw new Error("Specifier returned an invalid project name.");
-    const specFile = path.join(ctx.cwd, "plans", projectName, "spec.md");
-    if (!fs.existsSync(specFile)) throw new Error(`Specifier did not write ${specFile}`);
-    const decision = await askApproval(ctx, `Approve spec for ${projectName}?`, String(draft.preview || draft.summary || fs.readFileSync(specFile, "utf8")));
-    if (decision.action === "cancel") return;
-    if (decision.action === "feedback") { feedback = decision.feedback || ""; continue; }
-    approveSpecFile(specFile);
-    ctx.ui.notify(`Approved spec: ${projectName}`, "info");
-    return;
-  }
-}
-
-async function drivePlan(ctx, args) {
-  await ensureIgnored(ctx.cwd);
-  const project = await chooseProject(ctx, args);
-  if (!project) return;
-  const specFile = path.join(project.dir, "spec.md");
-  if (!fs.existsSync(specFile) || !/^Status:\s*APPROVED\s*$/mi.test(fs.readFileSync(specFile, "utf8"))) throw new Error(`${project.name} does not have an approved spec.`);
-  let feedback = "";
-  while (true) {
-    const draft = await runDraftWorker(ctx, "plan", "dev-plan", [
-      `Approved spec: ${specFile}`,
-      `Project directory: ${project.dir}`,
-      feedback ? `Human feedback: ${feedback}` : "",
-    ].filter(Boolean).join("\n\n"), '{"summary":"one paragraph","preview":"architecture/plan review Markdown"}');
-    const loaded = await loadProject(project);
-    const decision = await askApproval(ctx, `Approve implementation plan for ${project.name}?`, String(draft.preview || draft.summary || "Plan artifacts are ready."));
-    if (decision.action === "cancel") return;
-    if (decision.action === "feedback") { feedback = decision.feedback || ""; continue; }
-    loaded.data.status = "ready";
-    await writeToon(loaded.file, loaded.data);
-    ctx.ui.notify(`Approved plan: ${project.name}`, "info");
-    return;
-  }
-}
-
 async function drivePrepare(ctx, args) {
   await ensureIgnored(ctx.cwd);
   const project = await chooseProject(ctx, args);
@@ -1114,12 +1034,6 @@ async function driveManualReview(ctx, args) {
 }
 
 export default function (pi) {
-  pi.registerCommand("dev-spec", { description: "Define and approve project semantics with a direct Specifier worker", handler: async (args, ctx) => {
-    try { await driveSpec(ctx, args); } catch (error) { ctx.ui.notify(error instanceof Error ? error.message : String(error), "error"); }
-  }});
-  pi.registerCommand("dev-plan", { description: "Compile the approved spec into directly reviewed implementation plans", handler: async (args, ctx) => {
-    try { await drivePlan(ctx, args); } catch (error) { ctx.ui.notify(error instanceof Error ? error.message : String(error), "error"); }
-  }});
   pi.registerCommand("dev-build", { description: "Deterministically drive fresh Builders through every approved plan/repair", handler: async (args, ctx) => {
     try { await driveBuild(ctx, args); } catch (error) { ctx.ui.notify(error instanceof Error ? error.message : String(error), "error"); } finally { ctx.ui.setStatus("dev-build", undefined); }
   }});
