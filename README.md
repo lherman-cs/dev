@@ -1,60 +1,57 @@
 # dev toolbox
 
-Personal development toolbox plus an OMP-native engineering workflow with a deterministic driver.
+Personal development toolbox plus a small OMP-native engineering workflow.
 
 ## Workflow
 
-You create the Git worktree yourself. The normal workflow is:
+Interactive specification/planning use the tiny `dev a` role launcher:
 
 ```text
-/dev-spec
-    direct Specifier worker -> OMP review/approval
-/dev-plan
-    direct Planner worker -> OMP review/approval
-/dev-ship
-    deterministic build -> prepare -> await -> review/repair -> human approval -> ready PR
+dev a spec
+dev a spec "describe the requested behavior"
+dev a plan
+dev a plan "plan the approved project"
+dev a resume
 ```
 
-`/dev-build`, `/dev-prepare`, and `/dev-review` remain available as lower-level commands.
+A bare `dev a spec` / `dev a plan` only launches OMP with the workflow role selected. Supplying a prompt launches the same role and submits OMP's native `/skill:dev-spec` / `/skill:dev-plan` command as the initial turn. `dev a resume [session]` reapplies only the workflow overlay and resumes the existing OMP session.
 
-The core invariant is:
+Automated phases remain deterministic extension commands:
+
+```text
+/dev-build
+/dev-prepare
+/dev-review
+/dev-ship
+```
+
+The invariant is:
 
 > **Code decides workflow; models decide engineering.**
 
-The OMP extension owns dependency ordering, retries, state recovery, exact-commit validation, rebase/GitHub sequencing, CI waiting, repair convergence, and final approval binding. It launches fresh model workers directly with OMP's non-interactive JSON mode, so there is no foreground orchestrator model relaying every skill or worker result.
+The extension owns dependency ordering, retries, recovery, exact-commit validation, Git/GitHub sequencing, CI waiting, repair convergence, and exact-candidate approval. Builders and Reviewers are fresh isolated OMP workers. There is no foreground orchestrator model relaying workflow phases.
 
-OMP still owns the harness capabilities that should not be duplicated locally:
+OMP owns the harness capabilities: model runtime, skills, `task`/bundled `scout`, Agent Hub, LSP/GitHub/browser/web tooling, Markdown/Mermaid, and native dialogs.
 
-- model roles
-- `task` / bundled `scout` for worker-local exploration
-- Agent Hub
-- LSP/GitHub/browser/web tooling
-- Markdown + Mermaid rendering
-- native review dialogs
+## Configuration
 
-Durable workflow state stays ignored under `plans/<project>/`:
+`install.sh` does **not** own or overwrite `~/.omp/agent/config.yml`.
+
+Workflow-specific defaults are installed at:
 
 ```text
-spec.md
-project.toon
-progress.toon
-ship.toon
-plans/P001.toon
-repairs/R001.toon
-review.toon
+~/.omp/agent/dev-workflow.yml
 ```
 
-Git remains implementation truth; the approved spec remains semantic truth.
-
-## Models
-
-Role/model routing is native OMP configuration in:
+Optional personal workflow overrides belong in:
 
 ```text
-~/.omp/agent/config.yml
+~/.omp/agent/dev-workflow.local.yml
 ```
 
-The driver launches `@spec`, `@plan`, `@builder`, `@builder_retry`, `@review`, and `@ship` directly. Any worker may delegate narrow read-only research to bundled `scout`, which is routed through `@explorer`.
+The local file is never managed by this repository. OMP receives the defaults overlay first and the local overlay second.
+
+Workflow state lives under ignored `plans/<project>/`. The driver automatically adds `/plans/` to the repository's local `.git/info/exclude` when needed; it does not require or edit the repository's `.gitignore`. It stops only if the repository already tracks files under `plans/`, which is a real namespace collision.
 
 See [WORKFLOW.md](WORKFLOW.md) for the contracts.
 
@@ -63,8 +60,6 @@ See [WORKFLOW.md](WORKFLOW.md) for the contracts.
 ```sh
 bash <(curl -L https://raw.githubusercontent.com/lherman-cs/dev/main/install.sh)
 ```
-
-The installer installs OMP and TOON, links the dotfiles, and removes retired Pi assets plus the temporary prompt-relay OMP commands/agents from the first migration.
 
 ## Other toolbox notes
 
