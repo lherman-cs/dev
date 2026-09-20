@@ -52,7 +52,7 @@ export PATH="$HOME/.cargo/bin:$PATH"
 log "Installing dev command"
 cargo install --path . --locked
 
-log "Removing retired Pi workflow assets"
+log "Removing retired workflow assets"
 rm -rf \
   "$HOME/.agents/skills/dev-spec" \
   "$HOME/.agents/skills/dev-plan" \
@@ -63,6 +63,7 @@ rm -rf \
   "$HOME/.agents/skills/dev-project" \
   "$HOME/.agents/skills/dev-ship"
 rm -f "$HOME/.pi/agent/extensions/dev-workflow.ts" "$HOME/.pi/agent/dev-workflow.json"
+rm -f "$HOME/.omp/agent/commands"/dev-*.md "$HOME/.omp/agent/agents"/dev-*.md
 
 log "Linking dotfiles"
 dev reconcile --from "$PWD/dotfiles" --apply

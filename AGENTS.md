@@ -11,9 +11,8 @@ Instruction ownership:
 - `dotfiles/.omp/agent/AGENTS.md`: user-wide preferences only.
 - Repository/local `AGENTS.md`: repository-specific facts and conventions.
 - `dotfiles/.omp/agent/config.yml`: model-role routing and OMP feature settings.
-- `dotfiles/.omp/agent/commands/dev-*.md`: workflow phase sequencing and human gates.
-- `dotfiles/.omp/agent/agents/*.md`: specialist model/tool/spawn boundaries.
-- `dotfiles/.omp/agent/skills/dev-*/SKILL.md`: reusable role-specific authority, outputs, and stop conditions.
+- `dotfiles/.omp/agent/extensions/dev-workflow.ts`: deterministic workflow state/transitions, worker invocation, retries, Git/GitHub sequencing, and human gates.
+- `dotfiles/.omp/agent/skills/dev-*/SKILL.md`: reusable role-specific engineering semantics.
 - `plans/Pxxx.toon` / `repairs/Rxxx.toon`: one task's scope and acceptance checks.
 - `WORKFLOW.md`: documentation, not another prompt-policy source.
 
@@ -21,7 +20,9 @@ Rules:
 
 - A narrower layer may specialize but never restate or contradict a broader layer.
 - Skills are compact, single-purpose, and mode-free.
-- Native OMP primitives (`task`, `scout`, `todo`, `ask`, Agent Hub, Mermaid rendering) are infrastructure; do not recreate them locally.
+- Code decides workflow; models decide engineering.
+- OMP supplies the worker/runtime primitives (`task`, `scout`, Agent Hub, Mermaid, dialogs); do not recreate them locally.
+- Do not route deterministic workflow phases through a foreground orchestrator model.
 - Workflow IDs stay in ignored workflow state, never commit messages.
 - If instructions conflict, fix the sources; do not add precedence prose.
 

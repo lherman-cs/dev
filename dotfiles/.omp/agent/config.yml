@@ -5,8 +5,8 @@ modelRoles:
   builder: openai/gpt-5.6-sol:low
   builder_retry: openai/gpt-5.6-sol:medium
   explorer: openai/gpt-5.6-luna:medium
-  prepare: openai/gpt-5.6-luna:medium
   review: openai/gpt-6-astra:low
+  ship: openai/gpt-5.6-luna:medium
 
 task:
   maxRecursionDepth: 2
