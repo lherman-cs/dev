@@ -1,0 +1,24 @@
+name: checks
+on:
+  pull_request:
+  push:
+    branches: [main, fix/pi-minimal-workflow]
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: pi/package-lock.json
+      - run: npm ci --ignore-scripts --prefix pi
+      - run: npm run check --prefix pi
+      - run: python3 tests/validate_assets.py
+      - run: bash -n install.sh scripts/install-pi.sh
+      - run: cargo test --locked
+      - run: cargo build --locked

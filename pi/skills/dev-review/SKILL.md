@@ -13,4 +13,4 @@ Review the exact candidate against the approved spec.
 - For each repairable issue, define the smallest independent repair with a stable root-cause key, why/scope/evidence, and acceptance checks.
 - BLOCKED is only for a real semantic/product/API/architecture/scope decision not fixed by the approved spec.
 
-Never edit product code or persist raw logs/transcripts.
+Do not rerun passing tests. Never edit product code or persist raw logs/transcripts.
