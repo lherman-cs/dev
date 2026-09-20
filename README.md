@@ -69,13 +69,7 @@ Workflow defaults are installed separately at:
 ~/.omp/agent/dev-workflow.yml
 ```
 
-Optional personal workflow overrides may be placed in:
-
-```text
-~/.omp/agent/dev-workflow.local.yml
-```
-
-The local override is not repository-managed. Both `dev a` and isolated workflow workers pass these files as OMP `--config` overlays.
+Both `dev a` and isolated workflow workers pass the workflow file as an OMP `--config` overlay.
 
 ## Workflow state
 

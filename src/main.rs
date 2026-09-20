@@ -1671,12 +1671,7 @@ fn omp_workflow_config_paths() -> Result<Vec<PathBuf>> {
         );
     }
 
-    let mut paths = vec![defaults];
-    let local = agent_dir.join("dev-workflow.local.yml");
-    if local.is_file() {
-        paths.push(local);
-    }
-    Ok(paths)
+    Ok(vec![defaults])
 }
 
 fn omp_workflow_command() -> Result<Command> {

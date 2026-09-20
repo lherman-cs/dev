@@ -81,7 +81,6 @@ process.env.PATH = bin + path.delimiter + process.env.PATH;
 process.env.OMP_CALLS = calls;
 process.env.DEV_WORKFLOW_SKILL_ROOT = path.join(root, "dotfiles/.omp/agent/skills");
 process.env.DEV_WORKFLOW_CONFIG = path.join(root, "dotfiles/.omp/agent/dev-workflow.yml");
-process.env.DEV_WORKFLOW_LOCAL_CONFIG = path.join(tmp, "missing-local.yml");
 
 const { default: extension } = await import(pathToFileURL(modulePath).href + "?t=" + Date.now());
 const commands = new Map();
@@ -112,13 +111,14 @@ const ctx = {
   },
 };
 
-await commands.get("dev-build").handler("demo", ctx);
+await commands.get("dev-build").handler("./plans/demo/spec.md", ctx);
 
 const progress = JSON.parse(fs.readFileSync(path.join(projectDir, "progress.toon"), "utf8"));
 if (JSON.stringify(progress.done) !== JSON.stringify(["P001","P002"])) {
   throw new Error("unexpected progress: "+JSON.stringify(progress));
 }
 if (progress.current !== null) throw new Error("current plan not cleared");
+if (!fs.existsSync(path.join(repoDir, "built-P002.txt"))) throw new Error("spec.md target did not resolve to project");
 
 const exclude = fs.readFileSync(path.join(repoDir, ".git", "info", "exclude"), "utf8");
 if (!exclude.split(/\r?\n/).includes("/plans/")) throw new Error("driver did not self-ignore workflow state locally");

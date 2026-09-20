@@ -83,7 +83,7 @@ BUILD -> PREPARE -> AWAIT -> REVIEW/REPAIR -> HUMAN -> FINALIZE
 
 The repository **never** manages `~/.omp/agent/config.yml`.
 
-Workflow-owned defaults live at `~/.omp/agent/dev-workflow.yml`; optional personal overrides live at `~/.omp/agent/dev-workflow.local.yml`. Both the CLI launcher and isolated workers pass these files via repeatable OMP `--config` overlays.
+Workflow-owned defaults live at `~/.omp/agent/dev-workflow.yml`. Both the CLI launcher and isolated workers pass that file as an OMP `--config` overlay.
 
 ## Workflow state
 
@@ -97,7 +97,7 @@ Durable workflow artifacts live under `plans/<project>/`:
 - `ship.toon`: restartable shipping state
 - `review.toon`: compact exact-HEAD review result
 
-The extension checks whether Git already tracks `plans/`. If not, it idempotently adds `/plans/` to `.git/info/exclude`. It never requires or edits the repository's `.gitignore`.
+The extension checks whether Git already tracks `plans/`. If not, it idempotently adds `/plans/` to `.git/info/exclude`. A project may be selected by name, its directory, `spec.md`, `project.toon`, or any plan/repair path inside it. It never requires or edits the repository's `.gitignore`.
 
 ## Explorer
 
