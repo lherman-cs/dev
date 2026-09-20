@@ -65,7 +65,7 @@ rm -rf \
 rm -f "$HOME/.pi/agent/extensions/dev-workflow.ts" "$HOME/.pi/agent/dev-workflow.json"
 rm -f "$HOME/.omp/agent/commands"/dev-*.md "$HOME/.omp/agent/agents"/dev-*.md
 
-log "Linking dotfiles"
+log "Linking managed dotfiles (preserving ~/.omp/agent/config.yml)"
 dev reconcile --from "$PWD/dotfiles" --apply
 
 append_shell "source '$HOME/.extend.rc'"
@@ -75,4 +75,4 @@ if ! command -v webi >/dev/null 2>&1 && [[ ! -d "$HOME/.local/bin/nerdfont" ]]; 
   curl -sS https://webi.sh/nerdfont | sh
 fi
 
-log "Done. OMP workflow commands: /dev-spec /dev-plan /dev-build /dev-prepare /dev-review /dev-ship"
+log "Done. Launch phases with dev a spec|plan|build|prepare|review|ship; trigger with /dev-<phase>."

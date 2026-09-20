@@ -1,106 +1,104 @@
-# OMP-native deterministic development workflow
+# OMP-native development workflow
 
-## Design
-
-OMP is the harness. A small extension is the workflow driver. Fresh model workers own engineering judgment.
-
-The invariant is:
+## Principle
 
 > **Code decides workflow; models decide engineering.**
 
-The driver must never outsource deterministic phase selection, retry policy, dependency ordering, progress updates, exact-HEAD checks, polling, or convergence control to a foreground orchestrator model.
-
-OMP provides model roles, worker tool/runtime integration, bundled `scout`, Agent Hub, Mermaid rendering, and native human dialogs. The driver uses those primitives instead of reimplementing them.
-
-## Lifecycle
+The public workflow surface is symmetric:
 
 ```text
-human creates worktree
-        |
-     /dev-spec
-        |  direct @spec worker
-        |  native OMP review/approval
-     /dev-plan
-        |  direct @plan worker
-        |  native OMP review/approval
-     /dev-ship
-        |
-        |  BUILD
-        |    deterministic dependency selection
-        |    direct @builder / @builder_retry workers
-        |    independent commit/check verification
-        |
-        |  PREPARE
-        |    deterministic fetch/rebase/final gates/push/draft PR
-        |    direct worker only when a conflict needs judgment
-        |
-        |  AWAIT
-        |    deterministic exact-HEAD GitHub polling
-        |    no model tokens while waiting
-        |
-        |  REVIEW
-        |    direct @review worker
-        |    bounded repair convergence
-        |
-        |  HUMAN
-        |    OMP ask dialog + Markdown/Mermaid preview
-        |
-        `-- FINALIZE
-             direct @ship worker for PR prose only
-             deterministic PR update + ready transition
+dev a <phase> [prompt...]
+/dev-<phase> [args...]
 ```
 
-There is no main-model relay between these phases.
+Phases are `spec`, `plan`, `build`, `prepare`, `review`, and `ship`.
 
-## Worker invocation
+## Launcher semantics
 
-The extension launches ephemeral OMP subprocesses directly using JSON mode and configured role aliases. Workers receive only the tools needed for their job plus OMP `task`/`hub`, allowing them to delegate narrow research to bundled `scout` without pushing that transcript into another coordinator model.
+`dev a <phase>` selects the phase role and starts OMP interactively without creating a user turn.
 
-Specifier, Planner, Builder, Reviewer, conflict resolver, and finalizer are direct workers. Their output is consumed by deterministic code or presented directly to the human.
+`dev a <phase> "prompt"` starts the exact same role and submits `/dev-<phase> prompt` as the initial action.
 
-## Durable state
+`dev a resume [session]` uses OMP's native continue/resume path while reapplying only the workflow config overlays; it does not replace the saved session model.
 
-All artifacts are ignored under `plans/<project>/`:
+Role defaults:
+
+| Phase | Model / thinking |
+| --- | --- |
+| spec | Sol medium |
+| plan | Sol high |
+| build | Sol low |
+| build_retry | Sol medium |
+| prepare | Luna medium |
+| review | Astra low |
+| ship | Luna medium |
+| explorer | Luna medium |
+
+## Slash commands
+
+### Spec and Plan
+
+`/dev-spec` and `/dev-plan` are thin aliases that send `/skill:dev-spec` and `/skill:dev-plan` back through OMP's normal prompt pipeline.
+
+That means:
+
+- work stays in the current interactive session and keeps its full conversation;
+- no Specifier/Planner subprocess is created;
+- the native OMP skill invocation path remains the single semantic implementation;
+- the skill itself owns its feedback and explicit human-approval loop.
+
+### Build
+
+`/dev-build` is deterministic code:
+
+1. reconcile Git with `progress.toon`;
+2. skip superseded contracts;
+3. choose the next dependency-ready `Pxxx` / `Rxxx`;
+4. launch a fresh isolated `@build` worker with the `dev-implement` skill;
+5. independently verify exactly one Conventional Commit, clean worktree, and declared checks;
+6. retry once with `@build_retry` if verification fails;
+7. persist accepted progress and repeat.
+
+The foreground model does not relay worker results or choose workflow transitions.
+
+### Prepare
+
+`/dev-prepare` deterministically owns fetch/rebase/final checks/push/draft-PR binding. Ordinary mechanics consume no model tokens. If a rebase conflict needs judgment, the driver launches a bounded isolated worker.
+
+### Review
+
+`/dev-review` gathers exact candidate evidence and launches a fresh isolated `@review` worker. Structured findings are validated by code and concrete repairs are selected through OMP's native UI.
+
+### Ship
+
+`/dev-ship` is the restartable state machine:
+
+```text
+BUILD -> PREPARE -> AWAIT -> REVIEW/REPAIR -> HUMAN -> FINALIZE
+```
+
+`ship.toon` persists the phase, exact candidate, repair count, recurrence guards, and approved HEAD. Await is exact-HEAD GitHub polling and consumes no model tokens. Final PR prose uses the explicit `@ship` Luna-medium role.
+
+## Configuration ownership
+
+The repository **never** manages `~/.omp/agent/config.yml`.
+
+Workflow-owned defaults live at `~/.omp/agent/dev-workflow.yml`; optional personal overrides live at `~/.omp/agent/dev-workflow.local.yml`. Both the CLI launcher and isolated workers pass these files via repeatable OMP `--config` overlays.
+
+## Workflow state
+
+Durable workflow artifacts live under `plans/<project>/`:
 
 - `spec.md`: approved semantic contract
 - `project.toon`: project/base/dependencies/final checks/status
 - `plans/*.toon`: immutable execution contracts
 - `repairs/*.toon`: immutable repair contracts
-- `progress.toon`: completed/current contract and accepted HEAD
-- `ship.toon`: restartable phase, candidate identity, repair count, exact approved HEAD, recurrence guards
+- `progress.toon`: accepted work and HEAD
+- `ship.toon`: restartable shipping state
 - `review.toon`: compact exact-HEAD review result
 
-Do not persist raw model transcripts, CI logs, or generic event history.
-
-## Build
-
-`/dev-build` is a deterministic loop. It reconciles Git and `progress.toon`, skips superseded contracts, picks the next dependency-ready contract, launches one fresh `@builder`, and independently verifies exactly one Conventional Commit, clean worktree, declared checks, and no workflow metadata in the commit message.
-
-A failed verification gets one `@builder_retry` attempt. `NEEDS_REPLAN` or a second failed attempt stops without widening scope.
-
-## Prepare and await
-
-Preparation is code-owned: fetch, rebase, final checks, repair planning for deterministic gate failures, force-with-lease push, and exact draft PR binding. A worker is launched only for semantic conflict resolution.
-
-Await is ordinary GitHub polling bound to exact PR HEAD. No worker stays alive while waiting. A moved PR or base invalidates stale evidence rather than being silently accepted.
-
-## Review and repair
-
-A fresh direct `@review` worker receives the exact candidate evidence and returns structured PASS / REPAIRS / BLOCKED output. Deterministic code validates the structure, detects repeated stable finding keys, writes immutable repair contracts, and bounds automatic repair rounds.
-
-Manual `/dev-review` uses the same direct Reviewer and OMP's native multi-select dialog so the human explicitly chooses which repairs become contracts.
-
-## Human review
-
-Spec, Plan, and final candidate review use OMP's native dialog surface. The preview is Markdown and may include fenced Mermaid when that reduces review effort. Feedback is sent directly back to the appropriate worker; approval is persisted only against the exact artifact/candidate being reviewed.
+The extension checks whether Git already tracks `plans/`. If not, it idempotently adds `/plans/` to `.git/info/exclude`. It never requires or edits the repository's `.gitignore`.
 
 ## Explorer
 
-There is no custom Explorer implementation. Workers may call OMP's bundled `scout`, routed through `@explorer`. Agent Hub supplies visibility and steering.
-
-## Instruction boundaries
-
-- `~/.omp/agent/config.yml`: role/model and OMP feature policy
-- `~/.omp/agent/extensions/dev-workflow.ts`: deterministic workflow mechanics
-- `~/.omp/agent/skills/dev-*/SKILL.md`: reusable engineering semantics
-- `plans/Pxxx.toon` / `repairs/Rxxx.toon`: one work item's contract
+There is no custom Explorer implementation. OMP's bundled `scout` is routed through the workflow `@explorer` role and is available to interactive phases and isolated workers.

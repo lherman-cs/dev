@@ -1,12 +1,12 @@
 modelRoles:
-  default: openai/gpt-5.6-luna:medium
   spec: openai/gpt-5.6-sol:medium
   plan: openai/gpt-5.6-sol:high
-  builder: openai/gpt-5.6-sol:low
-  builder_retry: openai/gpt-5.6-sol:medium
-  explorer: openai/gpt-5.6-luna:medium
+  build: openai/gpt-5.6-sol:low
+  build_retry: openai/gpt-5.6-sol:medium
+  prepare: openai/gpt-5.6-luna:medium
   review: openai/gpt-6-astra:low
   ship: openai/gpt-5.6-luna:medium
+  explorer: openai/gpt-5.6-luna:medium
 
 task:
   maxRecursionDepth: 2
@@ -14,8 +14,4 @@ task:
     scout: "@explorer"
 
 tui:
-  mouse: true
   renderMermaid: true
-
-github:
-  enabled: true

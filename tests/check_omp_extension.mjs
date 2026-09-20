@@ -44,7 +44,7 @@ if(!match){
   process.exit(0);
 }
 const plan=JSON.parse(fs.readFileSync(match[1],"utf8"));
-if(plan.id==="P002" && role==="@builder"){
+if(plan.id==="P002" && role==="@build"){
   process.stderr.write("simulated first-attempt failure\\n");
   process.exit(1);
 }
@@ -57,9 +57,8 @@ process.stdout.write(JSON.stringify({type:"message_end",message:msg})+"\\n");
 fs.writeFileSync(path.join(bin, "omp"), fakeOmp, { mode: 0o755 });
 
 execFileSync("git", ["init", "-q"], { cwd: repoDir });
-fs.writeFileSync(path.join(repoDir, ".gitignore"), "/plans/\n");
 fs.writeFileSync(path.join(repoDir, "seed.txt"), "seed\n");
-execFileSync("git", ["add", ".gitignore", "seed.txt"], { cwd: repoDir });
+execFileSync("git", ["add", "seed.txt"], { cwd: repoDir });
 execFileSync("git", ["-c", "user.name=OMP Test", "-c", "user.email=omp@test.invalid", "commit", "-qm", "seed"], { cwd: repoDir });
 const base = execFileSync("git", ["rev-parse", "HEAD"], { cwd: repoDir, encoding: "utf8" }).trim();
 
@@ -81,15 +80,24 @@ fs.writeFileSync(path.join(planDir, "P002.toon"), JSON.stringify({
 process.env.PATH = bin + path.delimiter + process.env.PATH;
 process.env.OMP_CALLS = calls;
 process.env.DEV_WORKFLOW_SKILL_ROOT = path.join(root, "dotfiles/.omp/agent/skills");
+process.env.DEV_WORKFLOW_CONFIG = path.join(root, "dotfiles/.omp/agent/dev-workflow.yml");
+process.env.DEV_WORKFLOW_LOCAL_CONFIG = path.join(tmp, "missing-local.yml");
 
 const { default: extension } = await import(pathToFileURL(modulePath).href + "?t=" + Date.now());
 const commands = new Map();
+const forwarded = [];
 extension({
   registerCommand: (name, def) => commands.set(name, def),
+  sendUserMessage: (message) => forwarded.push(message),
 });
 for (const name of ["dev-spec","dev-plan","dev-build","dev-prepare","dev-review","dev-ship"]) {
   if (!commands.has(name)) throw new Error("missing /"+name);
 }
+
+await commands.get("dev-spec").handler("describe reconnect");
+await commands.get("dev-plan").handler("demo");
+if (forwarded[0] !== "/skill:dev-spec describe reconnect") throw new Error("dev-spec is not a native skill alias");
+if (forwarded[1] !== "/skill:dev-plan demo") throw new Error("dev-plan is not a native skill alias");
 
 const notifications=[];
 const ctx = {
@@ -112,14 +120,20 @@ if (JSON.stringify(progress.done) !== JSON.stringify(["P001","P002"])) {
 }
 if (progress.current !== null) throw new Error("current plan not cleared");
 
+const exclude = fs.readFileSync(path.join(repoDir, ".git", "info", "exclude"), "utf8");
+if (!exclude.split(/\r?\n/).includes("/plans/")) throw new Error("driver did not self-ignore workflow state locally");
+if (fs.existsSync(path.join(repoDir, ".gitignore"))) throw new Error("driver mutated repository .gitignore");
+
 const invocations = fs.readFileSync(calls, "utf8").trim().split("\n").filter(Boolean).map(JSON.parse);
 const models = invocations.map(args => {
   const i=args.indexOf("--model"); return i>=0?args[i+1]:"";
 });
-if (models.filter(x=>x==="@builder").length < 2) throw new Error("builders were not invoked directly");
-if (!models.includes("@builder_retry")) throw new Error("failed attempt did not route directly to @builder_retry");
+if (models.filter(x=>x==="@build").length < 2) throw new Error("builders were not invoked directly");
+if (!models.includes("@build_retry")) throw new Error("failed attempt did not route directly to @build_retry");
 for (const args of invocations) {
   if (!args.includes("--mode") || !args.includes("json") || !args.includes("--no-session")) throw new Error("worker is not ephemeral JSON OMP");
+  const ci=args.indexOf("--config");
+  if (ci<0 || !String(args[ci+1] || "").endsWith("dev-workflow.yml")) throw new Error("worker did not use workflow config overlay");
   const ti=args.indexOf("--tools");
   if (ti<0 || !args[ti+1].split(",").includes("task") || !args[ti+1].split(",").includes("hub")) {
     throw new Error("worker lost OMP task/hub delegation");
