@@ -59,7 +59,7 @@ async function finishRebase(h, project) {
       if (changed.some(file => !files.includes(file)) || await git(h, "ls-files", "--others", "--exclude-standard")) throw new Error("Conflict worker changed files outside the assigned conflicts; work preserved.");
       await git(h, "add", "--", ...files);
     }
-    const result = await h.exec("git", ["-c", "core.editor=true", "rebase", "--continue"]);
+    const result = await h.exec("env", ["GIT_EDITOR=true", "git", "rebase", "--continue"]);
     if (result.code && !(await git(h, "diff", "--name-only", "--diff-filter=U"))) throw new Error(`Rebase stopped: ${result.stderr || result.stdout}`);
   }
 }

@@ -29,7 +29,7 @@ Your exact eight role strings remain in `pi/roles.json`. The separate `authProvi
 ./scripts/install-pi.sh
 ```
 
-Node 22.19+ is required. Installation uses the checked-in lockfile with lifecycle scripts disabled, registers one local Pi package, and deduplicates only the listed plugins. Existing Pi/OMP settings, credentials, and user instructions are not overwritten. Original user-wide preferences are seeded only when Pi has no `AGENTS.md`.
+Node 22.19+ is required. Installation reconciles the checked-in Pi settings and pi-vcc configuration from `dotfiles/.pi/agent/`, uses the checked-in lockfile with lifecycle scripts disabled, registers one local Pi package, and deduplicates only the listed plugins. Credentials and existing user instructions are not overwritten. Original user-wide preferences are seeded only when Pi has no `AGENTS.md`.
 
 Requested plugins: `@narumitw/pi-lsp`, `@narumitw/pi-github-pr`, `@narumitw/pi-chrome-devtools`, `@narumitw/pi-usage`, `pi-web-access`, and `pi-mcp-adapter`. Existing RPIV task and structured-question plugins remain for human interaction. No MCP server or browser-cookie access is enabled by this repository. Pins and trust boundaries are in [pi/DEPENDENCIES.md](pi/DEPENDENCIES.md).
 

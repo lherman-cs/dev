@@ -1,0 +1,22 @@
+{
+  "defaultProvider": "openai",
+  "defaultModel": "gpt-5.6-luna",
+  "defaultThinkingLevel": "medium",
+  "tuiMode": "fullscreen",
+  "fullscreenScrollbar": "auto",
+  "terminal": {
+    "showImages": true
+  },
+  "markdown": {
+    "mermaid": "final"
+  },
+  "compaction": {
+    "enabled": true,
+    "reserveTokens": 208000,
+    "keepRecentTokens": 20000
+  },
+  "packages": [
+    "dev-workflow"
+  ],
+  "theme": "dark"
+}

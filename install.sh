@@ -50,7 +50,7 @@ export PATH="$HOME/.cargo/bin:$PATH"
 log "Installing dev command"
 cargo install --path . --locked
 
-log "Linking managed dotfiles (preserving agent settings and credentials)"
+log "Reconciling managed dotfiles and Pi config (preserving credentials)"
 dev reconcile --from "$PWD/dotfiles" --apply
 bash "$PWD/scripts/install-pi.sh"
 
