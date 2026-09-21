@@ -31,7 +31,7 @@ Progress binds accepted work to Git HEAD. Shipping persists phase, candidate, lo
 
 ## Scope and integration
 
-`pi/roles.json` is the single role policy. Original global preferences remain at user scope; reusable semantics live in five skills. Internal conflict/finalizer prompts contain only their narrow invocation contracts. `AGENTS.md` defines instruction ownership; this file documents behavior rather than supplying a second agent policy.
+`pi/roles.json` is the single role policy. Original global preferences remain at user scope; reusable semantics live in five skills. Skills use Pi's native progressive disclosure: only name/description metadata is resident until an explicit `/skill:...` invocation loads the body. Bare role sessions do not preload phase skill bodies, and a fresh worker discovers only its assigned skill before invoking it. Internal conflict/finalizer prompts contain only their narrow invocation contracts. `AGENTS.md` defines instruction ownership; this file documents behavior rather than supplying a second agent policy.
 
 Native SDK workers are in-memory sessions, with their own context and cancellation. The only exposed delegation primitive is `explore`: read-only, bounded output, no shell or recursion. Workers do not inherit the foreground conversation. Implementation workers load LSP/browser/web capabilities; foreground-only PR/usage UI and MCP configurations are not replicated into children.
 
