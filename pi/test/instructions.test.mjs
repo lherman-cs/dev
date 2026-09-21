@@ -18,13 +18,12 @@ test('94d10a6 semantic contracts retain authority, outputs and stop conditions a
     assert.ok(Buffer.byteLength(text)<2000,'keep semantic skills compact');
   }
 });
-test('only the explorer skill allows model invocation',()=>{
+test('all role skills require explicit invocation',()=>{
   const skillsDir=new URL('../skills/',import.meta.url);
   const names=fs.readdirSync(skillsDir).filter(name=>fs.statSync(new URL(`${name}/SKILL.md`,skillsDir)).isFile());
   for(const name of names) {
     const text=fs.readFileSync(new URL(`${name}/SKILL.md`,skillsDir),'utf8');
-    if(name==='dev-explore') assert.ok(!text.includes('disable-model-invocation: true'),name);
-    else assert.match(text,/^disable-model-invocation: true$/m,name);
+    assert.match(text,/^disable-model-invocation: true$/m,name);
   }
 });
 test('instruction invariants and original user preferences are retained, without stale plugin authority',()=>{

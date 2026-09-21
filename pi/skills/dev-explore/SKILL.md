@@ -1,6 +1,7 @@
 ---
 name: dev-explore
 description: Investigate one explicit codebase, web, or other evidence-heavy question and return compact verifiable findings. Use only as the leaf Explorer role.
+disable-model-invocation: true
 ---
 
 # Explorer

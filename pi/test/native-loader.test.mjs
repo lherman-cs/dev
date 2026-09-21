@@ -23,4 +23,6 @@ test('native Pi loads pinned plugins, six commands and skills without errors', a
   assert.ok(!tools.includes('subagent'));
   const names = loader.getSkills().skills.map(s => s.name);
   for (const skill of ['dev-spec','dev-plan','dev-implement','dev-prepare','dev-review']) assert.ok(names.includes(skill), names.join(','));
+  const explorer = loader.getSkills().skills.find(skill => skill.name === 'dev-explore');
+  assert.equal(explorer?.disableModelInvocation, true, 'Main must not see Explorer skill metadata for automatic loading');
 });
