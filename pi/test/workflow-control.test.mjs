@@ -29,7 +29,7 @@ test("manual edits while paused fail revalidation instead of reusing evidence", 
 });
 
 test("stop releases a paused latch and cancels waiting without dispatching new work", async () => {
-  const control = new WorkflowControl(); control.pause();
+  const control = new WorkflowControl({ snapshot: async () => "stable" }); control.pause();
   const paused = control.checkpoint(); const rejection = assert.rejects(paused, /stopped/);
   await tick(); control.stop(); await rejection;
   await assert.rejects(control.operation("git", ["push"], () => assert.fail("stopped")), /stopped/);
