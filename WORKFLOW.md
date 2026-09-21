@@ -4,7 +4,7 @@ Pi is the harness. Code owns lifecycle transitions, Git/GitHub sequencing, polli
 
 ## Entry points
 
-`dev a <phase>` selects the configured model/thinking and opens Pi without a user turn. Adding a prompt submits `/dev-<phase> <prompt>` immediately. Spec and Plan are native current-session skill aliases. Build, Prepare, Review, and Ship use deterministic code. Resume keeps Pi's saved session model.
+`dev pi <args...>` passes arguments to the pinned project-local Pi runtime. `dev a <phase>` uses that same runtime, selects the configured model/thinking, and opens Pi without a user turn. Adding a prompt submits `/dev-<phase> <prompt>` immediately. Spec and Plan are native current-session skill aliases. Build, Prepare, Review, and Ship use deterministic code. Resume keeps Pi's saved session model.
 
 Three normal human gates remain: approve semantics, approve architecture/contracts, then approve the exact final candidate. Standalone Build/Prepare/Review remain available. The normal approved-plan path is Ship.
 

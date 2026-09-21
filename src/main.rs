@@ -158,6 +158,13 @@ enum Commands {
     /// Runs a tui to play a lofi radio
     Radio,
 
+    /// Pass arguments to the pinned project-local Pi runtime
+    #[command(disable_version_flag = true, trailing_var_arg = true)]
+    Pi {
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
+
     /// Launch an Pi development phase with the phase's configured role
     #[command(alias = "a")]
     Agent {
@@ -1726,6 +1733,7 @@ fn main() {
             members,
         } => cmd_exec(command, args, parallel, members),
         Commands::Radio => run_shell("cliamp"),
+        Commands::Pi { args } => agent::launch_pi(args),
         Commands::Agent { action } => cmd_agent(action),
         Commands::Stats => cmd_stats(),
     };
