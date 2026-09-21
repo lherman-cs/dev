@@ -173,7 +173,7 @@ export async function runWorkflow(h, phase, target) {
   const release = await lockfile.lock(project.root, { lockfilePath, retries: 0 });
   try {
     if (phase === "build") return await build(h, project);
-    const { shipping } = await import("./ship.mjs");
+    const { shipping } = await import("./ship.ts");
     return await shipping(h, project, phase);
   } finally { await release(); }
 }

@@ -1,7 +1,7 @@
 import { createJiti } from 'jiti';
 import { initTheme } from '@earendil-works/pi-coding-agent';
 const { theme } = await import(new URL('./modes/interactive/theme/theme.js', import.meta.resolve('@earendil-works/pi-coding-agent')));
-import { WorkerHub } from '../../lib/worker-hub.mjs';
+import { WorkerHub } from '../../lib/worker-hub.ts';
 export { WorkerHub, theme };
 initTheme('dark', false);
 export const { AgentHubView, createHubViewState, compactWorkerLines } = await createJiti(import.meta.url).import('../../worker-hub-ui.ts');

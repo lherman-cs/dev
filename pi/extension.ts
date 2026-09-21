@@ -1,12 +1,12 @@
 import { safeText } from "./lib/worker-transcript.ts";
-import { humanEditor } from "./lib/human-editor.mjs";
+import { humanEditor } from "./lib/human-editor.ts";
 import { Text } from "@earendil-works/pi-tui";
-import { createWorkerRunner, exploreTool } from "./lib/worker.mjs";
-import { WorkerHub, isActive } from "./lib/worker-hub.mjs";
-import { WorkerHistory } from "./lib/worker-history.mjs";
-import { WorkflowControl, WorkflowPaused } from "./lib/workflow-control.mjs";
+import { createWorkerRunner, exploreTool } from "./lib/worker.ts";
+import { WorkerHub, isActive } from "./lib/worker-hub.ts";
+import { WorkerHistory } from "./lib/worker-history.ts";
+import { WorkflowControl, WorkflowPaused } from "./lib/workflow-control.ts";
 import { registerWorkerHubUI } from "./worker-hub-ui.ts";
-import { runWorkflow, excludeState } from "./lib/workflow.mjs";
+import { runWorkflow, excludeState } from "./lib/workflow.ts";
 
 export const explorerOnlyTools = new Set(["web_search", "source_check", "fetch_content", "get_search_content"]);
 const mainReaders = new Set(["read", "grep", "find", "ls", "explore", "vcc_recall", "ask_user_question"]);

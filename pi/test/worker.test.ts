@@ -5,8 +5,8 @@ import os from "node:os";
 import path from "node:path";
 import { ModelRuntime, createAgentSession } from "@earendil-works/pi-coding-agent";
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
-import { createWorkerRunner, exploreTool } from "../lib/worker.mjs";
-import { WorkerHub } from "../lib/worker-hub.mjs";
+import { createWorkerRunner, exploreTool } from "../lib/worker.ts";
+import { WorkerHub } from "../lib/worker-hub.ts";
 
 async function fixture(t, answer) {
   const cwd=fs.mkdtempSync(path.join(os.tmpdir(),'native-worker-'));
@@ -85,7 +85,7 @@ test('every non-Explorer worker role receives the bounded Explorer primitive', a
 });
 test('Explorer returns only a schema-checked compact result to the parent', async()=>{
   let options;
-  const tool=exploreTool(async value=>{options=value;return {status:'FOUND',answer:'Direct answer',evidence:[{claim:`Evidence ${'e'.repeat(5000)}`,anchor:'src/file.mjs:1'}],uncertainty:'One material caveat'};});
+  const tool=exploreTool(async value=>{options=value;return {status:'FOUND',answer:'Direct answer',evidence:[{claim:`Evidence ${'e'.repeat(5000)}`,anchor:'src/file.ts:1'}],uncertainty:'One material caveat'};});
   const result=await tool.execute('id',{task:'one scope'},new AbortController().signal,undefined,{cwd:process.cwd()});
   const text=result.content[0].text;
   assert.deepEqual(options.schema.required,['status','answer','evidence']);
@@ -117,7 +117,7 @@ test('a native Builder can call Explorer without inheriting the Builder conversa
     if(model.id==='gpt-5.6-luna') {
       assert.ok(!JSON.stringify(context.messages).includes('PRIVATE_PARENT_CONTEXT'));
       return ++explorerTurns===1
-        ? message(model,[{type:'toolCall',id:'result',name:'submit_result',arguments:{status:'FOUND',answer:'Local evidence',evidence:[{claim:'Entry point',anchor:'src/main.mjs:1'}]}}],'toolUse')
+        ? message(model,[{type:'toolCall',id:'result',name:'submit_result',arguments:{status:'FOUND',answer:'Local evidence',evidence:[{claim:'Entry point',anchor:'src/main.ts:1'}]}}],'toolUse')
         : message(model,[{type:'text',text:'submitted'}]);
     }
     return ++builderTurns===1?message(model,[{type:'toolCall',id:'explore',name:'explore',arguments:{task:'Locate the repository entry point'}}],'toolUse'):message(model,[{type:'text',text:'done'}]);

@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { visibleWidth } from '@earendil-works/pi-tui';
-import { WorkerHub, session, register, assistant, user, viewFixture, keys, screen, tick, AgentHubView, theme } from './helpers/hub.mjs';
+import { WorkerHub, session, register, assistant, user, viewFixture, keys, screen, tick, AgentHubView, theme } from './helpers/hub.ts';
 
 test('per-thread drafts cannot cross recipients when switching and submitting',async t=>{
   const hub=new WorkerHub(),a=session(),b=session();register(hub,a,'a');register(hub,b,'b');

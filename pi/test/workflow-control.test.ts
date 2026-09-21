@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { WorkflowControl, WorkflowPaused } from '../lib/workflow-control.mjs';
+import { WorkflowControl, WorkflowPaused } from '../lib/workflow-control.ts';
 
 test('pause waits for a checkpoint, stop cancels, neither implies rollback',()=>{
   const c=new WorkflowControl('ship','project');c.pause();assert.equal(c.state,'running');assert.equal(c.signal.aborted,false);

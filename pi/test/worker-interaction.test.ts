@@ -5,9 +5,9 @@ import os from 'node:os';
 import path from 'node:path';
 import { ModelRuntime, createAgentSession, SessionManager, SettingsManager } from '@earendil-works/pi-coding-agent';
 import { createAssistantMessageEventStream } from '@earendil-works/pi-ai';
-import { createWorkerRunner, workerSettings } from '../lib/worker.mjs';
-import { WorkerHub } from '../lib/worker-hub.mjs';
-import { WorkerHistory } from '../lib/worker-history.mjs';
+import { createWorkerRunner, workerSettings } from '../lib/worker.ts';
+import { WorkerHub } from '../lib/worker-hub.ts';
+import { WorkerHistory } from '../lib/worker-history.ts';
 const deferred=()=>{let resolve,reject;const promise=new Promise((a,b)=>{resolve=a;reject=b;});return{promise,resolve,reject};};
 const msg=(model,text,reason='stop')=>({role:'assistant',content:typeof text==='string'?[{type:'text',text}]:text,stopReason:reason,provider:model.provider,model:model.id,api:model.api,timestamp:Date.now(),usage:{input:10,output:2,cacheRead:0,cacheWrite:0,totalTokens:12,cost:{input:0,output:0,cacheRead:0,cacheWrite:0,total:0}}});
 async function fixture(t,answer,{persist=true,settingsFor}={}) {

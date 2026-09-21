@@ -4,9 +4,9 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { SessionManager } from '@earendil-works/pi-coding-agent';
-import { WorkerHistory, WORKER_ENTRY } from '../lib/worker-history.mjs';
-import { WorkerHub } from '../lib/worker-hub.mjs';
-import { session, register, assistant } from './helpers/hub.mjs';
+import { WorkerHistory, WORKER_ENTRY } from '../lib/worker-history.ts';
+import { WorkerHub } from '../lib/worker-hub.ts';
+import { session, register, assistant } from './helpers/hub.ts';
 
 function fixture(t) {
   const root=fs.mkdtempSync(path.join(os.tmpdir(),'hub-history-'));t.after(()=>fs.rmSync(root,{recursive:true,force:true}));

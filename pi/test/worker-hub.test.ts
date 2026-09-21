@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { WorkerHub, session, register, assistant, user, compactWorkerLines } from './helpers/hub.mjs';
+import { WorkerHub, session, register, assistant, user, compactWorkerLines } from './helpers/hub.ts';
 
 test('incremental usage distinguishes unknown data and is not double counted', () => {
   const hub=new WorkerHub(),s=session(),r=register(hub,s);

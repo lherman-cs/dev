@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { TuiMainScreen, TuiAltScreen, Editor, visibleWidth } from '@earendil-works/pi-tui';
-import { WorkerHub, session, register, AgentHubView, createHubViewState, keys, theme } from './helpers/hub.mjs';
+import { WorkerHub, session, register, AgentHubView, createHubViewState, keys, theme } from './helpers/hub.ts';
 const pause=()=>new Promise(r=>setTimeout(r,50));
 class MemoryTerminal {
   rows=24;columns=80;kittyProtocolActive=false;output='';

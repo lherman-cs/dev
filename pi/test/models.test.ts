@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { ModelRuntime } from '@earendil-works/pi-coding-agent';
-import { config, role } from '../lib/roles.mjs';
+import { config, role } from '../lib/roles.ts';
 
 test('pinned Pi catalog contains every exact configured Codex model', async () => {
   const runtime = await ModelRuntime.create();

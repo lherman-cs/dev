@@ -5,8 +5,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { ModelRuntime } from '@earendil-works/pi-coding-agent';
 import { createAssistantMessageEventStream } from '@earendil-works/pi-ai';
-import { createWorkerRunner } from '../lib/worker.mjs';
-import { WorkerHub } from '../lib/worker-hub.mjs';
+import { createWorkerRunner } from '../lib/worker.ts';
+import { WorkerHub } from '../lib/worker-hub.ts';
 
 test('literal child messages do not execute slash commands or expand even the assigned skill',{timeout:15000},async t=>{
   const cwd=fs.mkdtempSync(path.join(os.tmpdir(),'literal-agent-input-')),old=process.env.PI_CODING_AGENT_DIR;

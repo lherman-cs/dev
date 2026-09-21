@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { createHash } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
-import { read, save, git, clean, command, ghJSON, contracts, checks, build } from "./workflow.mjs";
+import { read, save, git, clean, command, ghJSON, contracts, checks, build } from "./workflow.ts";
 
 const digest = value => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 const blocked = message => Object.assign(new Error(message), { blocked: true });

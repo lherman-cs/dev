@@ -1,6 +1,6 @@
 import { Editor, Input, matchesKey, Text, truncateToWidth, visibleWidth, wrapTextWithAnsi, getKeybindings } from "@earendil-works/pi-tui";
 import { copyToClipboard } from "@earendil-works/pi-coding-agent";
-import { isActive } from "./lib/worker-hub.mjs";
+import { isActive } from "./lib/worker-hub.ts";
 import { NativeTranscript, safeText, type Viewport } from "./lib/worker-transcript.ts";
 
 const safe = (text: unknown) => safeText(String(text ?? "")).replace(/[\r\n\t]+/g, " ");

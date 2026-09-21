@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { performance } from 'node:perf_hooks';
-import { WorkerHub, session, register, assistant, viewFixture, AgentHubView, theme, keys, screen, tick, NativeTranscript } from './helpers/hub.mjs';
+import { WorkerHub, session, register, assistant, viewFixture, AgentHubView, theme, keys, screen, tick, NativeTranscript } from './helpers/hub.ts';
 import { visibleWidth } from '@earendil-works/pi-tui';
 
 test('daily flow: every surface preserves exit/help on narrow and short viewports',t=>{

@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createJiti } from 'jiti';
 import { SessionManager } from '@earendil-works/pi-coding-agent';
-import { WorkerHub, session, register, theme, keys, tick, screen } from './helpers/hub.mjs';
+import { WorkerHub, session, register, theme, keys, tick, screen } from './helpers/hub.ts';
 const {default:extension}=await createJiti(import.meta.url).import('../extension.ts');
 
 function fixture(t,workflow=async()=>{}) {
@@ -11,7 +11,7 @@ function fixture(t,workflow=async()=>{}) {
   const emit=async(name,event={})=>{let result;for(const f of handlers.get(name)||[])result=await f(event,ctx);return result;};
   const run=async ({task,name,metadata={}})=>{
     const s=session();register(hub,s,hub.nextId(name),{label:`Explorer · ${task}`,metadata:{readOnly:true,...metadata}});
-    return {status:'FOUND',answer:'Scheduler evidence',evidence:[{claim:'Scheduler test',anchor:'test/scheduler.test.mjs:1'}]};
+    return {status:'FOUND',answer:'Scheduler evidence',evidence:[{claim:'Scheduler test',anchor:'test/scheduler.test.ts:1'}]};
   };
   run.hasActive=()=>hub.list().some(r=>r.session);run.stopAll=async()=>{for(const r of hub.list().filter(r=>r.session)){await hub.abort(r.id);hub.unregister(r.id,'aborted');}};
   run.related=async()=>assert.fail('unexpected related call');

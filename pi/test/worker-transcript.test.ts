@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { setCapabilities } from '@earendil-works/pi-tui';
-import { WorkerHub, session, register, assistant, NativeTranscript, strip } from './helpers/hub.mjs';
+import { WorkerHub, session, register, assistant, NativeTranscript, strip } from './helpers/hub.ts';
 
 function fixture(t) {
   const hub=new WorkerHub(),s=session(),r=register(hub,s,'a');

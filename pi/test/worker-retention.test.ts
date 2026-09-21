@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { WorkerHub } from '../lib/worker-hub.mjs';
+import { WorkerHub } from '../lib/worker-hub.ts';
 
 function fixture(t) {
   const stored=new Map();

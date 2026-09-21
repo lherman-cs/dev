@@ -5,8 +5,8 @@ import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { encode, decode } from "@toon-format/toon";
-import { config, role } from "../lib/roles.mjs";
-import { resolveProject, runWorkflow } from "../lib/workflow.mjs";
+import { config, role } from "../lib/roles.ts";
+import { resolveProject, runWorkflow } from "../lib/workflow.ts";
 
 const expected = {
   spec: "openai/gpt-5.6-sol:medium", plan: "openai/gpt-5.6-sol:high",
@@ -125,7 +125,7 @@ test("prepare never quietly starts an unfinished build", async t => {
 
 
 test('pause requested inside a Builder verifies and persists that contract but dispatches nothing else',async t=>{
-  const {WorkflowControl,WorkflowPaused}=await import('../lib/workflow-control.mjs');
+  const {WorkflowControl,WorkflowPaused}=await import('../lib/workflow-control.ts');
   const f=fixture(t),c=new WorkflowControl('build',f.target),delegate=f.h.delegate;
   f.h.checkpoint=activity=>c.checkpoint(activity);
   f.h.delegate=async(...args)=>{const result=await delegate(...args);c.pause();return result;};
@@ -147,7 +147,7 @@ test('human-readable worker metadata uses contract purpose, never the first prom
 });
 
 test('pause fingerprint includes tracked/untracked contents and ignored approved contracts',async t=>{
-  const f=fixture(t);const {workflowFingerprint}=await import('../lib/workflow.mjs');
+  const f=fixture(t);const {workflowFingerprint}=await import('../lib/workflow.ts');
   const project=await resolveProject(f.h,f.dir);await f.h.exec('git',['config','--local','user.name','Test']);
   await f.h.exec('git',['update-index','--refresh']);
   fs.appendFileSync(path.join(f.root,'.git/info/exclude'),'\n/plans/\n');

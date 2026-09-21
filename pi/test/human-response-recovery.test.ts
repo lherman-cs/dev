@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { initTheme } from "@earendil-works/pi-coding-agent";
-import { humanEditor } from "../lib/human-editor.mjs";
+import { humanEditor } from "../lib/human-editor.ts";
 initTheme("dark", false);
 function fixture() {
   let component;

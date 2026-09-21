@@ -2,7 +2,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createAgentSession, DefaultResourceLoader, getAgentDir, ModelRuntime, SessionManager, SettingsManager } from "@earendil-works/pi-coding-agent";
 import { Type } from "@earendil-works/pi-ai";
-import { role } from "./roles.mjs";
+import { role } from "./roles.ts";
 
 const packageDir = fileURLToPath(new URL("../", import.meta.url));
 const readers = ["read", "grep", "find", "ls"];

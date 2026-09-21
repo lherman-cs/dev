@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import {execFileSync} from 'node:child_process';
 import {encode,decode} from '@toon-format/toon';
-import {runWorkflow} from '../lib/workflow.mjs';
+import {runWorkflow} from '../lib/workflow.ts';
 
 const pass=()=>({verdict:'pass',summary:'No material issue',review_focus:['Compatibility'],validation:['Local gates'],repairs:[]});
 const issue=(key='test.root')=>({key,title:'Correct behavior',goal:'Keep approved behavior',reason:'Concrete defect',evidence:['file:line'],requirements:['Preserve interface'],checks:['test -f done']});
@@ -183,7 +183,7 @@ test('manual repair selection refuses evidence that changed during the human dec
 });
 
 test('pause during agentless CI polling preserves candidate and stops before reviewer dispatch',async t=>{
-  const {WorkflowControl,WorkflowPaused}=await import('../lib/workflow-control.mjs');
+  const {WorkflowControl,WorkflowPaused}=await import('../lib/workflow-control.ts');
   const f=fixture(t),c=new WorkflowControl('ship',f.dir),sleep=f.h.sleep;
   f.h.checkpoint=activity=>c.checkpoint(activity);f.h.sleep=async ms=>{await sleep(ms);c.pause();};
   await assert.rejects(runWorkflow(f.h,'ship',f.dir),WorkflowPaused);

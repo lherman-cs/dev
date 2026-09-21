@@ -12,7 +12,7 @@ Instruction ownership:
 - `pi/AGENTS.md` (seed for the user-owned Pi `AGENTS.md`): user-wide preferences only.
 - Repository/local `AGENTS.md`: repository-specific facts and conventions.
 - `pi/skills/dev-*/SKILL.md`: reusable role-specific authority, outputs, and stop conditions.
-- `pi/extension.ts` and `pi/lib/*.mjs`: deterministic lifecycle mechanics; invocation schemas/boundaries; tiny contracts for non-reusable internal workers.
+- `pi/extension.ts` and `pi/lib/*.ts`: deterministic lifecycle mechanics; invocation schemas/boundaries; tiny contracts for non-reusable internal workers.
 - `plans/Pxxx.toon` / `repairs/Rxxx.toon`: one task's scope and acceptance checks.
 - `pi/roles.json`: exact roles and explicit subscription/API authentication transport.
 - `pi/package.json` and lockfile: pinned requested plugins, not a second harness.
