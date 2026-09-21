@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { humanEditor } from "./lib/human-editor.mjs";
 import { createWorkerRunner, exploreTool } from "./lib/worker.mjs";
 import { WorkerHub } from "./lib/worker-hub.mjs";
 import { WorkerHistory } from "./lib/worker-history.mjs";
@@ -108,7 +109,7 @@ export default function (pi) {
             const action = await context.ui.select(title, ["Cancel", "Request changes", "Approve"], { signal });
             if (action === "Approve") return { action: "approve" };
             if (action === "Request changes") {
-              const feedback = await context.ui.editor("Review feedback", "", { signal });
+              const feedback = await humanEditor(context, "Review feedback", "", signal);
               if (feedback?.trim()) return { action: "feedback", feedback };
             }
             return { action: "cancel" };
