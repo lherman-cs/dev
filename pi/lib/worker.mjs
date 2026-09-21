@@ -6,37 +6,40 @@ import { role } from "./roles.mjs";
 
 const packageDir = fileURLToPath(new URL("../", import.meta.url));
 const readers = ["read", "grep", "find", "ls"];
+const explorerResultChars = 4000;
 const toolResult = text => ({ content: [{ type: "text", text }], details: {} });
 
 // One fresh native Pi session. No subprocess protocol, agent registry, or scheduler.
 export function createWorkerRunner({ runtime, create = createAgentSession } = {}) {
+  let modelsPromise;
   async function run({ cwd, name, task, skill, schema, signal = new AbortController().signal, report = () => {}, system = "", tools }) {
     signal.throwIfAborted();
     const selected = role(name);
-    const models = runtime || await ModelRuntime.create();
+    const models = runtime || await (modelsPromise ||= ModelRuntime.create());
     const model = models.getModel(selected.provider, selected.model);
     if (!model) throw new Error(`Pi does not list ${selected.provider}/${selected.model}; no model fallback is allowed.`);
     if (!models.hasConfiguredAuth(selected.provider)) throw new Error(`No login for ${selected.provider}. Use Pi /login; no model/provider fallback was attempted.`);
     const explorer = name === "explorer";
     const readonly = explorer || name === "review";
+    const assignedSkill = explorer ? "dev-explore" : skill;
     const settings = SettingsManager.inMemory();
     const loader = new DefaultResourceLoader({ cwd, agentDir: getAgentDir(), settingsManager: settings,
       noExtensions: true, noSkills: true, noPromptTemplates: true, noThemes: true,
       // Do not re-load ambient UI, MCP servers, or this controller in children.
       additionalExtensionPaths: [path.join(packageDir, "node_modules/pi-web-access/dist/index.js"),
         ...(!readonly ? [path.join(packageDir, "node_modules/@narumitw/pi-lsp/dist/index.ts"), path.join(packageDir, "node_modules/@narumitw/pi-chrome-devtools/dist/index.ts")] : [])],
-      additionalSkillPaths: skill ? [path.join(packageDir, "skills", skill)] : [],
-      appendSystemPrompt: [system, ...(explorer ? ["Answer only the assigned read-only question. Return Conclusion / Evidence / Uncertainty, not the research transcript."] : [])].filter(Boolean),
+      additionalSkillPaths: assignedSkill ? [path.join(packageDir, "skills", assignedSkill)] : [],
+      appendSystemPrompt: [system].filter(Boolean),
     });
     await loader.reload();
     const errors = loader.getExtensions().errors;
     if (errors.length) throw new Error(`Worker extension load failed: ${errors.map(e => `${e.path}: ${e.error}`).join("; ")}`);
-    if (skill && !loader.getSkills().skills.some(s => s.name === skill)) throw new Error(`Missing worker skill ${skill}`);
+    if (assignedSkill && !loader.getSkills().skills.some(s => s.name === assignedSkill)) throw new Error(`Missing worker skill ${assignedSkill}`);
     let value;
     const customTools = explorer ? [] : [exploreTool(run, report)];
     if (schema) customTools.push({ name: "submit_result", label: "Submit result", description: "Submit the final result in the required schema.", parameters: schema,
       async execute(_id, args) { value = args; return toolResult("Result recorded."); } });
-    const allowed = tools || [...readers, ...(!readonly ? ["bash"] : []), ...(!readonly ? ["edit", "write", "lsp_diagnostics", "lsp_fix", "chrome_devtools_load", "chrome_devtools_list_pages", "chrome_devtools_select_page", "chrome_devtools_navigate", "chrome_devtools_evaluate", "chrome_devtools_screenshot"] : []), "web_search", "fetch_content", "get_search_content"];
+    const allowed = tools || [...readers, ...(!readonly ? ["bash"] : []), ...(!readonly ? ["edit", "write", "lsp_diagnostics", "lsp_fix", "chrome_devtools_load", "chrome_devtools_list_pages", "chrome_devtools_select_page", "chrome_devtools_navigate", "chrome_devtools_evaluate", "chrome_devtools_screenshot"] : []), ...(explorer ? ["web_search", "source_check", "fetch_content", "get_search_content"] : [])];
     const { session } = await create({ cwd, model, thinkingLevel: selected.thinking, modelRuntime: models,
       settingsManager: settings, resourceLoader: loader, sessionManager: SessionManager.inMemory(cwd),
       tools: [...allowed, ...customTools.map(t => t.name)], customTools });
@@ -51,7 +54,7 @@ export function createWorkerRunner({ runtime, create = createAgentSession } = {}
       signal.throwIfAborted();
       report(`${name}: working`);
       const request = `${task}${schema ? "\nSubmit the final result with submit_result." : ""}`;
-      await session.prompt(skill ? `/skill:${skill} ${request}` : request);
+      await session.prompt(assignedSkill ? `/skill:${assignedSkill} ${request}` : request);
       signal.throwIfAborted();
       const message = [...session.messages].reverse().find(m => m.role === "assistant");
       if (!message || ["error", "aborted"].includes(message.stopReason)) throw new Error(`${name}: ${message?.errorMessage || message?.stopReason || "no result"}`);
@@ -75,10 +78,15 @@ export function createWorkerRunner({ runtime, create = createAgentSession } = {}
 // Universal, bounded, read-only exploration; not an arbitrary subagent tool.
 export function exploreTool(run, report = () => {}) {
   return { name: "explore", label: "Explorer",
-    description: "Delegate one narrow read-only investigation. Use for substantial research; keep trivial known-path lookups local. Returns compact evidence, not a transcript.",
+    description: "Delegate one independent, narrowly scoped read-only investigation. Use separate calls for separate scopes. Returns compact evidence, not a transcript.",
+    promptSnippet: "Delegate a narrow codebase, web, or other evidence-heavy investigation to an independent Explorer",
+    promptGuidelines: [
+      "Use explore for every open-ended or input-heavy codebase investigation, web search, or other evidence gathering. Read directly only for known-target implementation work or quick verification.",
+      "Give each explore call one explicit independent scope. Call multiple Explorers, in parallel when useful, for separable questions and consume their compact results instead of raw research.",
+    ],
     parameters: Type.Object({ task: Type.String() }),
     async execute(_id, { task }, signal, _onUpdate, ctx) {
       const text = await run({ name: "explorer", cwd: ctx.cwd, task, signal, report });
-      return toolResult(text.length > 8000 ? `${text.slice(0, 8000)}\n[Explorer result truncated]` : text);
+      return toolResult(text.length > explorerResultChars ? `${text.slice(0, explorerResultChars)}\n[Explorer result truncated]` : text);
     } };
 }

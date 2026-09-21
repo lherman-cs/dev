@@ -15,7 +15,7 @@ dev a ship ./plans/media-signaling-core/spec.md
 dev a resume                       # native Pi continuation
 ```
 
-All six phases have the same interface: no prompt opens the selected interactive model; a prompt invokes the same `/dev-<phase>` command you would type manually. Spec/Plan stay in the current conversation. Build/Prepare/Review/Ship are deterministic code; fresh native SDK workers handle bounded judgment. Every role can use narrow read-only `explore`. There is no `pi-subagents`, agent registry, coordinator model, background scheduler, or custom rendering stack. `/dev-stop` cancels through Pi.
+All six phases have the same interface: no prompt opens the selected interactive model; a prompt invokes the same `/dev-<phase>` command you would type manually. Spec/Plan stay in the current conversation. Build/Prepare/Review/Ship are deterministic code; fresh native SDK workers handle bounded judgment. Every main role uses narrow read-only `explore` workers heavily for open-ended or input-heavy codebase, web, and evidence gathering. Independent scopes may run as separate parallel Explorers and return compact findings, speeding discovery while keeping raw inputs out of the main context. There is no `pi-subagents`, agent registry, coordinator model, background scheduler, or custom rendering stack. `/dev-stop` cancels through Pi.
 
 Skills use **Pi's native lazy-skill mechanism**. Only skill names/descriptions are discoverable up front; the full `SKILL.md` body is injected only by an explicit `/skill:dev-*` invocation. Bare `dev a <phase>` therefore does not preload phase instructions into the session. Fresh workers discover only the one assigned skill and invoke it natively for that task.
 

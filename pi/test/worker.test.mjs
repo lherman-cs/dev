@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { ModelRuntime, createAgentSession } from "@earendil-works/pi-coding-agent";
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
-import { createWorkerRunner } from "../lib/worker.mjs";
+import { createWorkerRunner, exploreTool } from "../lib/worker.mjs";
 
 async function fixture(t, answer) {
   const cwd=fs.mkdtempSync(path.join(os.tmpdir(),'native-worker-'));
@@ -45,6 +45,8 @@ test('actual Pi SDK: fresh contexts, exact role, repo instructions, lazy skill, 
     assert.equal(call.context.messages.filter(m=>m.role==='user').length,1);
     assert.ok(f.sessions[0].getActiveToolNames().includes('explore'));
     assert.ok(!f.sessions[0].getActiveToolNames().includes('subagent'));
+    for(const name of ['web_search','source_check','fetch_content','get_search_content']) assert.ok(!f.sessions[0].getActiveToolNames().includes(name),name);
+    assert.match(JSON.stringify(call.context),/Use explore for every open-ended or input-heavy codebase investigation/);
   }
   assert.ok(!JSON.stringify(f.calls[1].context.messages).includes('task 0'));
 });
@@ -59,7 +61,16 @@ test('Explorer is fresh, read-only and cannot delegate recursively', async t=>{
   await f.run({cwd:f.cwd,name:'explorer',task:'find it'});
   const names=f.sessions[0].getActiveToolNames();
   for(const name of ['explore','subagent','bash','edit','write','lsp_fix']) assert.ok(!names.includes(name),name);
-  assert.match(JSON.stringify(f.calls[0].context),/Conclusion \/ Evidence \/ Uncertainty/);
+  for(const name of ['web_search','source_check','fetch_content','get_search_content']) assert.ok(names.includes(name),name);
+  assert.match(JSON.stringify(f.calls[0].context.messages),/Answer exactly one independently scoped factual question/);
+  assert.match(JSON.stringify(f.calls[0].context.messages),/FOUND/);
+});
+test('Explorer returns only a compact result to the main agent', async()=>{
+  const tool=exploreTool(async()=>`FOUND\n${'e'.repeat(5000)}`);
+  const result=await tool.execute('id',{task:'one scope'},new AbortController().signal,undefined,{cwd:process.cwd()});
+  const text=result.content[0].text;
+  assert.ok(text.length<4100,text.length);
+  assert.match(text,/\[Explorer result truncated\]$/);
 });
 test('authentication failure occurs before session creation and never changes models', async t=>{
   const f=await fixture(t,()=>assert.fail('should not call model'));

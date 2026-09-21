@@ -1,10 +1,15 @@
 import { createWorkerRunner, exploreTool } from "./lib/worker.mjs";
 import { runWorkflow, excludeState } from "./lib/workflow.mjs";
 
+export const explorerOnlyTools = new Set(["web_search", "source_check", "fetch_content", "get_search_content"]);
+
 export default function (pi) {
   const run = createWorkerRunner();
   let active;
   pi.registerTool(exploreTool(run));
+  pi.on("tool_call", event => explorerOnlyTools.has(event.toolName)
+    ? { block: true, reason: `Delegate ${event.toolName} to one or more narrowly scoped explore calls.` }
+    : undefined);
   for (const phase of ["spec", "plan"]) {
     pi.registerCommand(`dev-${phase}`, {
       description: `Invoke dev-${phase} in the current conversation`,
