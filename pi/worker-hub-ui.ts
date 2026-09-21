@@ -188,7 +188,7 @@ export class AgentHubView {
     } else if (control?.state === "paused") this.menu.push({ title: "Continue paused workflow (revalidate unchanged work)", run: () => { this.done(); setImmediate(() => this.options.resume?.()); } });
     else if (control && ["stopped", "failed"].includes(control.state)) this.menu.push({ title: `Recovery: ${control.resumeCommand}`, run: () => this.notice(`Reconcile partial work, then run ${control.resumeCommand} in Main.`) });
     if (id && this.hub.canSend(id)) this.menu.push({ title: "Queue this draft after the agent's current work", run: () => this.send(id, "followUp") });
-    if (r?.actions?.cancelQueued && r.deliveries.some((d: any) => d.status === "queued")) this.menu.push({ title: "Cancel ALL still-queued messages to this agent", run: () => this.hub.cancelQueued(id).then(n => this.notice(`Cancelled ${n} queued messages. Original text is retained.`, id)) });
+    if (r?.actions?.cancelQueued && r.deliveries.some((d: any) => d.status === "queued")) this.menu.push({ title: "Cancel ALL still-queued messages to this agent", run: () => this.hub.cancelQueued(id).then((n: number) => this.notice(`Cancelled ${n} queued messages. Original text is retained.`, id)) });
     if (r?.closed && r.file && this.hub.onRelated) this.menu.push({ title: "Investigate this draft in a NEW read-only thread", run: async () => {
       const c = this.composer(id), text = c.editor.getExpandedText();
       if (!text.trim()) { this.notice("Write a follow-up question first. Original result remains unchanged.", id); return; }
