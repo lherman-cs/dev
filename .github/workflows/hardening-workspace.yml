@@ -1,7 +1,7 @@
 name: hardening workspace
 on:
   push:
-    branches: [fix/pi-minimal-workflow]
+    branches: [fix/pi-minimal-workflow, feat/agent-hub-dx]
     paths: [.github/workflows/hardening-workspace.yml]
 permissions:
   contents: read
