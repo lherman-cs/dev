@@ -16,7 +16,7 @@ export function createWorkerRunner({ runtime, create = createAgentSession, hub }
   if (!hub?.register || !hub?.unregister || !hub?.nextId) throw new Error("createWorkerRunner requires a WorkerHub so child sessions cannot be hidden.");
   let modelsPromise;
 
-  async function run({ cwd, name, task, skill, schema, signal, report = () => {}, system = "", tools, metadata = {}, rejectPassOnFeedback = false }) {
+  async function run({ cwd, name, task, skill, schema, signal, report = () => {}, system = "", tools, metadata = {}, rejectPassOnFeedback = false, onRegistered }) {
     const selected = role(name);
     const lifetime = new AbortController();
     const parentAbort = () => lifetime.abort(signal?.reason);
@@ -57,9 +57,11 @@ export function createWorkerRunner({ runtime, create = createAgentSession, hub }
     };
     try {
       lifetime.signal.throwIfAborted();
+      if (hub.historyFailure) throw new Error(`Restore agent history storage before starting: ${hub.historyFailure.message}`);
       hub.register({ id: workerId, label: metadata.label || `${name} · ${String(metadata.task || task).split("\n")[0].slice(0, 100)}`,
         role: name, model: selected.model, thinking: selected.thinking, controls, state: "starting",
         metadata: { ...metadata, cwd, task: metadata.task || task, producer: "dev-workflow", parentId: metadata.parentId || "main" } });
+      onRegistered?.(workerId);
       const models = runtime || await (modelsPromise ||= ModelRuntime.create().catch(error => { modelsPromise = undefined; throw error; }));
       lifetime.signal.throwIfAborted();
       const model = models.getModel(selected.provider, selected.model);
@@ -75,9 +77,10 @@ export function createWorkerRunner({ runtime, create = createAgentSession, hub }
           ...(!readonly ? [path.join(packageDir, "node_modules/@narumitw/pi-lsp/dist/index.ts"), path.join(packageDir, "node_modules/@narumitw/pi-chrome-devtools/dist/index.ts")] : [])],
         additionalSkillPaths: assignedSkill ? [path.join(packageDir, "skills", assignedSkill)] : [], appendSystemPrompt: [system].filter(Boolean) });
       await loader.reload(); lifetime.signal.throwIfAborted();
-      const errors = loader.getExtensions().errors;
-      if (errors.length) throw new Error(`Worker extension load failed: ${errors.map(e => `${e.path}: ${e.error}`).join("; ")}`);
+      const loaded = loader.getExtensions();
+      if (loaded.errors.length) throw new Error(`Worker extension load failed: ${loaded.errors.map(e => `${e.path}: ${e.error}`).join("; ")}`);
       if (assignedSkill && !loader.getSkills().skills.some(s => s.name === assignedSkill)) throw new Error(`Missing worker skill ${assignedSkill}`);
+      const memoryTools = loaded.extensions.filter(e => e.resolvedPath.includes("/@sting8k/pi-vcc/")).flatMap(e => [...e.tools.keys()]);
       const customTools = explorer ? [] : [exploreTool(run, safeReport, { parentId: workerId, workflowId: metadata.workflowId })];
       customTools.push({ name: "ask_human", label: "Ask human", description: "Ask a specific question and wait for the human's answer in Agent Hub.",
         parameters: Type.Object({ question: Type.String(), choices: Type.Optional(Type.Array(Type.String())) }),
@@ -94,10 +97,10 @@ export function createWorkerRunner({ runtime, create = createAgentSession, hub }
         ...(explorer ? ["web_search", "source_check", "fetch_content", "get_search_content"] : [])];
       const sessionManager = hub.history ? hub.history.createSession(cwd) : SessionManager.inMemory(cwd);
       ({ session } = await create({ cwd, model, thinkingLevel: selected.thinking, modelRuntime: models, settingsManager: settings, resourceLoader: loader,
-        sessionManager, tools: [...allowed, ...customTools.map(t => t.name)], customTools }));
+        sessionManager, tools: [...allowed, ...memoryTools, ...customTools.map(t => t.name)], customTools }));
       lifetime.signal.throwIfAborted();
       hub.attach(workerId, session);
-      hub.update(workerId, { metadata: { ...hub.get(workerId).metadata, compaction: "VCC extension loaded" } });
+      hub.update(workerId, { metadata: { ...hub.get(workerId).metadata, compaction: "VCC extension loaded", memoryTools } });
       unsubscribe = session.subscribe(event => {
         if (event.type === "tool_execution_start") safeReport(`${name}: ${event.toolName}`);
         if (event.type === "message_start" && event.message?.role === "user") {
@@ -137,15 +140,19 @@ export function createWorkerRunner({ runtime, create = createAgentSession, hub }
     }
   }
 
-  // A completed attempt never restarts. Follow-up is a new read-only investigation
-  // linked to the old evidence, and cannot replace the result its parent accepted.
+  // Opening a finished thread never revives it. A follow-up is a NEW read-only
+  // investigation and cannot replace the result its parent already consumed.
   hub.readOnlyFollowUp = async (record, question) => {
     if (record.metadata?.producer !== "dev-workflow") throw new Error("This producer has not supplied a follow-up action.");
     await hub.load(record.id);
     if (record.historyError) throw new Error(record.historyError);
     const last = [...record.messages].reverse().find(m => m.role === "assistant");
-    return run({ cwd: record.metadata.cwd, name: "explorer", task: `Follow-up question: ${question}\nPrior task: ${record.metadata.task}\nPrior final response: ${textOf(last)}\nPrior native transcript: ${record.sessionFile || "not retained"}`,
-      metadata: { parentId: record.id, label: `Follow-up · ${record.label}`, task: question } });
+    let id;
+    const completion = run({ cwd: record.metadata.cwd, name: "explorer", task: `Follow-up question: ${question}\nPrior task: ${record.metadata.task}\nPrior final response: ${textOf(last)}\nPrior native transcript: ${record.sessionFile || "not retained"}`,
+      metadata: { parentId: record.id, label: `Follow-up · ${record.label}`, task: question }, onRegistered: registered => { id = registered; } });
+    completion.catch(() => {}); // Failures are retained in the new child record.
+    if (!id) { await completion; throw new Error("Follow-up was not registered."); }
+    return { id, completion };
   };
   return run;
 }
