@@ -17,6 +17,8 @@ dev a resume                       # native Pi continuation
 
 All six phases have the same interface: no prompt opens the selected interactive model; a prompt invokes the same `/dev-<phase>` command you would type manually. Spec/Plan stay in the current conversation. Build/Prepare/Review/Ship are deterministic code; fresh native SDK workers handle bounded judgment. Every role can use narrow read-only `explore`. There is no `pi-subagents`, agent registry, coordinator model, background scheduler, or custom rendering stack. `/dev-stop` cancels through Pi.
 
+Skills use **Pi's native lazy-skill mechanism**. Only skill names/descriptions are discoverable up front; the full `SKILL.md` body is injected only by an explicit `/skill:dev-*` invocation. Bare `dev a <phase>` therefore does not preload phase instructions into the session. Fresh workers discover only the one assigned skill and invoke it natively for that task.
+
 Your exact eight role strings remain in `pi/roles.json`. The separate `authProvider: "openai-codex"` uses subscription login for the same model IDs. API-key users can explicitly choose `openai`. No model/provider fallback is attempted. Pi credentials are not copied from OMP; use Pi `/login` when needed.
 
 ## Installation
