@@ -106,3 +106,29 @@ test("daily flow: disposed views release listeners and ignore later activity", a
   f.sessions[0].emit({ type: "message_update", message: { role: "assistant", content: [{ type: "text", text: "late" }] } });
   await tick(); assert.equal(f.hub.get("w0").state, "working");
 });
+
+test("daily flow: stop confirmation keeps both choices visible on small screens", t => {
+  const f = fixture(t);
+  f.view.handleInput("\x1bOQ");
+  const stopIndex = f.view.menu.findIndex(action => action.label.startsWith("Stop Worker"));
+  assert.ok(stopIndex >= 0); f.view.menuIndex = stopIndex;
+  f.view.handleInput("\r");
+  for (const [width, height] of [[80, 24], [30, 8], [22, 7]]) {
+    f.tui.terminal.rows = height;
+    const text = f.view.render(width).join("\n");
+    assert.match(text, /Cancel/); assert.match(text, /Confirm stop/);
+  }
+});
+test("daily flow: an empty filter result cannot open a hidden prior recipient", t => {
+  const f = fixture(t);
+  f.view.handleInput("/"); f.view.handleInput("no matching worker"); f.view.handleInput("\r");
+  assert.match(f.view.render(80).join("\n"), /No matching agents/);
+  f.hub.update("w0", { activity: "still busy" });
+  f.view.handleInput("\r");
+  assert.equal(f.state.mode, "roster"); assert.equal(f.state.selectedId, undefined);
+});
+test("daily flow: Help always opens at its beginning instead of a previous detail scroll", t => {
+  const f = fixture(t);
+  f.state.mode = "details"; f.view.contentOffset = 20; f.view.handleInput("\x1bOP");
+  assert.match(f.view.render(80).join("\n"), /Main is home/);
+});
