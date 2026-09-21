@@ -19,7 +19,7 @@ jobs:
       - run: npm ci --ignore-scripts --prefix pi
       - name: Export source and pinned SDK for offline regression tests
         run: |
-          # Preserve the exact source revision alongside the pinned runtime.
+          # Snapshot the integrated hub, controller and history adapters for final regression tests.
           mkdir -p .inspection
           cp "$(command -v node)" .inspection/node
           git rev-parse HEAD > .inspection/head
