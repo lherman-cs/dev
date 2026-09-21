@@ -276,7 +276,8 @@ export class AgentHubView {
     const height = this.height, record = this.record(), mode = this.state.mode;
     if (height < 7 || width < 20) return [fit("Agent Hub", width), fit("Resize to compose safely", width), fit("Esc Back · F1 Help", width)].slice(0, height);
     const thread = record ? this.thread() : null;
-    const header = this.theme.fg("accent", this.theme.bold("Agent Hub")) + this.theme.fg("muted", ` · ${mode === "thread" ? safeText(record?.label || "Unavailable thread")}` : "Agents");
+    const headingLabel = mode === "thread" ? safeText(record?.label || "Unavailable thread") : "Agents";
+    const header = this.theme.fg("accent", this.theme.bold("Agent Hub")) + this.theme.fg("muted", " · " + headingLabel);
     const workflow = this.hub.workflow;
     const sub = workflow ? `${workflow.label} · ${workflow.control?.state || workflow.state} · ${workflow.control?.detail || workflow.detail || ""}` : "Main stays in the normal Pi console · Alt+A returns home";
     const questions = this.hub.questions();
