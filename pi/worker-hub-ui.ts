@@ -27,6 +27,7 @@ export function createHubViewState(hub: any) {
   const state: any = { selectedId: undefined, mode: "roster", threads: new Map(), filter: "", disposed: false,
     tui: null, theme: null, repaint: () => {}, editorRows: 17, saved: new Map(), timers: new Map() };
   state.flush = (id?: string) => {
+    if (state.disposed) return;
     const ids = id ? [id] : [...state.threads.keys()];
     for (const key of ids) {
       clearTimeout(state.timers.get(key)); state.timers.delete(key);
@@ -51,6 +52,7 @@ export function createHubViewState(hub: any) {
     });
     thread.editor.disableSubmit = true;
     thread.editor.onChange = () => {
+      if (state.disposed) return;
       thread.version++;
       clearTimeout(state.timers.get(id));
       const timer = setTimeout(() => state.flush(id), 750); timer.unref?.(); state.timers.set(id, timer);
@@ -69,6 +71,7 @@ export class AgentHubView {
   private closed = false;
   private focus = false;
   private transcripts = new Map<string, WorkerTranscript>();
+  private retained?: { id: string; release: () => void };
   private menu: any[] = [];
   private menuIndex = 0;
   private returnMode = "roster";
@@ -154,11 +157,17 @@ export class AgentHubView {
     thread.busy = true; thread.notice = `Sending to ${record.label}…`; this.state.flush(id); this.requestRender();
     try {
       if (thread.newFollowUp) {
-        await this.hub.readOnlyFollowUp(record, text);
-        thread.newFollowUp = false; thread.notice = "Read-only follow-up started; inspect its separate thread in Agents for progress and the result.";
+        const follow = await this.hub.readOnlyFollowUp(record, text);
+        thread.newFollowUp = false;
+        thread.notice = "A new read-only follow-up has started; the old result is unchanged.";
+        if (!this.closed && this.state.mode === "thread" && this.state.selectedId === id && follow?.id) {
+          this.state.selectedId = follow.id;
+          void this.hub.load(follow.id);
+        }
       } else {
         const receipt = await this.hub.send(id, text, mode);
         thread.notice = receipt.state === "delivered" ? "Delivered to this agent's context." : "Queued; the current tool batch continues until the next delivery boundary.";
+        thread.lastReceiptId = receipt.id;
       }
       // Never clear newer input, or input belonging to another recipient.
       if (thread.version === version && thread.editor.getExpandedText() === text) { thread.editor.addToHistory(text); thread.editor.setText(""); }
@@ -169,7 +178,11 @@ export class AgentHubView {
 
   private async perform(action: any) {
     try { await action.run(); }
-    catch (error: any) { this.thread().notice = safeText(error.message); this.state.mode = this.returnMode; }
+    catch (error: any) {
+      if (this.record()) this.thread().notice = safeText(error.message);
+      else this.hub.lastUIError = safeText(error.message);
+      this.state.mode = this.returnMode;
+    }
     this.requestRender();
   }
   private actions() {
@@ -184,12 +197,12 @@ export class AgentHubView {
       if (record.controls.send) this.menu.push({ label: "Send draft after the current task (follow-up)", run: () => { back(); return this.send("followUp"); } });
       if (record.controls.cancelQueued) this.menu.push({ label: "Cancel queued messages (retain their text)", run: () => { record.controls.cancelQueued(); back(); } });
       if (record.controls.stop) this.menu.push({ label: `Stop ${record.label}…`, run: () => {
-        this.confirmation = { title: `Stop ${record.label}?`, text: record.metadata?.workflowId
+        this.confirmation = { title: `Stop ${record.label}?`, text: record.metadata?.workflowId && record.metadata?.parentId === "main"
           ? "This worker and its nested calls will stop. The owning workflow run will halt. File changes remain; nothing is reverted."
           : "This worker and its nested calls will stop. Its caller may continue; unrelated agents are not stopped.", run: () => this.hub.abort(id) };
         this.menuIndex = 0; this.state.mode = "confirm";
       } });
-      if (!running(record) && record.metadata?.producer === "dev-workflow") this.menu.push({ label: "Ask a NEW read-only follow-up (never replay this attempt)", run: () => { this.thread().newFollowUp = true; this.openThread(); } });
+      if (!running(record) && record.metadata?.producer === "dev-workflow" && this.hub.readOnlyFollowUp) this.menu.push({ label: "Ask a NEW read-only follow-up (never replay this attempt)", run: () => { this.thread().newFollowUp = true; this.openThread(); } });
       this.menu.push({ label: "Toggle full raw evidence", run: () => { this.thread().raw = !this.thread().raw; this.openThread(); } });
       this.menu.push({ label: "Expand / collapse tool output", run: () => { this.thread().expanded = !this.thread().expanded; this.openThread(); } });
       this.menu.push({ label: "Show / hide provider-exposed thinking", run: () => { this.thread().thinking = !this.thread().thinking; this.openThread(); } });
@@ -275,15 +288,22 @@ export class AgentHubView {
     width = Math.max(1, Math.floor(width)); this.width = width; this.height = Math.max(1, Math.floor(this.tui.terminal?.rows || 24));
     const height = this.height, record = this.record(), mode = this.state.mode;
     if (height < 7 || width < 20) return [fit("Agent Hub", width), fit("Resize to compose safely", width), fit("Esc Back · F1 Help", width)].slice(0, height);
+    const focusedId = mode === "thread" ? record?.id : undefined;
+    if (this.retained?.id !== focusedId) {
+      this.retained?.release();
+      this.retained = focusedId ? { id: focusedId, release: this.hub.retain(focusedId) } : undefined;
+    }
+    if (mode === "thread" && record && !record.loaded && !record.historyError) void this.hub.load(record.id);
     const thread = record ? this.thread() : null;
-    const headingLabel = mode === "thread" ? safeText(record?.label || "Unavailable thread") : "Agents";
-    const header = this.theme.fg("accent", this.theme.bold("Agent Hub")) + this.theme.fg("muted", " · " + headingLabel);
+    const receipt = record?.receipts.find((r: any) => r.id === thread?.lastReceiptId);
+    if (receipt?.state === "delivered" && thread?.notice.startsWith("Queued;")) thread.notice = "Delivered to this agent's context (not a claim of compliance).";
+    const header = this.theme.fg("accent", this.theme.bold("Agent Hub")) + this.theme.fg("muted", ` · ${mode === "thread" ? safeText(record?.label || "Unavailable thread") : "Agents"}`);
     const workflow = this.hub.workflow;
     const sub = workflow ? `${workflow.label} · ${workflow.control?.state || workflow.state} · ${workflow.control?.detail || workflow.detail || ""}` : "Main stays in the normal Pi console · Alt+A returns home";
     const questions = this.hub.questions();
     const notification = questions.length ? `${questions.length} request(s) need your input · F2 to answer; nothing is approved automatically`
       : record?.error || record?.historyError || (mode === "thread" ? thread?.notice : this.hub.lastUIError) || "";
-    const footer = mode === "thread" ? "Enter Send · Esc Agents · F1 Help · F2 Actions" : mode === "roster" ? "↑↓ Choose · Enter Open · Esc Main · F1 Help · F2 Actions" : "↑↓ Navigate · Enter Select · Esc Back · F1 Help";
+    const footer = mode === "thread" ? "Enter Send · Alt+↑↓ Switch · Esc Back · F1 Help · F2 Actions" : mode === "roster" ? "↑↓ Choose · Enter Open · Esc Main · F1 Help · F2 Actions" : "↑↓ Navigate · Enter Select · Esc Back · F1 Help";
     const top = [fit(header, width), fit(this.theme.fg("muted", safeText(sub)), width)];
     if (notification) top.push(fit(this.theme.fg("warning", safeText(notification)), width));
     const foot = width >= 60 ? footer : "Esc Back · F1 Help · F2 Actions";
@@ -318,14 +338,14 @@ export class AgentHubView {
       const records = this.records(), index = records.findIndex((r: any) => r.id === this.state.selectedId);
       const wide = width >= 110 && bodyHeight >= 12;
       const leftWidth = wide ? Math.floor(width * 0.52) : width;
-      const visible = Math.max(1, Math.floor(bodyHeight / 2));
+      const visible = Math.max(1, Math.floor(bodyHeight / 3));
       const start = Math.max(0, Math.min(Math.max(0, index) - Math.floor(visible / 2), Math.max(0, records.length - visible)));
       for (const r of records.slice(start, start + visible)) {
         const selected = r.id === this.state.selectedId;
         const first = `${selected ? "›" : " "} ${glyph(r)} ${safeText(r.label)}`;
         const parent = r.metadata?.parentId !== "main" ? ` ↳ ${this.hub.get(r.metadata?.parentId)?.label || "earlier thread"}` : "";
         const second = `  ${r.state} · ${model(r)} · ctx ${r.context?.percent == null ? "—" : `${r.context.percent.toFixed(0)}%`}${parent}`;
-        for (const l of [first, safeText(second)]) body.push(selected ? this.theme.bg("selectedBg", pad(l, leftWidth)) : fit(l, leftWidth));
+        for (const l of [first, safeText(second), `  ${safeText(r.activity)}`]) body.push(selected ? this.theme.bg("selectedBg", pad(l, leftWidth)) : fit(l, leftWidth));
       }
       if (!records.length) body = wrap(this.state.filter ? "No matching agents. '/' changes the filter." : "No child agents yet. Explorers spawned from Main and workflow workers appear here automatically.", leftWidth);
       if (wide) {
@@ -357,6 +377,7 @@ export class AgentHubView {
   invalidate() { for (const t of this.transcripts.values()) t.invalidate(); }
   dispose() {
     if (this.closed) return; this.state.flush(); this.closed = true; clearTimeout(this.renderTimer); this.unsubscribe();
+    this.retained?.release(); this.retained = undefined;
     this.state.repaint = () => {}; for (const t of this.transcripts.values()) t.dispose();
     for (const thread of this.state.threads.values()) thread.editor.focused = false;
   }
@@ -365,15 +386,24 @@ export class AgentHubView {
 export function registerWorkerHubUI(pi: any, hub: any) {
   let ctx: any, view: AgentHubView | undefined, closeView: (() => void) | undefined, answering = false, disposed = false;
   const state = createHubViewState(hub);
+  let widgetTimer: any;
   const renderWidget = () => {
+    clearTimeout(widgetTimer); widgetTimer = undefined;
     if (!ctx?.hasUI || disposed) return;
     const questions = hub.questions();
     const workflow = hub.workflow;
     const text = [...(workflow ? [`${workflow.label} · ${workflow.control?.state || workflow.state} · ${workflow.control?.detail || workflow.detail || ""}`] : []),
       ...(questions.length ? [`! ${questions.length} request(s) need your input · Alt+A then F2`] : []), ...compactWorkerLines(hub.list())];
-    ctx.ui.setWidget("dev-workers", text.map((s: string) => safeText(s).replace(/\n/g, " ")));
+    const lines = text.map((s: string) => safeText(s).replace(/\n/g, " "));
+    ctx.ui.setWidget("dev-workers", () => ({ render: (width: number) => lines.map((s: string) => fit(s, width)), invalidate() {} }));
   };
-  const unsubscribe = hub.subscribe(renderWidget);
+  const unsubscribe = hub.subscribe(() => {
+    if (widgetTimer || disposed) return;
+    widgetTimer = setTimeout(() => {
+      try { renderWidget(); } catch (error: any) { hub.lastUIError = safeText(error.message); }
+    }, 33);
+    widgetTimer.unref?.();
+  });
   const show = async (context = ctx) => {
     if (!context?.hasUI || disposed) return;
     if (answering) { context.ui.notify("Finish or cancel the open question before switching agents.", "info"); return; }
@@ -409,6 +439,6 @@ export function registerWorkerHubUI(pi: any, hub: any) {
     },
     setWorkflow(title?: string) { if (title && title !== "session") hub.setWorkflow({ label: title, state: "running" }); renderWidget(); },
     open: show,
-    dispose() { disposed = true; closeView?.(); state.dispose(); view?.dispose(); unsubscribe(); try { ctx?.ui.setWidget("dev-workers", undefined); } catch { /* parent runtime already closed */ } ctx = undefined; },
+    dispose() { disposed = true; clearTimeout(widgetTimer); closeView?.(); state.dispose(); view?.dispose(); unsubscribe(); try { ctx?.ui.setWidget("dev-workers", undefined); } catch { /* parent runtime already closed */ } ctx = undefined; },
   };
 }
