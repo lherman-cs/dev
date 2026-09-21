@@ -1,4 +1,4 @@
-import { Input, Key, matchesKey, Text, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import { Input, Key, matchesKey, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 
 const active = (record: any) => record.state === "working" || record.state === "aborting";
 const shortModel = (value: string) => String(value || "model").replace(/^gpt-[\d.]+-/, "");
@@ -152,7 +152,9 @@ class AgentHubView {
   handleInput(data: string) {
     if (matchesKey(data, "alt+a")) { this.done(); return; }
     if (this.mode === "thread") {
-      if (matchesKey(data, Key.escape)) { this.back(); return; }
+      if (matchesKey(data, Key.escape) || matchesKey(data, Key.left)) { this.back(); return; }
+      if (matchesKey(data, "alt+up")) { this.move(-1); return; }
+      if (matchesKey(data, "alt+down")) { this.move(1); return; }
       if (matchesKey(data, Key.pageUp)) { this.scroll += 10; this.tui.requestRender(); return; }
       if (matchesKey(data, Key.pageDown)) { this.scroll = Math.max(0, this.scroll - 10); this.tui.requestRender(); return; }
       if (matchesKey(data, "ctrl+x")) { void this.stopCurrent(); return; }
@@ -278,8 +280,8 @@ class AgentHubView {
     const footer = this.mode === "roster"
       ? "↑↓/jk navigate  ·  Enter inspect  ·  x stop  ·  Esc/Alt+A close"
       : this.current()?.session && active(this.current())
-        ? "type + Enter steer  ·  Ctrl+Enter follow-up  ·  PgUp/PgDn history  ·  Ctrl+X stop  ·  Esc agents"
-        : "PgUp/PgDn history  ·  Esc agents  ·  Alt+A close";
+        ? "type + Enter steer  ·  Alt+↑/↓ switch  ·  Ctrl+Enter follow-up  ·  PgUp/PgDn history  ·  Ctrl+X stop  ·  Esc agents"
+        : "Alt+↑/↓ switch  ·  PgUp/PgDn history  ·  Esc agents  ·  Alt+A close";
     const bodyHeight = Math.max(4, height - 5);
     const body = this.mode === "roster" ? this.renderRoster(width, bodyHeight) : this.renderThread(width, bodyHeight);
     const lines = [
