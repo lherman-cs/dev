@@ -2,26 +2,64 @@ import fs from "node:fs";
 import path from "node:path";
 import { createHash } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
-import { read, save, git, clean, command, ghJSON, contracts, checks, build } from "./workflow.ts";
+import { read, save, git, clean, command, ghJSON, contracts, checks, build, type WorkflowHost, type Project, type WorkflowPhase, type BuildState, type ExecutionTask, type ReviewRepair } from "./workflow.ts";
 
-const digest = value => createHash("sha256").update(JSON.stringify(value)).digest("hex");
-const blocked = message => Object.assign(new Error(message), { blocked: true });
-const nonempty = value => typeof value === "string" && value.trim().length > 0;
+
+type GateError = Error & { blocked?: boolean; gate?: string; evidence?: string };
+type CandidateRef = { head: string; base?: string; base_branch?: string; pr?: number; id?: string; url?: string };
+type Candidate = { head: string; base: string; base_branch?: string; pr: number; id: string; url: string };
+type PullRequestView = { id: string; number: number; url: string; isDraft: boolean; state: string; headRefOid: string; baseRefOid: string; baseRefName: string };
+type ReviewResult = { verdict: "pass" | "repairs" | "blocked"; summary: string; review_focus: string[]; validation: string[]; repairs: ReviewRepair[] };
+type ReviewReport = ReviewResult & { head: string; base: string; pr: number; signature: string };
+type RepairIssue = Omit<ReviewRepair, "reason"> & { reason?: string };
+type PendingRepairs = { issues: RepairIssue[]; candidate: CandidateRef };
+type ShipPhase = "build" | "prepare" | "await" | "review" | "human" | "blocked" | "done";
+type ShipState = {
+  version: number;
+  phase: ShipPhase;
+  repair_round: number;
+  verified_head: string | null;
+  candidate: Candidate | null;
+  approved_head: string | null;
+  last_failure: string | null;
+  blocked: { reason: string; resume: ShipPhase } | null;
+  rebase_base?: string;
+  validation?: string[];
+  feedback?: string | null;
+  pending_repairs?: PendingRepairs | null;
+};
+type ShipCheckpoint = { state: ShipState; persist: () => void };
+type SignalData = {
+  headRefOid: string;
+  baseRefOid: string;
+  statusCheckRollup: any[];
+  comments?: any[];
+  reviews?: Array<{ state?: string }>;
+  updatedAt?: string;
+  pending: boolean;
+  red: boolean;
+  [key: string]: any;
+};
+const errorMessage = (error: unknown): string => error instanceof Error ? error.message : String(error);
+
+const digest = (value: unknown): string => createHash("sha256").update(JSON.stringify(value)).digest("hex");
+const blocked = (message: string): GateError => Object.assign(new Error(message), { blocked: true });
+const nonempty = (value: unknown): value is string => typeof value === "string" && value.trim().length > 0;
 const readTools = ["read", "grep", "find", "ls"];
-const findingKey = task => typeof task.source === "string" ? task.source : task.source?.finding_key;
-const specPath = project => path.join(project.dir, "spec.md");
-const finalChecks = project => {
+const findingKey = (task: ExecutionTask): string | undefined => typeof task.source === "string" ? task.source : task.source?.finding_key;
+const specPath = (project: Project): string => path.join(project.dir, "spec.md");
+const finalChecks = (project: Project): string[] => {
   const declared = contracts(project).meta.final_checks;
   return declared?.length ? declared : ["Justfile", "justfile"].some(f => fs.existsSync(path.join(project.root, f))) ? ["just check", "just test"] : [];
 };
-const progressPath = project => path.join(project.dir, "progress.toon");
-function requireComplete(project) {
-  const state = fs.existsSync(progressPath(project)) ? read(progressPath(project)) : { done: [] };
+const progressPath = (project: Project): string => path.join(project.dir, "progress.toon");
+function requireComplete(project: Project): BuildState {
+  const state = fs.existsSync(progressPath(project)) ? read<BuildState>(progressPath(project)) : { version: 1, done: [], current: null, head: "" };
   if (state.current || contracts(project).tasks.some(t => !state.done?.includes(t.id))) throw new Error("Prepare does not start implementation. Run /dev-build for the unfinished contracts first.");
   return state;
 }
 
-const reviewSchema = {
+const reviewSchema: Record<string, unknown> = {
   type: "object", additionalProperties: false, required: ["verdict", "summary", "review_focus", "validation", "repairs"],
   properties: {
     verdict: { enum: ["pass", "repairs", "blocked"] }, summary: { type: "string" },
@@ -36,17 +74,17 @@ const reviewSchema = {
 };
 
 // All durable state remains the original small TOON checkpoint, not model history.
-function loadShip(project) {
+function loadShip(project: Project): ShipCheckpoint {
   const file = path.join(project.dir, "ship.toon");
-  const state = fs.existsSync(file) ? read(file) : { version: 1, phase: "build", repair_round: 0, verified_head: null, candidate: null, approved_head: null, last_failure: null, blocked: null };
+  const state = fs.existsSync(file) ? read<ShipState>(file) : { version: 1, phase: "build", repair_round: 0, verified_head: null, candidate: null, approved_head: null, last_failure: null, blocked: null };
   if (!["build", "prepare", "await", "review", "human", "blocked", "done"].includes(state.phase)) throw new Error("Unknown shipping checkpoint; preserve it and reconcile explicitly.");
   return { state, persist: () => save(file, state) };
 }
-async function rebaseActive(h) {
+async function rebaseActive(h: WorkflowHost): Promise<boolean> {
   const dir = await git(h, "rev-parse", "--path-format=absolute", "--git-dir");
   return ["rebase-merge", "rebase-apply"].some(name => fs.existsSync(path.join(dir, name)));
 }
-async function finishRebase(h, project) {
+async function finishRebase(h: WorkflowHost, project: Project): Promise<void> {
   while (await rebaseActive(h)) {
     h.checkpoint?.("Resolving rebase conflicts");
     const files = (await git(h, "diff", "--name-only", "--diff-filter=U")).split("\n").filter(Boolean);
@@ -66,15 +104,15 @@ async function finishRebase(h, project) {
   }
 }
 
-async function currentPR(h) {
-  return ghJSON(h, ["pr", "view", "--json", "id,number,url,isDraft,state,headRefOid,baseRefOid,baseRefName"]);
+async function currentPR(h: WorkflowHost): Promise<PullRequestView> {
+  return ghJSON<PullRequestView>(h, ["pr", "view", "--json", "id,number,url,isDraft,state,headRefOid,baseRefOid,baseRefName"]);
 }
-async function unchanged(h, expected) {
+async function unchanged(h: WorkflowHost, expected: Candidate): Promise<PullRequestView> {
   const pr = await currentPR(h);
   if (pr.state !== "OPEN" || pr.number !== expected.pr || pr.headRefOid !== expected.head || pr.baseRefOid !== expected.base || await git(h, "rev-parse", "HEAD") !== expected.head || !await clean(h)) throw new Error("Candidate or base changed; old verification/approval is not reusable.");
   return pr;
 }
-async function prepare(h, project, ship) {
+async function prepare(h: WorkflowHost, project: Project, ship: ShipCheckpoint): Promise<void> {
   h.checkpoint?.("Preparing exact candidate");
   const { state, persist } = ship;
   const progress = requireComplete(project);
@@ -113,7 +151,7 @@ async function prepare(h, project, ship) {
     const result = await h.exec("bash", ["-c", line]);
     if (result.code) {
       const error = new Error(`Final gate failed: ${line}\n${(result.stderr || result.stdout).slice(-1600)}`);
-      error.gate = line; error.evidence = (result.stderr || result.stdout).slice(-1600); throw error;
+      const gateError = error as GateError; gateError.gate = line; gateError.evidence = (result.stderr || result.stdout).slice(-1600); throw gateError;
     }
   }
   if (!await clean(h) || await git(h, "rev-parse", "HEAD") !== head) throw new Error("Final gates modified the candidate; refusing to publish.");
@@ -121,7 +159,7 @@ async function prepare(h, project, ship) {
   h.checkpoint?.("Before publishing verified candidate");
   h.report(`Preparation: publishing verified candidate ${head.slice(0, 12)}.`);
   await git(h, "push", "--force-with-lease", "--set-upstream", "origin", `HEAD:refs/heads/${branch}`);
-  const prs = await ghJSON(h, ["pr", "list", "--head", branch, "--state", "open", "--json", "number,baseRefName,isDraft"]);
+  const prs = await ghJSON<Array<{ number: number; baseRefName: string; isDraft: boolean }>>(h, ["pr", "list", "--head", branch, "--state", "open", "--json", "number,baseRefName,isDraft"]);
   if (prs.length > 1) throw new Error("Multiple open PRs for this branch.");
   if (!prs.length) await command(h, "gh", ["pr", "create", "--draft", "--base", baseBranch, "--head", branch, "--title", "chore: prepare review candidate", "--body", "Draft candidate. Final summary follows independent and human review."]);
   else {
@@ -135,12 +173,12 @@ async function prepare(h, project, ship) {
   state.phase = "await"; state.approved_head = null; state.feedback = null; persist();
 }
 
-async function signals(h, c) {
+async function signals(h: WorkflowHost, c: Candidate): Promise<SignalData> {
   await unchanged(h, c);
-  const data = await ghJSON(h, ["pr", "view", String(c.pr), "--json", "headRefOid,baseRefOid,statusCheckRollup,comments,reviews,updatedAt"]);
+  const data = await ghJSON<Omit<SignalData, "pending" | "red">>(h, ["pr", "view", String(c.pr), "--json", "headRefOid,baseRefOid,statusCheckRollup,comments,reviews,updatedAt"]);
   if (data.headRefOid !== c.head || data.baseRefOid !== c.base || !Array.isArray(data.statusCheckRollup)) throw new Error("Cannot verify exact-candidate CI signals.");
   let pending = false, red = false;
-  for (const check of data.statusCheckRollup) {
+  for (const check of data.statusCheckRollup as any[]) {
     if (check.__typename === "CheckRun" || check.status) {
       if (check.status !== "COMPLETED") pending = true;
       else if (!["SUCCESS", "NEUTRAL", "SKIPPED"].includes(check.conclusion)) red = true;
@@ -149,11 +187,11 @@ async function signals(h, c) {
       else if (check.state !== "SUCCESS") red = true;
     }
   }
-  if ((data.reviews || []).some(review => review.state === "PENDING")) pending = true;
+  if ((data.reviews || []).some((review: { state?: string }) => review.state === "PENDING")) pending = true;
   return { ...data, pending, red };
 }
-async function settled(h, c) {
-  let previous, since = 0, status;
+async function settled(h: WorkflowHost, c: Candidate): Promise<SignalData> {
+  let previous: string | undefined, since = 0, status: "pending" | "quiet" | undefined;
   while (true) {
     h.signal?.throwIfAborted();
     h.checkpoint?.();
@@ -175,10 +213,10 @@ async function settled(h, c) {
     await (h.sleep ? h.sleep(10_000) : delay(10_000, undefined, { signal: h.signal }));
   }
 }
-async function threads(h, c) {
+async function threads(h: WorkflowHost, c: Candidate): Promise<any[]> {
   const id = c.id || (await currentPR(h)).id;
-  const result = [];
-  let cursor = null;
+  const result: any[] = [];
+  let cursor: string | null = null;
   do {
     const query = "query($id:ID!,$cursor:String){node(id:$id){...on PullRequest{reviewThreads(first:100,after:$cursor){nodes{id isResolved isOutdated comments(first:100){nodes{body path line url author{login}} pageInfo{hasNextPage}}} pageInfo{hasNextPage endCursor}}}}}";
     const args = ["api", "graphql", "-f", `query=${query}`, "-f", `id=${id}`];
@@ -186,22 +224,22 @@ async function threads(h, c) {
     const response = await ghJSON(h, args);
     const page = response.data?.node?.reviewThreads;
     if (response.errors?.length || !page) throw new Error("Cannot read complete PR review threads.");
-    if (page.nodes.some(thread => thread.comments.pageInfo.hasNextPage)) throw new Error("Review thread exceeds fetched evidence; inspect the full thread before reviewing.");
+    if (page.nodes.some((thread: any) => thread.comments.pageInfo.hasNextPage)) throw new Error("Review thread exceeds fetched evidence; inspect the full thread before reviewing.");
     result.push(...page.nodes);
     cursor = page.pageInfo.hasNextPage ? page.pageInfo.endCursor : null;
     if (page.pageInfo.hasNextPage && !cursor) throw new Error("Invalid review-thread pagination.");
   } while (cursor);
   return result;
 }
-async function evidence(h, project, c) {
+async function evidence(h: WorkflowHost, project: Project, c: Candidate): Promise<{ signature: string; red: boolean; data: any }> {
   const data = await signals(h, c);
   if (data.pending) throw new Error("CI or review feedback is still pending.");
   const { updatedAt, ...stable } = data;
   const feedback = await threads(h, c);
   const diff = await git(h, "diff", `${c.base}...${c.head}`);
   const history = await git(h, "log", "--format=%h %s", `${c.base}..${c.head}`);
-  const failures = [];
-  for (const check of data.statusCheckRollup) {
+  const failures: Array<{ name: string; logs: string }> = [];
+  for (const check of data.statusCheckRollup as any[]) {
     if (check.status === "COMPLETED" && !["SUCCESS", "NEUTRAL", "SKIPPED"].includes(check.conclusion)) {
       const job = /\/actions\/runs\/\d+\/job\/(\d+)/.exec(check.detailsUrl || "");
       if (job) {
@@ -212,19 +250,19 @@ async function evidence(h, project, c) {
   }
   const approved = [fs.readFileSync(specPath(project), "utf8"), contracts(project).meta, contracts(project).all];
   const checkpointFile = path.join(project.dir, "ship.toon");
-  const verifiedHead = fs.existsSync(checkpointFile) ? read(checkpointFile).verified_head : null;
+  const verifiedHead = fs.existsSync(checkpointFile) ? read<ShipState>(checkpointFile).verified_head : null;
   return { signature: digest({ stable, feedback, approved }), red: data.red, data: { ...stable, threads: feedback, failures, diff, history,
     local_validation: { commands: finalChecks(project), verified: verifiedHead === c.head, verified_head: verifiedHead } } };
 }
-async function review(h, project, c, feedback = "") {
+async function review(h: WorkflowHost, project: Project, c: Candidate, feedback = ""): Promise<ReviewReport> {
   h.checkpoint?.("Independent candidate review");
   const before = await evidence(h, project, c);
-  const result = await h.delegate("review", `Approved spec: ${specPath(project)}\nPlans/repairs: ${project.dir}\nCandidate: ${JSON.stringify(c)}\nEvidence: ${JSON.stringify(before.data)}${feedback ? `\nHuman feedback: ${feedback}\nThis invocation must return repairs or blocked, never pass.` : ""}`,
+  const result = await h.delegate<ReviewResult>("review", `Approved spec: ${specPath(project)}\nPlans/repairs: ${project.dir}\nCandidate: ${JSON.stringify(c)}\nEvidence: ${JSON.stringify(before.data)}${feedback ? `\nHuman feedback: ${feedback}\nThis invocation must return repairs or blocked, never pass.` : ""}`,
     "dev-review", reviewSchema, { tools: readTools, metadata: { label: `Reviewer · Candidate ${c.head.slice(0, 12)}`, task: `Review PR #${c.pr} against approved spec and checks`, candidate: c.head } });
   if (!["pass", "repairs", "blocked"].includes(result.verdict) || !Array.isArray(result.repairs)) throw new Error("Invalid review result.");
   if (feedback && result.verdict === "pass") throw new Error("Human feedback may not be silently passed.");
   if (result.verdict === "pass" && result.repairs.length) throw new Error("PASS cannot contain unaddressed repairs.");
-  if (result.verdict === "repairs" && (!result.repairs.length || result.repairs.some(r => !nonempty(r.key) || !nonempty(r.goal) || !r.checks?.length))) throw new Error("Repairs require stable keys, scope and acceptance checks.");
+  if (result.verdict === "repairs" && (!result.repairs.length || result.repairs.some((r: ReviewRepair) => !nonempty(r.key) || !nonempty(r.goal) || !r.checks?.length))) throw new Error("Repairs require stable keys, scope and acceptance checks.");
   const after = await evidence(h, project, c);
   if (after.signature !== before.signature) throw new Error("Review evidence changed; rerun review before approval.");
   const report = { ...result, head: c.head, base: c.base, pr: c.pr, signature: before.signature };
@@ -232,33 +270,33 @@ async function review(h, project, c, feedback = "") {
   h.report(result.summary);
   return report;
 }
-function addRepairs(project, issues, c) {
+function addRepairs(project: Project, issues: RepairIssue[], c: CandidateRef): void {
   const { tasks, all } = contracts(project);
-  let next = Math.max(0, ...all.map(t => Number(/^R(\d+)$/.exec(t.id)?.[1] || 0))) + 1;
+  let next = Math.max(0, ...all.map((t: ExecutionTask) => Number(/^R(\d+)$/.exec(t.id)?.[1] || 0))) + 1;
   for (const issue of issues) {
-    if (all.some(t => findingKey(t) === issue.key && t.source?.candidate === c.head)) continue;
+    if (all.some((t: ExecutionTask) => findingKey(t) === issue.key && t.source?.candidate === c.head)) continue;
     const id = `R${String(next++).padStart(3, "0")}`;
     save(path.join(project.dir, "repairs", `${id}.toon`), { version: 1, id, title: issue.title, goal: issue.goal,
       requirements: issue.requirements || [issue.reason].filter(Boolean), checks: issue.checks, depends_on: tasks.map(t => t.id),
       source: { kind: "candidate_review", finding_key: issue.key, candidate: c.head, evidence: issue.evidence || [] } });
   }
 }
-function queueRepairs(project, ship, issues, c) {
+function queueRepairs(project: Project, ship: ShipCheckpoint, issues: RepairIssue[], c: CandidateRef): void {
   const { state, persist } = ship;
   const seen = new Set(contracts(project).all.map(findingKey).filter(Boolean));
-  if (state.repair_round >= 2 || !issues.length || issues.some(r => seen.has(r.key)) || new Set(issues.map(r => r.key)).size !== issues.length) throw blocked("Repair loop stopped: recurring finding or two repair rounds exhausted.");
+  if (state.repair_round >= 2 || !issues.length || issues.some((r: RepairIssue) => seen.has(r.key)) || new Set(issues.map((r: RepairIssue) => r.key)).size !== issues.length) throw blocked("Repair loop stopped: recurring finding or two repair rounds exhausted.");
   state.pending_repairs = { issues, candidate: c }; persist();
 }
-function applyPending(project, ship) {
+function applyPending(project: Project, ship: ShipCheckpoint): void {
   const { state, persist } = ship;
   if (!state.pending_repairs) return;
   addRepairs(project, state.pending_repairs.issues, state.pending_repairs.candidate);
   state.pending_repairs = null; state.repair_round++;
   state.phase = "build"; state.verified_head = null; state.candidate = null; state.approved_head = null; state.feedback = null; persist();
 }
-const preview = (report, c, round) => [`# Final review: PR #${c.pr}`, report.summary, `HEAD: ${c.head}\nBase: ${c.base}\nRepair rounds: ${round}`, "## Review focus", ...(report.review_focus || []), "## Validation", ...(report.validation || []), c.url].join("\n\n");
+const preview = (report: ReviewReport, c: Candidate, round: number): string => [`# Final review: PR #${c.pr}`, report.summary, `HEAD: ${c.head}\nBase: ${c.base}\nRepair rounds: ${round}`, "## Review focus", ...(report.review_focus || []), "## Validation", ...(report.validation || []), c.url].join("\n\n");
 
-export async function shipping(h, project, phase) {
+export async function shipping(h: WorkflowHost, project: Project, phase: WorkflowPhase): Promise<void> {
   const ship = loadShip(project);
   const { state, persist } = ship;
   if (phase === "review") {
@@ -269,7 +307,7 @@ export async function shipping(h, project, phase) {
     if (report.verdict === "repairs") {
       const decision = await h.review("Select concrete repairs", preview(report, c, state.repair_round), report.repairs);
       if ((await evidence(h, project, c)).signature !== report.signature) throw new Error("Review evidence changed during repair selection.");
-      addRepairs(project, report.repairs.filter(r => decision.keys?.includes(r.key)), c);
+      addRepairs(project, report.repairs.filter((r: ReviewRepair) => decision.keys?.includes(r.key)), c);
     }
     return;
   }
@@ -292,10 +330,10 @@ export async function shipping(h, project, phase) {
         try { await prepare(h, project, ship); }
         catch (error) {
           if (!error.gate) throw error;
-          const signature = digest([error.gate, error.evidence]);
-          if (state.last_failure === signature) throw blocked(`Final gate failure recurred: ${error.gate}`);
+          const signature = digest([gateError.gate, gateError.evidence]);
+          if (state.last_failure === signature) throw blocked(`Final gate failure recurred: ${gateError.gate}`);
           const head = await git(h, "rev-parse", "HEAD");
-          queueRepairs(project, ship, [{ key: `final-gate:${signature}`, title: `Repair final gate: ${error.gate}`, goal: `Make ${error.gate} pass within the approved spec.`, evidence: [error.evidence], checks: [error.gate] }], { head });
+          queueRepairs(project, ship, [{ key: `final-gate:${signature}`, title: `Repair final gate: ${gateError.gate}`, goal: `Make ${gateError.gate} pass within the approved spec.`, evidence: [gateError.evidence || ""], checks: [gateError.gate] }], { head });
           state.last_failure = signature; persist(); continue;
         }
       }
@@ -312,7 +350,7 @@ export async function shipping(h, project, phase) {
       if (state.phase === "human") {
         h.checkpoint?.("Human review of exact candidate");
         const file = path.join(project.dir, "review.toon");
-        const report = fs.existsSync(file) ? read(file) : null;
+        const report = fs.existsSync(file) ? read<ReviewReport>(file) : null;
         const current = await evidence(h, project, c);
         if (!report || report.head !== c.head || report.signature !== current.signature) { state.phase = "await"; state.approved_head = null; persist(); continue; }
         if (current.red) throw new Error("Reviewer reported PASS while CI is red; refusing human approval.");
@@ -323,7 +361,7 @@ export async function shipping(h, project, phase) {
           state.approved_head = c.head; persist();
         }
         h.checkpoint?.("Preparing PR title and body");
-        const finalized = await h.delegate("ship", `Approved spec: ${specPath(project)}\nReview: ${file}\nCandidate: ${JSON.stringify(c)}`, undefined,
+        const finalized = await h.delegate<{ title: string; body: string }>("ship", `Approved spec: ${specPath(project)}\nReview: ${file}\nCandidate: ${JSON.stringify(c)}`, undefined,
           { type: "object", required: ["title", "body"], additionalProperties: false, properties: { title: { type: "string" }, body: { type: "string" } } },
           { tools: readTools, metadata: { label: "PR summary · Approved candidate", task: "Write title/body without changing code", candidate: c.head }, system: "Return concise human-facing PR title and Markdown body for this approved candidate. Conventional Commit title; no workflow IDs. Do not modify files or GitHub." });
         if (!/^[a-z][a-z0-9-]*(\([^)]+\))?!?: .+/.test(finalized.title) || /\b[PR]\d{3,}\b|Plan-ID:/i.test(finalized.title)) throw new Error("Final title must be a Conventional Commit without workflow IDs.");
@@ -339,10 +377,11 @@ export async function shipping(h, project, phase) {
         state.phase = "done"; persist(); h.report(`Ready: ${c.url}`); return;
       }
     }
-  } catch (error) {
+  } catch (error: unknown) {
     // Cancellation or infrastructure failure preserves the resumable phase and approval.
-    if (error.blocked) {
-      state.blocked = { reason: error.message, resume: state.phase }; state.phase = "blocked"; persist();
+    const workflowError = error as GateError;
+    if (workflowError.blocked) {
+      state.blocked = { reason: errorMessage(error), resume: state.phase }; state.phase = "blocked"; persist();
     }
     throw error;
   }
