@@ -38,7 +38,7 @@ function fixture(t, { manifest = true, taskCount = 2 } = {}) {
     const id = `P00${i}`;
     write(path.join(dir, "plans", `${id}.toon`), { id, title: `task ${i}`, goal: "Create tested output", depends_on: i === 1 ? [] : ["P001"], checks: [`test "$(cat output-${i})" = good`] });
   }
-  const calls = [];
+  const calls = [], reports = [];
   const h = {
     cwd: root,
     async exec(program, args) {
@@ -56,15 +56,20 @@ function fixture(t, { manifest = true, taskCount = 2 } = {}) {
     },
     select: async () => { throw new Error("unexpected selector"); },
     confirm: async () => false,
-    report: () => {},
+    report: message => reports.push(message),
   };
-  return { h, root, dir, base, git, calls, target: "./plans/media signaling core/spec.md", write };
+  return { h, root, dir, base, git, calls, reports, target: "./plans/media signaling core/spec.md", write };
 }
 
 test("real spec path with spaces, real TOON, bounded retry, two clean commits, local exclude", async t => {
   const f = fixture(t);
   await runWorkflow(f.h, "build", f.target);
   assert.deepEqual(f.calls, ["build", "build", "build_retry"]);
+  assert.deepEqual(f.reports, [
+    "Building P001: task 1 (1/2).", "Completed P001 (1/2).",
+    "Building P002: task 2 (2/2).", "P002 did not pass verification. Retrying the same commit.",
+    "Retrying P002: task 2 (2/2).", "Completed P002 (2/2).",
+  ]);
   assert.equal(f.git("rev-list", "--count", `${f.base}..HEAD`), "2");
   assert.equal(f.git("status", "--porcelain"), "");
   assert.equal(fs.existsSync(path.join(f.root, ".gitignore")), false);

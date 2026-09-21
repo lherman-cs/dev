@@ -84,9 +84,12 @@ async function prepare(h, project, ship) {
     branch = file ? fs.readFileSync(file, "utf8").trim().replace(/^refs\/heads\//, "") : "";
   }
   if (!branch || branch === baseBranch) throw new Error("Prepare requires the human's feature branch/worktree, not the base branch.");
-  if (rebasing) await finishRebase(h, project);
-  else {
+  if (rebasing) {
+    h.report("Preparation: resuming the interrupted rebase.");
+    await finishRebase(h, project);
+  } else {
     if (!await clean(h)) throw new Error("Prepare requires a clean worktree; unrelated work is preserved.");
+    h.report(`Preparation: fetching and rebasing onto origin/${baseBranch}.`);
     await git(h, "fetch", "origin", baseBranch);
     const target = await git(h, "rev-parse", `origin/${baseBranch}`);
     // Persist before rebase so an interrupted rebase can be continued by code.
@@ -99,7 +102,10 @@ async function prepare(h, project, ship) {
   }
   const head = await git(h, "rev-parse", "HEAD");
   progress.head = head; save(progressPath(project), progress);
-  for (const line of finalChecks(project)) {
+  const gates = finalChecks(project);
+  if (gates.length) h.report(`Preparation: running ${gates.length} final validation ${gates.length === 1 ? "check" : "checks"}.`);
+  for (const line of gates) {
+    h.report(`Validating: ${line}`);
     const result = await h.exec("bash", ["-c", line]);
     if (result.code) {
       const error = new Error(`Final gate failed: ${line}\n${(result.stderr || result.stdout).slice(-1600)}`);
@@ -107,7 +113,8 @@ async function prepare(h, project, ship) {
     }
   }
   if (!await clean(h) || await git(h, "rev-parse", "HEAD") !== head) throw new Error("Final gates modified the candidate; refusing to publish.");
-  state.verified_head = head; state.validation = finalChecks(project); persist();
+  state.verified_head = head; state.validation = gates; persist();
+  h.report(`Preparation: publishing verified candidate ${head.slice(0, 12)}.`);
   await git(h, "push", "--force-with-lease", "--set-upstream", "origin", `HEAD:refs/heads/${branch}`);
   const prs = await ghJSON(h, ["pr", "list", "--head", branch, "--state", "open", "--json", "number,baseRefName,isDraft"]);
   if (prs.length > 1) throw new Error("Multiple open PRs for this branch.");
@@ -141,15 +148,24 @@ async function signals(h, c) {
   return { ...data, pending, red };
 }
 async function settled(h, c) {
-  let previous, since = 0;
+  let previous, since = 0, status;
   while (true) {
     h.signal?.throwIfAborted();
     const data = await signals(h, c);
     const signature = digest(data);
     const now = h.now ? h.now() : Date.now();
-    if (data.pending) { previous = undefined; since = 0; }
-    else if (signature !== previous) { previous = signature; since = now; }
-    else if (now - since >= 60_000) return data;
+    if (data.pending) {
+      previous = undefined; since = 0;
+      if (status !== "pending") h.report(`Awaiting CI and review signals for PR #${c.pr}.`);
+      status = "pending";
+    } else if (signature !== previous) {
+      previous = signature; since = now;
+      h.report(`${status === "quiet" ? "New feedback detected. Restarting" : "Signals are complete. Starting"} the 60-second quiet period.`);
+      status = "quiet";
+    } else if (now - since >= 60_000) {
+      h.report(`PR #${c.pr} signals settled. Starting independent review.`);
+      return data;
+    }
     await (h.sleep ? h.sleep(10_000) : delay(10_000, undefined, { signal: h.signal }));
   }
 }

@@ -2,6 +2,7 @@ import { createWorkerRunner, exploreTool } from "./lib/worker.mjs";
 import { runWorkflow, excludeState } from "./lib/workflow.mjs";
 
 export const explorerOnlyTools = new Set(["web_search", "source_check", "fetch_content", "get_search_content"]);
+export const workflowError = (error, phase, target = "") => `${error.message}\n\nProgress is preserved. After resolving the issue, resume with /dev-${phase}${target ? ` ${target}` : ""}.`;
 
 export default function (pi) {
   const run = createWorkerRunner();
@@ -63,7 +64,9 @@ export default function (pi) {
           report: content => pi.sendMessage({ customType: "dev-workflow", content, display: true }, { triggerTurn: false }),
         };
         try { await runWorkflow(h, phase, args); }
-        catch (error) { ctx.ui.notify(error.message, "error"); }
+        catch (error) {
+          ctx.ui.notify(workflowError(error, phase, args), "error");
+        }
         finally { ctx.ui.setStatus("dev-worker", undefined); if (active === controller) active = undefined; }
       },
     });

@@ -110,6 +110,7 @@ export async function build(h, project) {
     let failure = "";
     for (let attempt = 0; attempt < 2; attempt++) {
       const role = attempt ? "build_retry" : "build";
+      h.report(`${attempt ? "Retrying" : "Building"} ${task.id}: ${task.title || task.goal} (${accepted.size + 1}/${tasks.length}).`);
       const result = await h.delegate(role, `Spec: ${path.join(project.dir, "spec.md")}\nExecution contract: ${task.file}\nAccepted predecessor: ${state.head}\n${failure}`, "dev-implement");
       // Infrastructure failures throw from delegate: never retry with another model.
       if (/\bNEEDS_REPLAN\b/.test(result)) throw Object.assign(new Error(result), { blocked: true });
@@ -117,7 +118,10 @@ export async function build(h, project) {
         state.head = await verify(h, state.head, task);
         failure = "";
         break;
-      } catch (error) { failure = `Verification failed: ${error.message}\nAmend the same contract commit; do not add another.`; }
+      } catch (error) {
+        failure = `Verification failed: ${error.message}\nAmend the same contract commit; do not add another.`;
+        if (!attempt) h.report(`${task.id} did not pass verification. Retrying the same commit.`);
+      }
     }
     if (failure) throw new Error(failure);
     accepted.add(task.id);

@@ -24,8 +24,8 @@ function fixture(t) {
   write('project.toon',{status:'ready',base,final_checks:['test -f done']});
   write('plans/P001.toon',{id:'P001',title:'task',goal:'do',depends_on:[],checks:['test -f done']});
   const pr={id:'PR_test',number:1,url:'https://example.invalid/pr/1',state:'OPEN',isDraft:true,headRefOid:base,baseRefOid:base,baseRefName:'main'};
-  const api=[],delegations=[],decisions=[];let clock=1,exists=false,red=false;
-  const h={cwd:root,now:()=>clock,sleep:async ms=>{clock+=ms;},report:()=>{},confirm:async()=>true,select:async()=>undefined,
+  const api=[],delegations=[],decisions=[],reports=[];let clock=1,exists=false,red=false;
+  const h={cwd:root,now:()=>clock,sleep:async ms=>{clock+=ms;},report:message=>reports.push(message),confirm:async()=>true,select:async()=>undefined,
     review:async (...args)=>{decisions.push(args);return {action:'approve'};},
     async exec(program,args){
       if(program==='gh') {
@@ -50,12 +50,19 @@ function fixture(t) {
       if(name==='ship') return {title:'feat: implement outcome',body:'Summary and validation'};
       assert.fail(`Unexpected delegated phase ${name}`);
     }};
-  return {h,dir,root,base,git,write,read,pr,api,delegations,decisions,setRed:value=>red=value};
+  return {h,dir,root,base,git,write,read,pr,api,delegations,decisions,reports,setRed:value=>red=value};
 }
 test('ship sequences preparation in code, settles feedback, approves exact HEAD and never merges',async t=>{
   const f=fixture(t);await runWorkflow(f.h,'ship',f.dir);
   assert.deepEqual(f.delegations,['build','review','ship']);assert.equal(f.decisions.length,1);
   const state=f.read('ship.toon');assert.equal(state.phase,'done');assert.equal(state.approved_head,f.git('rev-parse','HEAD'));
+  assert.ok(f.reports.some(message=>message.startsWith('Building P001: task')));
+  assert.ok(f.reports.includes('Preparation: fetching and rebasing onto origin/main.'));
+  assert.ok(f.reports.includes('Preparation: running 1 final validation check.'));
+  assert.ok(f.reports.includes('Validating: test -f done'));
+  assert.ok(f.reports.some(message=>message.startsWith('Preparation: publishing verified candidate ')));
+  assert.ok(f.reports.includes('Signals are complete. Starting the 60-second quiet period.'));
+  assert.ok(f.reports.includes('PR #1 signals settled. Starting independent review.'));
   assert.equal(f.pr.isDraft,false);assert.ok(!f.api.some(a=>a[1]==='merge'));
 });
 test('finalizer interruption preserves exact-HEAD approval and resume does not repeat human gate',async t=>{
@@ -114,6 +121,7 @@ test('quiet period resets when late review feedback arrives; waiting uses no wor
   };
   f.h.delegate=async (name,...args)=>{if(name==='review')assert.ok(f.h.now()>=90001);return delegate(name,...args);};
   await runWorkflow(f.h,'ship',f.dir);assert.equal(f.read('ship.toon').phase,'done');
+  assert.ok(f.reports.includes('New feedback detected. Restarting the 60-second quiet period.'));
 });
 test('pending repair batch is replayed idempotently after partial checkpoint publication',async t=>{
   const f=fixture(t);await runWorkflow(f.h,'build',f.dir);
