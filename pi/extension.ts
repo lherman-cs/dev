@@ -17,6 +17,7 @@ export default function (pi) {
   const hubUI = registerWorkerHubUI(pi, hub);
   let active, closed = false;
   pi.on("session_start", (_event, ctx) => {
+    hub.interactive = !!ctx.hasUI;
     try {
       if (ctx.sessionManager?.getSessionId && !hub.history) {
         hub.history = new WorkerHistory({ cwd: ctx.cwd, sessionId: ctx.sessionManager.getSessionId(),
@@ -31,7 +32,10 @@ export default function (pi) {
   // This never adds spawning, model policy or scheduling to Agent Hub.
   const offProducer = pi.events?.on("dev:agent-hub", request => {
     try {
-      if (request.action === "register") request.reply?.({ id: hub.register(request.worker) });
+      if (request.action === "register") {
+        const id = hub.register(request.worker);
+        request.reply?.({ id });
+      }
       else if (request.action === "update") hub.update(request.id, request.patch);
       else if (request.action === "finish") hub.unregister(request.id, request.state);
     } catch (error) { request.reply?.({ error: error.message }); }
@@ -63,9 +67,12 @@ export default function (pi) {
       if (ctx.isIdle && !ctx.isIdle()) { ctx.ui.notify("Let the Main turn finish or stop it before starting a writing workflow.", "warning"); return; }
       if (hub.historyFailure) { ctx.ui.notify(`Restore history storage before starting: ${hub.historyFailure.message}`, "error"); return; }
       const workflowId = randomUUID();
-      const control = new WorkflowControl({ onChange: () => hub.setWorkflow({ label: `dev-${phase}`, workflowId, control }) });
+      const control = new WorkflowControl({ onChange: () => hub.setWorkflow({ label: `dev-${phase}`, workflowId, control }),
+        canResume: () => !ctx.isIdle || ctx.isIdle() });
       active = control; hubUI.setContext(ctx); control.publish();
-      const request = (title, run) => hub.request({ ownerId: "main", title, run }, control.signal);
+      const request = (title, run) => ctx.hasUI
+        ? hub.request({ ownerId: "main", title, run }, control.signal)
+        : Promise.reject(new Error("Human approval requires interactive Pi."));
       const h = {
         cwd: ctx.cwd, signal: control.signal, control,
         rawExec(program, argv) { return pi.exec(program, argv, { cwd: this.cwd, signal: this.signal }); },
@@ -74,9 +81,13 @@ export default function (pi) {
         async delegate(name, task, skill, schema, options = {}) {
           await control.checkpoint(`Running ${options.metadata?.label || name}`);
           const { metadata = {}, ...delegateOptions } = options;
+          const purpose = metadata.task || (name === "review" ? "Review the exact candidate against approved acceptance criteria"
+            : name === "ship" ? "Summarize the approved candidate for the pull request"
+              : name === "build_retry" ? "Resolve only the assigned rebase conflicts" : task);
+          const label = metadata.label || (name === "review" ? "Reviewer · exact candidate" : name === "ship" ? "Finalizer · approved PR summary" : name);
           return run({ cwd: this.cwd, name, task, skill, schema, signal: this.signal, ...delegateOptions,
             rejectPassOnFeedback: name === "review",
-            metadata: { ...metadata, workflowId, parentId: "main", policy: metadata.contract ? "contract" : "task" },
+            metadata: { ...metadata, task: purpose, label, workflowId, parentId: "main", policy: metadata.contract ? "contract" : "task" },
             report: text => { if (!closed) { try { ctx.ui.setStatus("dev-worker", text); } catch { /* closed runtime */ } } } });
         },
         outcome(contract, outcome) {
