@@ -13,9 +13,17 @@ export const plainContent = (content: any): string => typeof content === "string
     ? `${p.name}\n${JSON.stringify(p.arguments, null, 2)}` : `[${p.type || "Attachment"}: ${p.mimeType || p.mediaType || "inspect attachment"}]`).join("\n");
 const safeValue = (value: any): any => typeof value === "string" ? safeText(value) : Array.isArray(value) ? value.map(safeValue)
   : value && typeof value === "object" ? Object.fromEntries(Object.entries(value).map(([k, v]) => [k, k === "data" ? v : safeValue(v)])) : value;
+function currentMessages(record: any) {
+  const messages = [...record.messages, ...(record.streaming ? [record.streaming] : [])];
+  const finished = new Set(record.messages.filter((m: any) => m.role === "toolResult").map((m: any) => m.toolCallId));
+  for (const [id, tool] of record.liveTools || []) {
+    if (!finished.has(id) && tool.result) messages.push({ ...tool.result, role: "toolResult", toolName: tool.toolName, toolCallId: id, live: true });
+  }
+  return messages;
+}
 export function rawTranscript(record: any): string {
-  return [...record.messages, ...(record.streaming ? [record.streaming] : [])].map((m: any) =>
-    `${m.role}${m.toolName ? ` · ${m.toolName}` : ""}\n${plainContent(m.content)}${m.details ? `\n${JSON.stringify(m.details, null, 2)}` : ""}`).join("\n\n");
+  return currentMessages(record).map((m: any) =>
+    `${m.role}${m.toolName ? ` · ${m.toolName}` : ""}${m.live ? " (in progress)" : ""}\n${plainContent(m.content)}${m.details ? `\n${JSON.stringify(m.details, null, 2)}` : ""}`).join("\n\n");
 }
 
 /** Native Pi message/tool components; only viewport navigation belongs here. */
@@ -61,11 +69,11 @@ export class WorkerTranscript {
     }
     const blocks: any[] = [];
     const shownTools = new Set<string>();
-    const messages = [...record.messages, ...(record.streaming ? [record.streaming] : [])];
+    const messages = state.raw ? currentMessages(record) : [...record.messages, ...(record.streaming ? [record.streaming] : [])];
     for (let index = 0; index < messages.length; index++) {
       const message = messages[index];
-      const key = index === record.messages.length ? "stream" : `m:${index}`;
-      const stamp = `${state.raw}:${state.expanded}:${state.thinking}:${key === "stream" ? record.revision : "done"}`;
+      const key = message.live ? `partial:${message.toolCallId}` : index === record.messages.length && record.streaming ? "stream" : `m:${index}`;
+      const stamp = `${state.raw}:${state.expanded}:${state.thinking}:${key === "stream" || message.live ? record.revision : "done"}`;
       if (state.raw) {
         blocks.push(this.block(key, message, stamp, width, () => new Text(safeText(`${message.role}\n${plainContent(message.content)}${message.details ? `\n${JSON.stringify(message.details, null, 2)}` : ""}\n`), 0, 0)));
         continue;
