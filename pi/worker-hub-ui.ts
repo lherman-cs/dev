@@ -78,6 +78,7 @@ export class AgentHubView {
   private search = new Input();
   private searchKind = "agents";
   private height = 24;
+  private width = 80;
   constructor(private tui: any, private theme: any, private hub: any, private title: string, private done: (value?: any) => void,
     public state: any = createHubViewState(hub)) {
     state.tui = tui; state.theme = theme; state.repaint = () => this.requestRender();
@@ -217,7 +218,7 @@ export class AgentHubView {
     if (matchesKey(data, "f1") || (this.state.mode === "roster" && data === "?")) {
       this.returnMode = this.state.mode === "thread" ? "thread" : "roster"; this.state.mode = "help"; this.helpOffset = 0; this.requestRender(); return;
     }
-    if (this.height < 7) return; // Never accept invisible input in an unusably small viewport.
+    if (this.height < 7 || this.width < 20) return; // Never accept invisible input in an unusably small viewport.
     if (matchesKey(data, "f2") && !["search", "confirm"].includes(this.state.mode)) { this.actions(); return; }
     if (this.state.mode === "search") { this.search.handleInput(data); this.requestRender(); return; }
     if (this.state.mode === "actions") {
@@ -267,7 +268,7 @@ export class AgentHubView {
   }
 
   render(width: number): string[] {
-    width = Math.max(1, Math.floor(width)); this.height = Math.max(1, Math.floor(this.tui.terminal?.rows || 24));
+    width = Math.max(1, Math.floor(width)); this.width = width; this.height = Math.max(1, Math.floor(this.tui.terminal?.rows || 24));
     const height = this.height, record = this.record(), mode = this.state.mode;
     if (height < 7 || width < 20) return [fit("Agent Hub", width), fit("Resize to compose safely", width), fit("Esc Back · F1 Help", width)].slice(0, height);
     const thread = record ? this.thread() : null;
