@@ -31,7 +31,7 @@ export class WorkflowControl {
   pauseRequested = false;
   snapshot?: Snapshot;
   fingerprint?: string;
-  pending?: PendingDecision<unknown>;
+  pending: PendingDecision<unknown> | undefined;
 
   constructor(phase: WorkflowPhase, target: string, changed: Changed = () => {}) {
     this.phase = phase;
