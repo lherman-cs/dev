@@ -22,6 +22,7 @@ Rules:
 
 - A narrower layer may specialize but never restate or contradict a broader layer.
 - Skills are compact, single-purpose, and mode-free.
+- **Pi lazy-skills.** Keep skill bodies out of standing instructions; load them only through an explicit `/skill:<name>` invocation when needed.
 - Reusable semantic roles belong in skills; retries, polling, checkpoints, Git/GitHub sequencing, and independent verification belong in code.
 - Controller prompts may add invocation data/output schema/tool boundaries, but must not duplicate skill semantics.
 - Workflow IDs stay in ignored workflow state, never commit messages.
