@@ -73,7 +73,7 @@ export class WorkerHistory {
     this.ensureParent();
     if (!this.root) return SessionManager.inMemory(cwd);
     fs.mkdirSync(this.root, { recursive: true, mode: 0o700 });
-    const created = SessionManager.create(cwd, this.root, { parentSession: this.parent.getSessionFile() });
+    const parentSession = this.parent.getSessionFile();\n    const created = SessionManager.create(cwd, this.root, parentSession ? { parentSession } : {});
     const file = created.getSessionFile();
     if (!file) throw new Error("Pi did not allocate a child session file.");
     fs.writeFileSync(file, `${JSON.stringify(created.getHeader())}\n`, { flag: "wx", mode: 0o600 });
@@ -115,7 +115,7 @@ export class WorkerHistory {
       deliveries: savedDeliveries,
       state: savedState && terminal.has(savedState) ? savedState : "interrupted",
       activity: savedState && terminal.has(savedState) ? savedState : "Interrupted before completion",
-      messages: entries.filter(entry => entry.type === "message" && entry.message.role !== "system").map(entry => entry.type === "message" ? entry.message : never),
+      messages: entries.flatMap(entry => entry.type === "message" && entry.message.role !== "system" ? [entry.message] : []),
       draft: string(draftData?.text) ?? string(metadata.draft) ?? "",
     } as WorkerHistoryRecord & { messages: unknown[]; draft: string };
   }
@@ -158,7 +158,7 @@ export class WorkerHistory {
       if (signal?.aborted) return;
       try {
         const record = this.read(file);
-        if (!hub.get(record.id)) hub.restore({ ...record, messages: undefined });
+        if (!hub.get(record.id)) { const { messages: _messages, ...metadata } = record; hub.restore(metadata); }
       } catch (error) { this.warn(`Cannot restore ${path.basename(file)}: ${error instanceof Error ? error.message : String(error)}`); }
       await new Promise<void>(resolve => setImmediate(resolve));
     }
