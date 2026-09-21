@@ -75,6 +75,12 @@ export class WorkerHistory {
 
   saveDraft(id, text) { this.journal.appendCustomEntry("dev-draft", { id, text }); }
 
+  canLoad(record) {
+    if (!record.sessionFile) return false;
+    try { return fs.realpathSync(record.sessionFile).startsWith(fs.realpathSync(this.root) + path.sep); }
+    catch { return false; }
+  }
+
   async load(record) {
     if (!record.sessionFile) throw new Error("This producer did not retain a native transcript.");
     const root = fs.realpathSync(this.root);
