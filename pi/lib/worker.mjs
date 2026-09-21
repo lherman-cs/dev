@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 import { createAgentSession, DefaultResourceLoader, getAgentDir, ModelRuntime, SessionManager, SettingsManager } from "@earendil-works/pi-coding-agent";
 import { Type } from "@earendil-works/pi-ai";
 import { role } from "./roles.mjs";
+import { humanEditor } from "./human-editor.mjs";
 
 const packageDir = fileURLToPath(new URL("../", import.meta.url));
 const readers = ["read", "grep", "find", "ls"];
@@ -84,7 +85,7 @@ export function createWorkerRunner({ runtime, create = createAgentSession, hub }
           const requestSignal = toolSignal ? AbortSignal.any([toolSignal, lifetime.signal]) : lifetime.signal;
           const answer = await hub.request({ ownerId: workerId, title: args.question, run: async ctx => args.choices?.length
             ? ctx.ui.select(args.question, args.choices, { signal: requestSignal })
-            : ctx.ui.editor(args.question, "", { signal: requestSignal }) }, requestSignal);
+            : humanEditor(ctx, args.question, "", requestSignal) }, requestSignal);
           return toolResult(answer === undefined ? "Human cancelled this question." : answer);
         } });
       if (schema) customTools.push({ name: "submit_result", label: "Submit result", description: "Submit the final result in the required schema.", parameters: schema,
