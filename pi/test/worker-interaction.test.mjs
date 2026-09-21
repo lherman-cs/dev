@@ -116,6 +116,40 @@ test('stop a Builder cancels nested Explorer; no child outlives its owner or ret
   assert.ok(f.hub.list().every(r=>r.state==='aborted'));assert.ok(f.sessions.every(s=>!s.isStreaming));assert.equal(builders,1);
 });
 
+test('parallel Explorers keep distinct contexts, identities and sibling failures isolated',{timeout:10000},async t=>{
+  const pending=[];
+  const f=await fixture(t,({model,context,done})=>{pending.push({model,context,done});});
+  const first=f.run({cwd:f.cwd,name:'explorer',task:'Inspect subsystem A; exclude B'});
+  const second=f.run({cwd:f.cwd,name:'explorer',task:'Inspect subsystem B; exclude A'});
+  while(pending.length<2)await new Promise(r=>setImmediate(r));
+  const active=f.hub.list().filter(r=>r.session);
+  assert.equal(active.length,2);assert.notEqual(active[0].id,active[1].id);assert.notEqual(active[0].file,active[1].file);
+  assert.ok(!JSON.stringify(pending[0].context.messages).includes('subsystem B'));
+  assert.ok(!JSON.stringify(pending[1].context.messages).includes('subsystem A'));
+  pending[0].done({...msg(pending[0].model,[],'error'),errorMessage:'A unavailable'});
+  pending[1].done('B evidence');
+  const results=await Promise.allSettled([first,second]);
+  assert.equal(results[0].status,'rejected');assert.match(results[0].reason.message,/A unavailable/);
+  assert.deepEqual(results[1],{status:'fulfilled',value:'B evidence'});
+  const records=f.hub.list();assert.equal(records.filter(r=>r.role==='explorer').length,2);
+  assert.equal(records.find(r=>r.metadata.task.includes('subsystem A')).state,'failed');
+  assert.equal(records.find(r=>r.metadata.task.includes('subsystem B')).state,'completed');
+});
+
+test('one parent cancellation stops all of its parallel Explorers',{timeout:10000},async t=>{
+  const started=deferred();let count=0;const controller=new AbortController();
+  const f=await fixture(t,()=>{if(++count===2)started.resolve();});
+  const work=[
+    f.run({cwd:f.cwd,name:'explorer',task:'scope A',signal:controller.signal}),
+    f.run({cwd:f.cwd,name:'explorer',task:'scope B',signal:controller.signal}),
+  ];
+  await started.promise;controller.abort();
+  const results=await Promise.allSettled(work);
+  assert.ok(results.every(result=>result.status==='rejected'&&/abort|cancel/i.test(result.reason.message)));
+  assert.ok(f.hub.list().every(r=>r.state==='aborted'));
+  assert.ok(f.sessions.every(s=>!s.isStreaming));
+});
+
 test('related question starts a NEW read-only Explorer without changing the old outcome',{timeout:10000},async t=>{
   const f=await fixture(t,({model})=>msg(model,'research result'));
   await f.run({cwd:f.cwd,name:'build',task:'original',skill:'dev-implement'});

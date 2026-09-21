@@ -7,7 +7,24 @@ import { role } from "./roles.mjs";
 const packageDir = fileURLToPath(new URL("../", import.meta.url));
 const readers = ["read", "grep", "find", "ls"];
 const explorerResultChars = 4000;
+const explorerResultMarker = "\n[Explorer result truncated]";
+const explorerResultSchema = Type.Object({
+  status: Type.Union([Type.Literal("FOUND"), Type.Literal("INCONCLUSIVE"), Type.Literal("BLOCKED")]),
+  answer: Type.String({ minLength: 1, description: "Direct answer to the assigned factual question." }),
+  evidence: Type.Array(Type.Object({
+    claim: Type.String({ minLength: 1, description: "Fact supported by this evidence." }),
+    anchor: Type.String({ minLength: 1, description: "Verifiable path:line, source URL, or revision anchor." }),
+  }, { additionalProperties: false }), { minItems: 1, description: "Compact claims paired with verifiable anchors." }),
+  uncertainty: Type.Optional(Type.String({ minLength: 1, description: "Only material uncertainty or a precise missing prerequisite." })),
+}, { additionalProperties: false });
 const toolResult = text => ({ content: [{ type: "text", text }], details: {} });
+const renderExplorerResult = result => {
+  const uncertainty = result.uncertainty ? `\n\nUncertainty:\n${result.uncertainty}` : "";
+  return `${result.status}\n\n${result.answer}\n\nEvidence:\n${result.evidence.map(item => `- ${item.claim} (${item.anchor})`).join("\n")}${uncertainty}`;
+};
+const boundExplorerResult = text => text.length > explorerResultChars
+  ? `${text.slice(0, explorerResultChars - explorerResultMarker.length)}${explorerResultMarker}`
+  : text;
 const roleLabel = name => ({ build: "Builder", build_retry: "Builder retry", review: "Reviewer", explorer: "Explorer", ship: "PR summary" }[name] || name);
 
 /** Only behavioral settings cross the worker boundary, never ambient tools/UI. */
@@ -81,7 +98,9 @@ export function createWorkerRunner({ runtime, create = createAgentSession, hub, 
           if (name === "review" && hub.get(workerId)?.deliveries.some(d => d.status === "delivered") && args.verdict === "pass") throw new Error("Human feedback requires a revised repairs or blocked result, never silent PASS.");
           value = args; valueEpoch = inputEpoch; return toolResult("Result recorded.");
         } });
-      const allowed = tools || [...readers, ...(!readonly ? ["bash", "edit", "write", "lsp_diagnostics", "lsp_fix", "chrome_devtools_load", "chrome_devtools_list_pages", "chrome_devtools_select_page", "chrome_devtools_navigate", "chrome_devtools_evaluate", "chrome_devtools_screenshot"] : []), ...(explorer ? ["web_search", "source_check", "fetch_content", "get_search_content"] : [])];
+      const allowed = explorer
+        ? [...readers, "web_search", "source_check", "fetch_content", "get_search_content"]
+        : tools || [...readers, ...(!readonly ? ["bash", "edit", "write", "lsp_diagnostics", "lsp_fix", "chrome_devtools_load", "chrome_devtools_list_pages", "chrome_devtools_select_page", "chrome_devtools_navigate", "chrome_devtools_evaluate", "chrome_devtools_screenshot"] : [])];
       ({ session } = await create({ cwd, model, thinkingLevel: selected.thinking, modelRuntime: models,
         settingsManager: settings, resourceLoader: loader, sessionManager: manager,
         tools: [...allowed, "vcc_recall", ...customTools.map(t => t.name)], customTools }));
@@ -183,10 +202,11 @@ export function exploreTool(run, report = () => {}, parentMetadata = {}) {
     promptGuidelines: [
       "Use explore for every open-ended or input-heavy codebase investigation, web search, or other evidence gathering. Read directly only for known-target implementation work or quick verification.",
       "Give each explore call one explicit independent scope. Call multiple Explorers, in parallel when useful, for separable questions and consume their compact results instead of raw research.",
+      "Make each scope self-contained: state the factual question, boundaries, sibling exclusions, and expected evidence. Run dependent follow-ups only after their prerequisite result.",
     ],
     parameters: Type.Object({ task: Type.String() }),
     async execute(_id, { task }, signal, _onUpdate, ctx) {
-      const text = await run({ name: "explorer", cwd: ctx.cwd, task, signal, report, metadata: { ...parentMetadata, task, label: `Explorer · ${task.split("\n", 1)[0].slice(0, 100)}` } });
-      return toolResult(text.length > explorerResultChars ? `${text.slice(0, explorerResultChars)}\n[Explorer result truncated]` : text);
+      const result = await run({ name: "explorer", cwd: ctx.cwd, task, schema: explorerResultSchema, signal, report, metadata: { ...parentMetadata, task, label: `Explorer · ${task.split("\n", 1)[0].slice(0, 100)}` } });
+      return toolResult(boundExplorerResult(renderExplorerResult(result)));
     } };
 }

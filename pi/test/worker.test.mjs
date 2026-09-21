@@ -66,18 +66,32 @@ test('native SDK validates structured result tool instead of scraping model pros
 });
 test('Explorer is fresh, read-only and cannot delegate recursively', async t=>{
   const f=await fixture(t,(_n,_c,m)=>message(m,[{type:'text',text:'Conclusion: found it'}]));
-  await f.run({cwd:f.cwd,name:'explorer',task:'find it'});
+  await f.run({cwd:f.cwd,name:'explorer',task:'find it',tools:['bash','edit','explore']});
   const names=f.sessions[0].getActiveToolNames();
-  for(const name of ['explore','subagent','bash','edit','write','lsp_fix']) assert.ok(!names.includes(name),name);
+  for(const name of ['explore','subagent','bash','edit','write','lsp_fix','install','git']) assert.ok(!names.includes(name),name);
   for(const name of ['web_search','source_check','fetch_content','get_search_content']) assert.ok(names.includes(name),name);
   assert.match(JSON.stringify(f.calls[0].context.messages),/Answer exactly one independently scoped factual question/);
   assert.match(JSON.stringify(f.calls[0].context.messages),/FOUND/);
 });
-test('Explorer returns only a compact result to the main agent', async()=>{
-  const tool=exploreTool(async()=>`FOUND\n${'e'.repeat(5000)}`);
+test('every non-Explorer worker role receives the bounded Explorer primitive', async t=>{
+  const f=await fixture(t,(_n,_c,m)=>message(m,[{type:'text',text:'done'}]));
+  const roles=['spec','plan','build','build_retry','prepare','review','ship'];
+  for(const name of roles) await f.run({cwd:f.cwd,name,task:`${name} task`});
+  assert.equal(f.sessions.length,roles.length);
+  for(const session of f.sessions) {
+    assert.ok(session.getActiveToolNames().includes('explore'));
+    for(const name of ['web_search','source_check','fetch_content','get_search_content']) assert.ok(!session.getActiveToolNames().includes(name),name);
+  }
+});
+test('Explorer returns only a schema-checked compact result to the parent', async()=>{
+  let options;
+  const tool=exploreTool(async value=>{options=value;return {status:'FOUND',answer:'Direct answer',evidence:[{claim:`Evidence ${'e'.repeat(5000)}`,anchor:'src/file.mjs:1'}],uncertainty:'One material caveat'};});
   const result=await tool.execute('id',{task:'one scope'},new AbortController().signal,undefined,{cwd:process.cwd()});
   const text=result.content[0].text;
-  assert.ok(text.length<4100,text.length);
+  assert.deepEqual(options.schema.required,['status','answer','evidence']);
+  assert.deepEqual(options.schema.properties.status.anyOf.map(value=>value.const),['FOUND','INCONCLUSIVE','BLOCKED']);
+  assert.ok(text.length<=4000,text.length);
+  assert.match(text,/^FOUND\n\nDirect answer\n\nEvidence:/);
   assert.match(text,/\[Explorer result truncated\]$/);
 });
 test('authentication failure occurs before session creation and never changes models', async t=>{
@@ -98,15 +112,18 @@ test('cancellation reaches the native Pi session and cleans it up', async t=>{
   assert.equal(f.hub.list()[0].session,undefined);
 });
 test('a native Builder can call Explorer without inheriting the Builder conversation',async t=>{
-  let builderTurns=0;
+  let builderTurns=0,explorerTurns=0;
   const f=await fixture(t,(_n,context,model)=>{
     if(model.id==='gpt-5.6-luna') {
       assert.ok(!JSON.stringify(context.messages).includes('PRIVATE_PARENT_CONTEXT'));
-      return message(model,[{type:'text',text:'Conclusion: local evidence'}]);
+      return ++explorerTurns===1
+        ? message(model,[{type:'toolCall',id:'result',name:'submit_result',arguments:{status:'FOUND',answer:'Local evidence',evidence:[{claim:'Entry point',anchor:'src/main.mjs:1'}]}}],'toolUse')
+        : message(model,[{type:'text',text:'submitted'}]);
     }
     return ++builderTurns===1?message(model,[{type:'toolCall',id:'explore',name:'explore',arguments:{task:'Locate the repository entry point'}}],'toolUse'):message(model,[{type:'text',text:'done'}]);
   });
   assert.equal(await f.run({cwd:f.cwd,name:'build',task:'PRIVATE_PARENT_CONTEXT',skill:'dev-implement'}),'done');
-  assert.equal(f.calls.length,3);
+  assert.equal(f.calls.length,4);
   assert.equal(f.calls[1].model.id,'gpt-5.6-luna');
+  assert.match(JSON.stringify(f.calls[3].context.messages),/FOUND\\n\\nLocal evidence\\n\\nEvidence/);
 });

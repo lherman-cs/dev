@@ -10,7 +10,7 @@ test('94d10a6 semantic contracts retain authority, outputs and stop conditions a
     implement:['exactly the assigned','Conventional Commit','On retry, amend','Never edit workflow artifacts','NEEDS_REPLAN'],
     prepare:['Operational candidate preparation only','clean worktree','mechanical/minimal','draft','Then stop','wait/poll'],
     review:['exact HEAD','Red CI is evidence','bounded/adversarial but conservative','stable root-cause key','BLOCKED is only','Never edit product code','Do not rerun passing tests'],
-    explore:['one independently scoped factual question','Remain read-only','Do not delegate','Stop when the assigned scope is answered','FOUND','path:line'],
+    explore:['one independently scoped factual question','boundaries and sibling exclusions','parent conversation context is unavailable','Remain read-only','Do not delegate','Stop when the assigned scope is answered','FOUND','path:line','submit_result'],
   };
   for(const [name,terms] of Object.entries(requirements)) {
     const text=skill(name);for(const term of terms)assert.ok(text.includes(term),`${name}: ${term}`);
@@ -33,4 +33,6 @@ test('instruction invariants and original user preferences are retained, without
   const preferences=fs.readFileSync(new URL('../preferences.md',import.meta.url),'utf8');
   for(const term of ['Do not use em dashes','unresolved semantics','never discard unrelated changes']) assert.ok(preferences.includes(term));
   assert.ok(!agents.includes('pi-subagents'));
+  const workflow=fs.readFileSync(new URL('../../WORKFLOW.md',import.meta.url),'utf8');
+  for(const term of ['Runtime allowlists enforce isolation','semantic parent responsibilities','rather than misrepresented as mechanically provable']) assert.ok(workflow.includes(term),term);
 });

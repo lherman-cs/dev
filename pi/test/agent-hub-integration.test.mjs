@@ -10,7 +10,8 @@ function fixture(t,workflow=async()=>{}) {
   let overlay,resolveOverlay,widget,received,ended=false;
   const emit=async(name,event={})=>{let result;for(const f of handlers.get(name)||[])result=await f(event,ctx);return result;};
   const run=async ({task,name,metadata={}})=>{
-    const s=session();register(hub,s,hub.nextId(name),{label:`Explorer · ${task}`,metadata:{readOnly:true,...metadata}});return 'FOUND';
+    const s=session();register(hub,s,hub.nextId(name),{label:`Explorer · ${task}`,metadata:{readOnly:true,...metadata}});
+    return {status:'FOUND',answer:'Scheduler evidence',evidence:[{claim:'Scheduler test',anchor:'test/scheduler.test.mjs:1'}]};
   };
   run.hasActive=()=>hub.list().some(r=>r.session);run.stopAll=async()=>{for(const r of hub.list().filter(r=>r.session)){await hub.abort(r.id);hub.unregister(r.id,'aborted');}};
   run.related=async()=>assert.fail('unexpected related call');
