@@ -73,7 +73,8 @@ export class WorkerHistory {
     this.ensureParent();
     if (!this.root) return SessionManager.inMemory(cwd);
     fs.mkdirSync(this.root, { recursive: true, mode: 0o700 });
-    const parentSession = this.parent.getSessionFile();\n    const created = SessionManager.create(cwd, this.root, parentSession ? { parentSession } : {});
+    const parentSession = this.parent.getSessionFile();
+    const created = SessionManager.create(cwd, this.root, parentSession ? { parentSession } : {});
     const file = created.getSessionFile();
     if (!file) throw new Error("Pi did not allocate a child session file.");
     fs.writeFileSync(file, `${JSON.stringify(created.getHeader())}\n`, { flag: "wx", mode: 0o600 });
