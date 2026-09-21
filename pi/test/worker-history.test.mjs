@@ -1,88 +1,96 @@
-import { test } from "node:test";
-import assert from "node:assert/strict";
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
-import { WorkerHistory } from "../lib/worker-history.mjs";
-import { WorkerHub } from "../lib/worker-hub.mjs";
-import { SessionManager } from "@earendil-works/pi-coding-agent";
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { SessionManager } from '@earendil-works/pi-coding-agent';
+import { WorkerHistory, WORKER_ENTRY } from '../lib/worker-history.mjs';
+import { WorkerHub } from '../lib/worker-hub.mjs';
+import { session, register, assistant } from './helpers/hub.mjs';
 
 function fixture(t) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "hub-history-"));
-  const cwd = path.join(dir, "worktree"); fs.mkdirSync(cwd);
-  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
-  const options = { cwd, sessionId: "parent-a", sessionDir: path.join(dir, "sessions"), parentFile: path.join(dir, "main.jsonl") };
-  return { dir, cwd, options, history: new WorkerHistory(options) };
-}
-const assistant = text => ({ role: "assistant", content: [{ type: "text", text }], stopReason: "stop", timestamp: Date.now(), provider: "test", model: "test", api: "test" });
-function own(hub, manager, id) {
-  const listeners = new Set();
-  const session = { messages: manager.getEntries().filter(e => e.type === "message").map(e => e.message), sessionFile: manager.getSessionFile(),
-    subscribe(fn) { listeners.add(fn); return () => listeners.delete(fn); } };
-  hub.register({ id, label: `Explorer · ${id}`, role: "explorer", model: "test", thinking: "low", session, metadata: { cwd: manager.getCwd(), parentId: "main" } });
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),'hub-history-'));t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
+  const parent=SessionManager.create(root,path.join(root,'parents'));
+  const errors=[],history=new WorkerHistory(parent,e=>errors.push(String(e)));
+  return {root,parent,history,errors};
 }
 
-test("native state and drafts persist before any assistant response, without fabricated turns", t => {
-  const f = fixture(t), hub = new WorkerHub({ history: f.history }); t.after(() => hub.dispose());
-  const manager = f.history.createSession(f.cwd);
-  own(hub, manager, "pre-response"); f.history.saveDraft("pre-response", "line 1\nline 2 中文");
-  const restored = new WorkerHistory(f.options);
-  assert.equal(restored.records()[0].id, "pre-response"); assert.equal(restored.drafts().get("pre-response").text, "line 1\nline 2 中文");
-  assert.ok(fs.existsSync(manager.getSessionFile()));
-  assert.equal(SessionManager.open(manager.getSessionFile()).getEntries().filter(e => e.type === "message").length, 0);
-  assert.equal(fs.statSync(manager.getSessionFile()).mode & 0o777, 0o600);
-  assert.equal(fs.statSync(f.history.directory).mode & 0o777, 0o700);
-});
-
-test("over twelve finished identities remain accessible and evicted transcript bodies reload from Pi", async t => {
-  const f = fixture(t), hub = new WorkerHub({ history: f.history }); t.after(() => hub.dispose());
-  for (let i = 0; i < 18; i++) {
-    const manager = f.history.createSession(f.cwd); manager.appendMessage(assistant(`result ${i}`));
-    own(hub, manager, `agent-${i}`); hub.unregister(`agent-${i}`);
+test('native Pi child history and drafts survive completion, cache eviction and parent reopen',async t=>{
+  const {root,parent,history}=fixture(t),hub=new WorkerHub({history});t.after(()=>hub.dispose());
+  for(let i=0;i<18;i++){
+    const manager=history.create(root,{id:`a${i}`,label:`Research ${i}`,metadata:{readOnly:true}});
+    const s=session();s.sessionManager=manager;s.sessionFile=manager.getSessionFile();
+    register(hub,s,`a${i}`);const m=assistant(`Evidence ${i}`);s.append(m);manager.appendMessage(m);
+    hub.setDraft(`a${i}`,`Follow up ${i}\n第二行`);hub.unregister(`a${i}`);
   }
-  assert.equal(hub.list().length, 18);
-  assert.equal(hub.get("agent-0").loaded, false);
-  await hub.load("agent-0"); assert.equal(hub.get("agent-0").messages[0].content[0].text, "result 0");
-  const restored = new WorkerHub({ history: new WorkerHistory(f.options) }); t.after(() => restored.dispose());
-  restored.restore(restored.history.records()); assert.equal(restored.list().length, 18);
-  assert.ok(restored.list().every(r => !r.session && !r.controls.send));
-  await restored.load("agent-0"); assert.equal(restored.get("agent-0").messages[0].content[0].text, "result 0");
+  assert.equal(hub.list().filter(r=>r.messages).length,12);
+  assert.equal(hub.load('a0').messages[0].content[0].text,'Evidence 0');
+  const restored=new WorkerHub({history:new WorkerHistory(parent)});t.after(()=>restored.dispose());
+  await history.restore(restored);
+  assert.equal(restored.list().length,18);assert.equal(restored.get('a0').state,'completed');
+  assert.equal(restored.get('a0').session,undefined);assert.equal(restored.get('a0').draft,'Follow up 0\n第二行');
+  assert.equal(restored.load('a0').messages[0].content[0].text,'Evidence 0');
+  assert.equal(restored.canSend('a0'),false);assert.equal(fs.statSync(restored.get('a0').file).mode&0o777,0o600);
 });
 
-test("restart labels unfinished work interrupted and never executes or grants controls", t => {
-  const f = fixture(t), hub = new WorkerHub({ history: f.history }); t.after(() => hub.dispose());
-  own(hub, f.history.createSession(f.cwd), "in-flight");
-  const restored = new WorkerHub({ history: new WorkerHistory(f.options) }); t.after(() => restored.dispose());
-  restored.restore(restored.history.records());
-  assert.equal(restored.get("in-flight").state, "interrupted"); assert.equal(restored.get("in-flight").session, undefined);
-  assert.deepEqual(restored.get("in-flight").controls, {});
+test('first-request crash is recoverable without pretending the worker is still alive',async t=>{
+  const {root,history}=fixture(t);const manager=history.create(root,{id:'crash',label:'Interrupted research',metadata:{}});
+  manager.appendCustomEntry(WORKER_ENTRY,{id:'crash',label:'Interrupted research',state:'working',deliveries:[{text:'did it arrive?',status:'queued'}]});
+  const hub=new WorkerHub({history});t.after(()=>hub.dispose());await history.restore(hub);
+  const r=hub.get('crash');assert.equal(r.state,'interrupted');assert.equal(r.deliveries[0].status,'failed');assert.ok(r.endedAt);
+  assert.equal(hub.canSend(r.id),false);
 });
 
-test("raw native history survives context compaction and preserves entry order", async t => {
-  const f = fixture(t), manager = f.history.createSession(f.cwd);
-  const first = manager.appendMessage(assistant("FIRST_RAW_CANARY"));
-  manager.appendMessage(assistant("SECOND_RAW_CANARY"));
-  manager.appendCompaction("compressed context", first, 8000);
-  manager.appendMessage({ ...assistant("THIRD_RAW_CANARY"), timestamp: 1 });
-  const loaded = await f.history.load({ sessionFile: manager.getSessionFile() });
-  const texts = loaded.map(m => typeof m.content === "string" ? m.content : m.content[0]?.text);
-  assert.equal(texts[0], "FIRST_RAW_CANARY"); assert.equal(texts[1], "SECOND_RAW_CANARY");
-  assert.match(texts[2], /Context compacted/); assert.equal(texts[3], "THIRD_RAW_CANARY");
+test('metadata snapshots are immutable and outside-path/symlink reads are rejected',t=>{
+  const {root,history}=fixture(t),manager=history.create(root,{id:'a'});
+  const record={id:'a',file:manager.getSessionFile(),session:{sessionManager:manager},metadata:{task:'original'},stats:{tools:1}};
+  history.saveMetadata(record);record.stats.tools=9;record.metadata.task='changed';
+  const saved=manager.getEntries().filter(e=>e.customType===WORKER_ENTRY).at(-1).data;
+  assert.equal(saved.stats.tools,1);assert.equal(saved.metadata.task,'original');
+  const other=path.join(root,'outside.jsonl');fs.writeFileSync(other,'{}');
+  const link=path.join(history.root,'link.jsonl');fs.symlinkSync(other,link);
+  assert.throws(()=>history.open(link),/outside this parent/);
+  assert.throws(()=>history.open(other),/outside this parent/);
 });
 
-test("previous-session discovery is explicit, worktree-scoped, and does not revive anything", t => {
-  const f = fixture(t), hub = new WorkerHub({ history: f.history }); t.after(() => hub.dispose());
-  own(hub, f.history.createSession(f.cwd), "old-agent"); hub.unregister("old-agent");
-  const next = new WorkerHistory({ ...f.options, sessionId: "parent-b" });
-  assert.deepEqual(next.records(), []); assert.equal(next.previous()[0].id, "old-agent");
-  const otherCwd = path.join(f.dir, "another-worktree"); fs.mkdirSync(otherCwd);
-  const unrelated = new WorkerHistory({ ...f.options, cwd: otherCwd, sessionId: "unrelated" });
-  assert.deepEqual(unrelated.previous(), []);
+test('damaged files do not hide intact histories; restoration is cancellable',async t=>{
+  const {root,history,errors}=fixture(t);history.create(root,{id:'intact'});
+  fs.writeFileSync(path.join(history.root,'broken.jsonl'),'not json');
+  const hub=new WorkerHub({history});t.after(()=>hub.dispose());await history.restore(hub);
+  assert.ok(hub.get('intact'));assert.ok(errors.length);
+  const empty=new WorkerHub({history});t.after(()=>empty.dispose());const c=new AbortController();c.abort();
+  await history.restore(empty,c.signal);assert.equal(empty.list().length,0);
 });
 
-test("a transcript path outside worker storage is not opened as arbitrary local evidence", async t => {
-  const f = fixture(t), outside = path.join(f.dir, "not-a-session.jsonl"); fs.writeFileSync(outside, "secret");
-  await assert.rejects(f.history.load({ sessionFile: outside }), /outside/);
-  const invalid = path.join(f.history.directory, "broken.jsonl"); fs.writeFileSync(invalid, "not a pi session\n");
-  await assert.rejects(f.history.load({ sessionFile: invalid }), /valid|session/i);
+
+test('controller-only Main is natively resumable before any assistant turn; later messages append normally',t=>{
+  const {root,parent,history}=fixture(t),id=parent.getSessionId();
+  parent.appendCustomEntry('controller-start',{phase:'ship'});const leaf=parent.getLeafId();
+  assert.equal(fs.existsSync(parent.getSessionFile()),false);
+  history.ensureParent();
+  assert.equal(parent.getSessionId(),id);assert.equal(parent.getLeafId(),leaf);
+  assert.ok(!parent.getEntries().some(e=>e.type==='message'&&e.message.role==='assistant'));
+  parent.appendMessage(assistant('A real later reply'));
+  const restored=SessionManager.open(parent.getSessionFile());
+  assert.equal(restored.getSessionId(),id);assert.equal(restored.getEntries().filter(e=>e.type==='message').length,1);
+  history.create(root,{id:'first-child'});assert.equal(parent.getEntries().filter(e=>e.type==='message').length,1);
+});
+
+test('earlier PR native child journal and drafts remain inspectable without crossing parent boundaries',async t=>{
+  const {root,parent,history}=fixture(t);history.ensureParent();
+  fs.mkdirSync(history.legacyRoot,{recursive:true});
+  const seed=file=>{const s=SessionManager.inMemory(root);fs.writeFileSync(file,JSON.stringify(s.getHeader())+'\n');return SessionManager.open(file);};
+  const child=seed(path.join(history.legacyRoot,'child.jsonl'));
+  child.appendMessage(assistant('Legacy evidence'));
+  const journal=seed(path.join(history.legacyRoot,'hub-state.jsonl'));
+  journal.appendCustomEntry('dev-worker',{id:'legacy',label:'Old Explorer',role:'explorer',state:'working',sessionFile:child.getSessionFile(),receipts:[{id:'msg',text:'uncertain delivery',state:'queued'}]});
+  journal.appendCustomEntry('dev-draft',{id:'legacy',text:'Preserved draft\n中文'});
+  const hub=new WorkerHub({history});t.after(()=>hub.dispose());await history.restore(hub);
+  assert.equal(hub.get('legacy').state,'interrupted');assert.equal(hub.get('legacy').draft,'Preserved draft\n中文');
+  assert.equal(hub.get('legacy').deliveries[0].status,'failed');assert.match(hub.load('legacy').messages[0].content[0].text,/Legacy evidence/);
+  hub.setDraft('legacy','new draft');hub.flush();
+  const again=new WorkerHub({history});t.after(()=>again.dispose());await history.restore(again);assert.equal(again.get('legacy').draft,'new draft');
+  const other=path.join(parent.getSessionDir(),'.workers','different-parent');fs.mkdirSync(other);const outside=seed(path.join(other,'other.jsonl'));
+  assert.throws(()=>history.open(outside.getSessionFile()),/outside this parent/);
+  assert.ok(fs.existsSync(journal.getSessionFile()),'migration never deletes original history');
 });

@@ -1,63 +1,61 @@
-import { setTimeout as delay } from "node:timers/promises";
+export class WorkflowPaused extends Error {
+  constructor() { super("Paused at a safe boundary. Progress is preserved."); this.name = "WorkflowPaused"; }
+}
 
-/** One controller-owned latch, not a second workflow state machine. */
+/** Human controls over the existing controller, not another workflow state machine. */
 export class WorkflowControl {
-  constructor({ onChange = () => {}, snapshot, canResume = () => true } = {}) {
-    this.abortController = new AbortController();
-    this.onChange = onChange; this.snapshot = snapshot; this.canResume = canResume;
-    this.state = "running"; this.detail = "Starting"; this.operations = [];
-    this.pauseRequested = false; this.paused = false; this.waiter = null;
+  constructor(phase, target, changed = () => {}) {
+    this.phase = phase; this.target = target; this.changed = changed;
+    this.controller = new AbortController(); this.signal = this.controller.signal;
+    this.state = "running"; this.activity = "Starting"; this.pauseRequested = false;
+    this.resumeCommand = `/dev-${phase}${target ? ` ${target}` : ""}`;
   }
-  get signal() { return this.abortController.signal; }
-  publish() { try { this.onChange(this); } catch { /* Presentation must not alter control flow. */ } }
-  report(detail) { this.detail = detail; this.publish(); }
-  pause() {
-    if (this.signal.aborted) return;
-    this.pauseRequested = true; this.state = "pause requested"; this.publish();
+  publish() { try { this.changed(); } catch { /* UI failure must not change workflow outcome. */ } }
+  async capturePause() {
+    if (this.snapshot) this.fingerprint = await this.snapshot();
   }
-  async checkpoint(detail = this.detail) {
-    this.signal.throwIfAborted(); this.detail = detail;
-    if (!this.pauseRequested || !this.snapshot) { this.publish(); return; }
-    if (this.waiter) { await this.waiter.promise; this.signal.throwIfAborted(); return; }
-    const fingerprint = await this.snapshot();
+  async verifyResume() {
+    if (this.state !== "paused") throw new Error("No safely paused workflow. Reconcile and rerun the original phase command.");
+    if (!this.snapshot || !this.fingerprint) throw new Error("No pause evidence available. Reconcile and rerun the original phase command.");
+    if (await this.snapshot() !== this.fingerprint) throw new Error("Worktree or approved contracts changed while paused. Reconcile the changes and rerun the phase explicitly; fast continuation was refused.");
+  }
+  update(activity) { this.activity = activity; this.publish(); }
+  checkpoint(activity) {
     this.signal.throwIfAborted();
-    let resolve, reject;
-    const promise = new Promise((yes, no) => { resolve = yes; reject = no; });
-    this.waiter = { promise, resolve, reject, fingerprint };
-    this.paused = true; this.state = "paused"; this.publish();
-    try { await promise; this.signal.throwIfAborted(); }
-    finally { this.waiter = null; this.paused = false; }
+    if (this.pauseRequested) throw new WorkflowPaused();
+    if (activity) this.update(activity);
   }
-  async resume() {
-    const waiter = this.waiter;
-    if (!waiter || !this.paused) return false;
-    if (!this.canResume()) throw new Error("Finish or stop Main's current turn before continuing the writing workflow.");
-    try {
-      if (await this.snapshot() !== waiter.fingerprint) throw new Error("Worktree or approved artifacts changed while paused. Stop and reconcile before restarting the workflow; old evidence is not reusable.");
-      this.signal.throwIfAborted();
-      this.pauseRequested = false; this.state = "running";
-      waiter.resolve(); this.publish(); return true;
-    } catch (error) { this.stop(error); throw error; }
-  }
-  stop(reason = new Error("Workflow stopped by human. Existing changes and checkpoints are preserved.")) {
-    if (this.signal.aborted) return;
-    this.abortController.abort(reason); this.state = "stopping";
-    this.waiter?.reject(reason); this.publish();
-  }
-  async sleep(ms) { await this.checkpoint(); await delay(ms, undefined, { signal: this.signal }); }
-  async operation(program, args, execute) {
-    await this.checkpoint(`$ ${program} ${args.join(" ")}`);
-    const operation = { program, args, startedAt: Date.now(), state: "running" };
-    this.operations.push(operation);
-    if (this.operations.length > 50) this.operations.shift();
+  pause() {
+    this.pauseRequested = true;
+    if (this.pending && !this.pending.busy) this.pending.cancel(new WorkflowPaused());
     this.publish();
-    try {
-      const result = await execute();
-      this.signal.throwIfAborted();
-      Object.assign(operation, { state: result.code === 0 ? "passed" : "failed", code: result.code, stdout: result.stdout, stderr: result.stderr });
-      return result;
-    } catch (error) { Object.assign(operation, { state: this.signal.aborted ? "cancelled" : "failed", stderr: error.message }); throw error; }
-    finally { operation.endedAt = Date.now(); this.publish(); }
   }
-  finish(state, detail) { this.state = state; this.detail = detail || this.detail; this.publish(); }
+  stop() {
+    this.controller.abort();
+    this.pending?.cancel(); this.pending = undefined; this.publish();
+  }
+  finish(error) {
+    this.state = error instanceof WorkflowPaused ? "paused" : this.signal.aborted ? "stopped" : error ? "failed" : "completed";
+    this.activity = error?.message || "Finished";
+    this.publish();
+  }
+  ask(title, show) {
+    this.signal.throwIfAborted();
+    if (this.pending) throw new Error("A human decision is already pending.");
+    return new Promise((resolve, reject) => {
+      const cancel = error => {
+        this.signal.removeEventListener("abort", cancel); this.pending = undefined;
+        reject(error instanceof Error ? error : this.signal.reason || new Error("Decision cancelled."));
+      };
+      this.signal.addEventListener("abort", cancel, { once: true });
+      this.pending = { title, busy: false, cancel, respond: async () => {
+        if (!this.pending || this.pending.busy || this.signal.aborted) return;
+        this.pending.busy = true; this.publish();
+        try { const result = await show(); this.signal.throwIfAborted(); resolve(result); }
+        catch (error) { reject(error); }
+        finally { this.signal.removeEventListener("abort", cancel); this.pending = undefined; this.publish(); }
+      } };
+      this.publish();
+    });
+  }
 }

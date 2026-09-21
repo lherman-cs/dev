@@ -1,105 +1,124 @@
-import { test } from "node:test";
-import assert from "node:assert/strict";
-import { createJiti } from "jiti";
-import { initTheme } from "@earendil-works/pi-coding-agent";
-import { visibleWidth } from "@earendil-works/pi-tui";
-import { WorkerHub } from "../lib/worker-hub.mjs";
-import { WorkflowControl } from "../lib/workflow-control.mjs";
-const jiti = createJiti(import.meta.url);
-const { default: extension } = await jiti.import("../extension.ts");
-const { AgentHubView, createHubViewState } = await jiti.import("../worker-hub-ui.ts");
-const { rawTranscript, WorkerTranscript } = await jiti.import("../lib/worker-transcript.ts");
-initTheme("dark", false);
-const theme = { fg: (_c, s) => s, bg: (_c, s) => s, bold: s => s };
-const tick = () => new Promise(resolve => setImmediate(resolve));
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { createJiti } from 'jiti';
+import { SessionManager } from '@earendil-works/pi-coding-agent';
+import { WorkerHub, session, register, theme, keys, tick, screen } from './helpers/hub.mjs';
+const {default:extension}=await createJiti(import.meta.url).import('../extension.ts');
 
-function contextApi() {
-  const commands = new Map(), events = new Map(), producers = new Map(), widgets = new Map();
-  const pi = {
-    registerCommand: (name, command) => commands.set(name, command), registerShortcut() {}, registerTool() {},
-    on: (name, handler) => events.set(name, handler),
-    events: { on(name, handler) { producers.set(name, handler); return () => producers.delete(name); } },
-    sendUserMessage() {}, sendMessage() {}, exec: async () => ({ code: 0, stdout: "", stderr: "" }),
+function fixture(t,workflow=async()=>{}) {
+  const handlers=new Map(),commands=new Map(),shortcuts=new Map(),tools=new Map(),events=new Map(),hub=new WorkerHub(),audit=[],notifications=[],dialogs=[];
+  let overlay,resolveOverlay,widget,received,ended=false;
+  const emit=async(name,event={})=>{let result;for(const f of handlers.get(name)||[])result=await f(event,ctx);return result;};
+  const run=async ({task,name,metadata={}})=>{
+    const s=session();register(hub,s,hub.nextId(name),{label:`Explorer · ${task}`,metadata:{readOnly:true,...metadata}});return 'FOUND';
   };
-  const ctx = { hasUI: true, cwd: process.cwd(), ui: { notify() {}, setWidget: (name, widget) => widgets.set(name, widget),
-    custom: async factory => { const view = factory({ terminal: { rows: 24, columns: 80 }, requestRender() {} }, theme, {}, () => {}); view.dispose(); } } };
-  return { pi, ctx, commands, events, producers, widgets };
+  run.hasActive=()=>hub.list().some(r=>r.session);run.stopAll=async()=>{for(const r of hub.list().filter(r=>r.session)){await hub.abort(r.id);hub.unregister(r.id,'aborted');}};
+  run.related=async()=>assert.fail('unexpected related call');
+  const pi={
+    on(name,fn){if(!handlers.has(name))handlers.set(name,[]);handlers.get(name).push(fn);},
+    registerCommand:(n,c)=>commands.set(n,c),registerShortcut:(k,s)=>shortcuts.set(k,s),registerTool:t=>tools.set(t.name,t),
+    registerEntryRenderer(){},appendEntry:(type,data)=>audit.push({type,data}),sendMessage(){},sendUserMessage(){},
+    exec:async()=>({code:0,stdout:'',stderr:''}),
+    events:{on:(name,fn)=>{events.set(name,fn);return()=>events.delete(name);}},
+  };
+  const ctx={cwd:process.cwd(),hasUI:true,isIdle:()=>true,hasPendingMessages:()=>false,sessionManager:SessionManager.inMemory(process.cwd()),
+    ui:{notify:(...a)=>notifications.push(a),setStatus(){},setWidget:(_key,factory)=>{widget=factory;},
+      async select(title,choices){dialogs.push({title,choices});return choices[0];},
+      editor:async()=>'',
+      custom(factory){void emit('ui_prompt_start');return new Promise(resolve=>{
+        resolveOverlay=()=>{overlay?.dispose();overlay=undefined;void emit('ui_prompt_end');resolve();};
+        overlay=factory({terminal:{rows:24,columns:80},requestRender(){}},theme,{},resolveOverlay);
+      });},
+    },
+  };
+  extension(pi,{hub,createWorkerRunner:()=>run,runWorkflow:async h=>{await workflow(h);ended=true;}});
+  t.after(async()=>{resolveOverlay?.();await emit('session_shutdown');});
+  return {pi,hub,ctx,emit,commands,shortcuts,tools,events,audit,notifications,dialogs,
+    overlay:()=>overlay,ended:()=>ended,widget:()=>widget?.({},theme).render(120).join('\n'),
+    open:()=>commands.get('dev-workers').handler('',ctx),
+    start:()=>commands.get('dev-ship').handler('project',ctx),
+  };
 }
 
-test("producer seam registers an independent Main child even without a reply callback", async t => {
-  const f = contextApi(); extension(f.pi); f.events.get("session_start")({}, f.ctx);
-  t.after(() => f.events.get("session_shutdown")());
-  f.producers.get("dev:agent-hub")({ action: "register", worker: { id: "external", role: "custom", label: "Independent investigation", state: "working", controls: {} } });
-  await new Promise(resolve => setTimeout(resolve, 50));
-  const widget = f.widgets.get("dev-workers");
-  assert.equal(typeof widget, "function");
-  assert.match(widget().render(80).join("\n"), /Independent investigation/);
-  assert.ok(widget().render(24).every(line => visibleWidth(line) <= 24));
-  f.producers.get("dev:agent-hub")({ action: "finish", id: "external", state: "completed" });
+test('ordinary main-console Explorer uses the exact same hub without any controller',async t=>{
+  const f=fixture(t);await f.emit('session_start');
+  await f.tools.get('explore').execute('call',{task:'Inspect old scheduler'},new AbortController().signal,undefined,f.ctx);
+  assert.match(f.widget(),/Inspect old scheduler/);const opened=f.open();f.overlay().handleInput(keys.enter);
+  assert.match(screen(f.overlay()),/To: Explorer · Inspect old scheduler/);
+  f.overlay().handleInput('Find its tests');f.overlay().handleInput(keys.enter);await tick();
+  assert.deepEqual(f.hub.list()[0].session.calls,[['steer','Find its tests']]);
+  f.overlay().handleInput('\x1ba');await opened;assert.equal(f.ended(),false);
 });
 
-test("headless human requests fail rather than hanging or treating absence as approval", async () => {
-  const hub = new WorkerHub(); hub.interactive = false;
-  let invoked = false;
-  await assert.rejects(hub.request({ title: "Approve?", run: async () => { invoked = true; } }), /requires interactive Pi/);
-  assert.equal(invoked, false); assert.deepEqual(hub.questions(), []); hub.dispose();
+test('human approval is not displayed or accepted by opening a thread or pressing ordinary Enter',async t=>{
+  let decision;
+  const f=fixture(t,async h=>{decision=await h.review('Approve HEAD abc?','# Candidate abc');});
+  await f.emit('session_start');register(f.hub,session(),'other');const work=f.start();await tick();
+  assert.equal(f.dialogs.length,0);const opened=f.open();f.overlay().handleInput(keys.enter);f.overlay().handleInput(keys.enter);await tick();
+  assert.equal(f.dialogs.length,0);assert.equal(f.ended(),false);
+  f.overlay().handleInput('\x1ba');await opened;
+  await f.commands.get('dev-respond').handler('',f.ctx);await work;
+  assert.equal(f.dialogs.length,1);assert.equal(f.dialogs[0].choices[0],'Cancel');assert.deepEqual(decision,{action:'cancel'});
 });
 
-test("pause requested during project discovery does not grant unverified manual write ownership", async () => {
-  const control = new WorkflowControl(); control.pause();
-  await control.checkpoint("Resolving project");
-  assert.equal(control.paused, false);
-  control.snapshot = async () => "known worktree";
-  const waiting = control.checkpoint("Before first write"); await tick();
-  assert.equal(control.paused, true); await control.resume(); await waiting;
+test('controller ownership blocks Main mutations and shell commands, not ordinary read tools',async t=>{
+  let finish;const f=fixture(t,()=>new Promise(r=>finish=r));await f.emit('session_start');const work=f.start();await tick();
+  assert.equal((await f.emit('tool_call',{toolName:'edit'})).block,true);
+  assert.equal((await f.emit('tool_call',{toolName:'unknown_custom_writer'})).block,true);
+  assert.equal(await f.emit('tool_call',{toolName:'read'}),undefined);
+  assert.equal(await f.emit('tool_call',{toolName:'explore'}),undefined);
+  assert.equal((await f.emit('user_bash')).result.exitCode,1);
+  assert.equal((await f.emit('session_before_switch')).cancel,true);
+  finish();await work;assert.equal(await f.emit('tool_call',{toolName:'edit'}),undefined);
+  const child=register(f.hub,session(),'writer',{metadata:{readOnly:false}});
+  assert.equal((await f.emit('tool_call',{toolName:'edit'})).block,true);
+  f.hub.unregister(child.id);assert.equal(await f.emit('tool_call',{toolName:'edit'}),undefined);
 });
 
-test("continuing a writing workflow waits for Main to finish and keeps the pause on rejection", async () => {
-  let idle = false;
-  const control = new WorkflowControl({ snapshot: async () => "stable", canResume: () => idle }); control.pause();
-  const waiting = control.checkpoint(); await tick();
-  await assert.rejects(control.resume(), /Main's current turn/);
-  assert.equal(control.paused, true); assert.equal(control.signal.aborted, false);
-  idle = true; await control.resume(); await waiting;
+test('parent-scoped external registration is explicit and works with arbitrary roles',async t=>{
+  const f=fixture(t);await f.emit('session_start');let adapter;
+  f.events.get('dev:worker-hub')({sessionId:'wrong',receive:()=>assert.fail('wrong parent')});
+  f.events.get('dev:worker-hub')({sessionId:f.ctx.sessionManager.getSessionId(),receive:value=>adapter=value});
+  const s=session(),handle=adapter.register({id:'custom',label:'Debugger · event loop',role:'custom-debugger',model:'any-model',thinking:'low',session:s,metadata:{readOnly:true}});
+  assert.match(f.widget(),/Debugger/);const opened=f.open();f.overlay().handleInput(keys.enter);assert.match(screen(f.overlay()),/Debugger/);
+  handle.finish();assert.equal(f.hub.get('custom').state,'completed');assert.equal(s.calls.length,0);
+  f.overlay().handleInput('\x1ba');await opened;
 });
 
-test("stop during an operation cannot turn a later successful exit into accepted work", async () => {
-  const control = new WorkflowControl();
-  await assert.rejects(control.operation("check", [], async () => { control.stop(); return { code: 0 }; }), /stopped/);
-  assert.equal(control.operations[0].state, "cancelled");
+test('pause at an unclaimed approval restores Main without making a decision',async t=>{
+  const f=fixture(t,h=>h.review('Approve?','Review'));await f.emit('session_start');const work=f.start();await tick();
+  await f.commands.get('dev-pause').handler();await work;
+  assert.equal(f.dialogs.length,0);assert.match(f.widget(),/paused/);assert.match(f.notifications.at(-1)[0],/resume with \/dev-ship project/);
 });
 
-test("a focused transcript stays cached while other workers finish and all identities survive", () => {
-  const history = { record() {}, canLoad: () => true }, hub = new WorkerHub({ history });
-  for (let i = 0; i < 20; i++) {
-    hub.register({ id: String(i), role: "explorer", session: { sessionFile: `file${i}`, messages: [], subscribe: () => () => {} } });
-    if (i === 0) hub.retain("0");
-    hub.unregister(String(i));
-  }
-  assert.equal(hub.get("0").loaded, true); assert.equal(hub.get("1").loaded, false); assert.equal(hub.list().length, 20);
-  hub.dispose();
+test('a controller cannot begin while Main has an active turn or native question',async t=>{
+  const f=fixture(t);await f.emit('session_start');f.ctx.isIdle=()=>false;await f.start();assert.equal(f.ended(),false);
+  f.ctx.isIdle=()=>true;await f.emit('ui_prompt_start');await f.start();assert.equal(f.ended(),false);
+  await f.emit('ui_prompt_end');await f.start();assert.equal(f.ended(),true);
 });
 
-test("native raw and copied evidence include current tool output before the tool returns", t => {
-  const record = { messages: [], streaming: null, revision: 1, liveTools: new Map([["tool", { toolName: "bash", result: { content: [{ type: "text", text: "PARTIAL_RAW_CANARY" }] } }]]) };
-  assert.match(rawTranscript(record), /PARTIAL_RAW_CANARY/);
-  const transcript = new WorkerTranscript({ requestRender() {} }, process.cwd()); t.after(() => transcript.dispose());
-  assert.match(transcript.render(record, 80, 10, { raw: true }).join("\n"), /PARTIAL_RAW_CANARY/);
+test('controller audit retains stdout and stderr, and records command interruption',async t=>{
+  const f=fixture(t,async h=>{await h.exec('check',['one']);await h.exec('check',['two']);});
+  await f.emit('session_start');let calls=0;
+  f.pi.exec=async()=>{if(++calls===1)return{code:0,stdout:'test evidence',stderr:'diagnostic warning'};throw new Error('command cancelled');};
+  await f.start();
+  const result=f.audit.find(e=>e.data.kind==='command end').data;
+  assert.equal(result.stdout,'test evidence');assert.equal(result.stderr,'diagnostic warning');
+  assert.match(f.audit.find(e=>e.data.kind==='command interrupted').data.error,/cancelled/);
 });
 
-test("starting a new read-only follow-up selects its separate thread without reviving its predecessor", async t => {
-  const hub = new WorkerHub(); hub.register({ id: "old", role: "build", label: "Accepted Builder", metadata: { producer: "dev-workflow" } }); hub.unregister("old");
-  hub.readOnlyFollowUp = async () => { hub.register({ id: "new", label: "Follow-up", role: "explorer", state: "working", controls: {} }); return { id: "new" }; };
-  const state = createHubViewState(hub), view = new AgentHubView({ terminal: { rows: 24, columns: 80 }, requestRender() {} }, theme, hub, "session", () => {}, state);
-  t.after(() => { view.dispose(); state.dispose(); hub.dispose(); });
-  state.mode = "thread"; const thread = state.thread("old"); thread.newFollowUp = true; thread.editor.setText("Why this approach?");
-  await view.send(); assert.equal(state.selectedId, "new"); assert.equal(hub.get("old").state, "completed"); assert.equal(hub.get("old").session, undefined);
-  assert.equal(thread.editor.getExpandedText(), "");
+test('Main waiting synchronously on a child can answer that child without aborting either conversation',async t=>{
+  const f=fixture(t);await f.emit('session_start');register(f.hub,session(),'child');f.ctx.isIdle=()=>false;
+  const cancellation=new AbortController();let seen=false;
+  const pending=f.hub.request({ownerId:'child',title:'Which API?',run:async()=>{seen=true;return 'existing';}},cancellation.signal);
+  await f.commands.get('dev-respond').handler(f.hub.questions()[0].id,f.ctx);
+  assert.equal(await pending,'existing');assert.equal(seen,true);assert.equal(cancellation.signal.aborted,false);
 });
 
-test("closing a parent runtime prevents delayed draft callbacks from writing its old history", () => {
-  let writes = 0; const hub = new WorkerHub({ history: { saveDraft() { writes++; } } });
-  const state = createHubViewState(hub); state.tui = { terminal: { rows: 24 }, requestRender() {} }; state.theme = theme;
-  const thread = state.thread("a"); thread.editor.setText("saved"); state.dispose(); const before = writes;
-  thread.editor.setText("late result"); state.flush(); assert.equal(writes, before); hub.dispose();
+test('F2 explicitly claims controller approval after releasing only the hub overlay',async t=>{
+  let result;const f=fixture(t,async h=>{result=await h.confirm('Approve?','Exact candidate');});
+  await f.emit('session_start');register(f.hub,session(),'child');const work=f.start();await tick();
+  const opened=f.open();f.overlay().handleInput(keys.f2);screen(f.overlay());f.overlay().handleInput(keys.enter);
+  await tick();await tick();await opened;await work;
+  assert.equal(f.dialogs.length,1);assert.equal(f.dialogs[0].choices[0],'Cancel');assert.equal(result,false);
 });

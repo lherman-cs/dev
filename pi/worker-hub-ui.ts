@@ -1,444 +1,428 @@
-import { Editor, Input, matchesKey, Text, truncateToWidth, visibleWidth, CURSOR_MARKER } from "@earendil-works/pi-tui";
+import { Editor, Input, matchesKey, Text, truncateToWidth, visibleWidth, wrapTextWithAnsi, getKeybindings } from "@earendil-works/pi-tui";
 import { copyToClipboard } from "@earendil-works/pi-coding-agent";
-import { WorkerTranscript, rawTranscript, safeText, plainContent } from "./lib/worker-transcript.ts";
+import { isActive } from "./lib/worker-hub.mjs";
+import { NativeTranscript, safeText, type Viewport } from "./lib/worker-transcript.ts";
 
-const running = (r: any) => ["starting", "working", "aborting"].includes(r.state);
-const compact = (n: any) => typeof n !== "number" ? "—" : n >= 1e6 ? `${(n / 1e6).toFixed(1)}m` : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
-const fit = (s: string, width: number) => truncateToWidth(s, Math.max(0, width));
-const pad = (s: string, width: number) => { const text = fit(s, width); return text + " ".repeat(Math.max(0, width - visibleWidth(text))); };
-const model = (r: any) => `${safeText(r.model).replace(/^gpt-[\d.]+-/, "")} ${safeText(r.thinking)}`;
-const glyph = (r: any) => r.state === "working" ? "●" : r.state === "starting" ? "◌" : r.state === "failed" ? "!" : r.state === "aborting" ? "◐" : "○";
-const duration = (r: any) => `${Math.max(0, Math.floor(((r.endedAt ?? Date.now()) - r.startedAt) / 1000))}s`;
-const wrap = (text: string, width: number) => new Text(text, 0, 0).render(Math.max(1, width));
-export const workerLines = (record: any) => safeText(rawTranscript(record)).split("\n");
+const safe = (text: unknown) => safeText(String(text ?? "")).replace(/[\r\n\t]+/g, " ");
+const fmt = (n: number | null | undefined) => n == null ? "—" : n >= 1e6 ? `${(n / 1e6).toFixed(1)}m` : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
+const pad = (text: string, width: number) => { const t = truncateToWidth(text, Math.max(1, width)); return t + " ".repeat(Math.max(0, width - visibleWidth(t))); };
+const stateText = (r: any) => r.state === "completed" ? "Finished" : r.state === "working" ? "Running" : r.state;
+const duration = (r: any) => { const s = Math.max(0, Math.floor(((r.endedAt || Date.now()) - r.startedAt) / 1000)); return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${s % 60}s`; };
+const contextText = (r: any) => r.context?.percent == null ? "Context —" : `Context ${r.context.percent.toFixed(1)}% (${fmt(r.context.tokens)}/${fmt(r.context.contextWindow)})`;
+const statsText = (r: any) => `${fmt(r.stats?.totalTokens)} processed · ${fmt(r.stats?.tools)} tools · ${fmt(r.stats?.requests)} replies`;
+const glyph = (r: any) => r.state === "working" ? "●" : r.state === "completed" ? "✓" : r.state === "failed" ? "×" : r.state === "aborting" ? "◐" : "○";
+const color = (r: any) => r.state === "failed" ? "error" : r.state === "completed" ? "success" : r.state === "working" ? "accent" : "warning";
+const sendKey = () => getKeybindings().getKeys("tui.input.submit").map(k => k === "enter" ? "Enter" : k).join("/") || "F2 actions";
+const hintLines = (hints: string[], width: number) => {
+  const lines: string[] = []; let row = "";
+  for (const hint of hints) {
+    if (row && visibleWidth(`${row} · ${hint}`) > width) { lines.push(row); row = ""; }
+    if (visibleWidth(hint) > width) { if (row) lines.push(row); lines.push(...wrapTextWithAnsi(hint, Math.max(1, width))); row = ""; }
+    else row += `${row ? " · " : ""}${hint}`;
+  }
+  if (row) lines.push(row); return lines;
+};
 
-export function compactWorkerLines(records: any[], title = "Agents") {
-  if (!records.length) return [`${title} · Alt+A open · /dev-workers`];
-  const active = records.filter(running);
-  const rows = active.length ? active.slice(0, 4) : records.slice(-1);
-  return [`${title} · ${active.length} running · ${records.length - active.length} finished/history · Alt+A open`,
-    ...rows.map((r: any) => ` ${glyph(r)} ${safeText(r.label)} · ${safeText(r.activity)}`),
-    ...(active.length > rows.length ? [` … ${active.length - rows.length} more in Agent Hub`] : [])];
+export function compactWorkerLines(records: any[], title = "Agents"): string[] {
+  const running = records.filter(isActive), unread = records.filter(r => r.unread && r.closed);
+  const shown = running.length ? running.slice(0, 3) : unread.slice(-1);
+  return [`${title} · ${running.length} running${unread.length ? ` · ${unread.length} new results` : ""} · Alt+A inspect`,
+    ...shown.map(r => ` ${glyph(r)} ${safe(r.label)} · ${safe(r.activity)}`),
+    ...(running.length > shown.length ? [` +${running.length - shown.length} more in Agent Hub`] : [])];
 }
 
-/** View state outlives overlays but not the parent Pi runtime. Editors retain
- * cursor, undo and paste registries independently for each recipient. */
-export function createHubViewState(hub: any) {
-  const state: any = { selectedId: undefined, mode: "roster", threads: new Map(), filter: "", disposed: false,
-    tui: null, theme: null, repaint: () => {}, editorRows: 17, saved: new Map(), timers: new Map() };
-  state.flush = (id?: string) => {
-    if (state.disposed) return;
-    const ids = id ? [id] : [...state.threads.keys()];
-    for (const key of ids) {
-      clearTimeout(state.timers.get(key)); state.timers.delete(key);
-      const thread = state.threads.get(key);
-      if (!thread?.editor) continue;
-      const text = thread.editor.getExpandedText();
-      if (state.saved.get(key) === text) continue;
-      try { hub.history?.saveDraft(key, text); state.saved.set(key, text); }
-      catch (error: any) { thread.notice = `Draft could not be saved: ${error.message}`; }
-    }
-  };
-  state.thread = (id: string) => {
-    if (state.threads.has(id)) return state.threads.get(id);
-    const thread: any = { version: 0, follow: true, anchor: null, expanded: false, thinking: false, raw: false, notice: "", busy: false, recovered: new Set() };
-    const host = new Proxy({}, { get: (_target, key) => key === "terminal"
-      ? { rows: state.editorRows, columns: state.tui?.terminal?.columns || 80 }
-      : key === "requestRender" ? () => state.repaint() : typeof state.tui?.[key] === "function" ? state.tui[key].bind(state.tui) : state.tui?.[key] });
-    thread.editor = new Editor(host as any, {
-      borderColor: (s: string) => state.theme.fg("borderAccent", s),
-      selectList: { selectedPrefix: (s: string) => s, selectedText: (s: string) => s, description: (s: string) => s,
-        scrollInfo: (s: string) => s, noMatch: (s: string) => s },
-    });
-    thread.editor.disableSubmit = true;
-    thread.editor.onChange = () => {
-      if (state.disposed) return;
-      thread.version++;
-      clearTimeout(state.timers.get(id));
-      const timer = setTimeout(() => state.flush(id), 750); timer.unref?.(); state.timers.set(id, timer);
-      state.repaint();
-    };
-    if (state.saved.has(id)) thread.editor.setText(state.saved.get(id));
-    state.threads.set(id, thread); return thread;
-  };
-  state.dispose = () => { state.flush(); state.disposed = true; for (const timer of state.timers.values()) clearTimeout(timer); state.repaint = () => {}; };
-  return state;
-}
+type Composer = { editor: Editor; version: number; sending: boolean };
+export type HubViewState = {
+  selectedId?: string; mode: "roster" | "thread"; composers: Map<string, Composer>;
+  viewports: Map<string, Viewport>; notices: Map<string, string>; repaint: () => void;
+};
+export const createHubViewState = (): HubViewState => ({ mode: "roster", composers: new Map(), viewports: new Map(), notices: new Map(), repaint: () => {} });
 
+type Action = { title: string; run: () => void | Promise<void> };
+/** One surface, shared by ordinary child tools and deterministic controllers. */
 export class AgentHubView {
   private unsubscribe: () => void;
-  private renderTimer: any;
-  private closed = false;
-  private focus = false;
-  private transcripts = new Map<string, WorkerTranscript>();
-  private retained?: { id: string; release: () => void };
-  private menu: any[] = [];
+  private timer?: ReturnType<typeof setTimeout>;
+  private transcripts = new Map<string, NativeTranscript>();
+  private unpin?: () => void;
+  private panel?: "help" | "actions" | "confirm" | "search";
+  private search = new Input({ prompt: "Find: " });
+  private filter = "";
+  private menu: Action[] = [];
   private menuIndex = 0;
-  private returnMode = "roster";
-  private confirmation: any;
-  private contentOffset = 0;
-  private search = new Input();
-  private searchKind = "agents";
-  private height = 24;
-  private width = 80;
-  constructor(private tui: any, private theme: any, private hub: any, private title: string, private done: (value?: any) => void,
-    public state: any = createHubViewState(hub)) {
-    state.tui = tui; state.theme = theme; state.repaint = () => this.requestRender();
-    if (!state.selectedId) state.selectedId = this.records()[0]?.id;
+  private menuReady = false;
+  private confirm?: Action;
+  private disposed = false;
+  private narrowDetails = false;
+  private helpScroll = 0;
+  private detailScroll = 0;
+  private _focused = true;
+  private canCompose = true;
+  constructor(private tui: any, private theme: any, private hub: any, private title: string | (() => string), private done: () => void,
+    private state: HubViewState = createHubViewState(), private options: any = {}) {
+    this.state.repaint = () => this.repaint();
     this.unsubscribe = hub.subscribe(() => {
-      if (!state.selectedId) state.selectedId = this.records()[0]?.id;
-      for (const record of hub.list()) {
-        const thread = state.threads.get(record.id);
-        if (!thread) continue;
-        for (const receipt of record.receipts) {
-          if (receipt.state !== "undelivered" || thread.recovered.has(receipt.id)) continue;
-          thread.recovered.add(receipt.id);
-          if (!thread.editor.getExpandedText()) thread.editor.setText(receipt.text);
-          thread.notice = "Message was not delivered. Original text is retained in Messages (F2).";
-        }
-      }
-      this.requestRender();
+      if (!this.state.selectedId && hub.list().length) this.select(hub.list()[0].id);
+      this.schedule();
     });
+    if (!state.selectedId) state.selectedId = hub.list()[0]?.id;
+    if (state.selectedId) this.unpin = hub.pin(state.selectedId);
     this.search.onSubmit = () => {
-      if (this.searchKind === "agents") {
-        state.flush(state.selectedId);
-        state.filter = this.search.getValue(); state.mode = "roster";
-        const visible = this.records();
-        if (!visible.some((record: any) => record.id === state.selectedId)) state.selectedId = visible[0]?.id;
-      }
-      else { const thread = this.thread(); thread.raw = true; thread.searchQuery = this.search.getValue(); state.mode = "thread"; }
-      this.requestRender();
+      if (state.mode === "thread") {
+        const found = this.transcript()?.search(this.viewport(), this.search.getValue());
+        this.notice(found ? "Match found. Enter finds the next match; Esc returns to your draft." : "No match in available transcript.");
+      } else { this.applyFilter(); this.panel = undefined; }
+      this.repaint();
     };
   }
-  get focused() { return this.focus; }
-  set focused(value: boolean) { this.focus = value; const thread = this.state.threads.get(this.state.selectedId); if (thread) thread.editor.focused = value && this.state.mode === "thread"; }
-  private requestRender() {
-    if (this.closed || this.renderTimer) return;
-    this.renderTimer = setTimeout(() => { this.renderTimer = undefined; if (!this.closed) this.tui.requestRender(); }, 33);
-    this.renderTimer.unref?.();
+  get focused() { return this._focused; }
+  set focused(value: boolean) { this._focused = value; this.setEditorFocus(); }
+  private setEditorFocus() {
+    for (const [id, c] of this.state.composers) c.editor.focused = this._focused && this.state.mode === "thread" && !this.panel && this.canCompose && id === this.state.selectedId;
+    this.search.focused = this._focused && this.panel === "search";
   }
-  private record() { return this.hub.get(this.state.selectedId); }
-  private thread() { return this.state.thread(this.state.selectedId); }
-  private records() { const needle = this.state.filter.toLocaleLowerCase(); return this.hub.list().filter((r: any) => !needle || `${r.label} ${r.role} ${r.metadata?.task || ""}`.toLocaleLowerCase().includes(needle)); }
-  private transcript(record: any) {
-    if (!this.transcripts.has(record.id)) {
-      this.transcripts.set(record.id, new WorkerTranscript({ ...this.tui, requestRender: () => this.requestRender() }, record.metadata?.cwd || process.cwd()));
-      if (this.transcripts.size > 4) { const first = this.transcripts.keys().next().value; this.transcripts.get(first!)?.dispose(); this.transcripts.delete(first!); }
-    }
-    return this.transcripts.get(record.id)!;
+  private schedule() {
+    if (!this.timer && !this.disposed) this.timer = setTimeout(() => { this.timer = undefined; this.repaint(); }, 50);
+  }
+  private repaint() { if (!this.disposed) this.tui.requestRender(); }
+  private current() { return this.hub.get(this.state.selectedId); }
+  private rows() {
+    const q = this.filter.toLocaleLowerCase();
+    return this.hub.list().filter((r: any) => !q || `${r.label} ${r.metadata?.task || ""} ${r.role}`.toLocaleLowerCase().includes(q));
+  }
+  private applyFilter() {
+    this.filter = this.search.getValue();
+    const rows = this.rows();
+    if (rows.length && !rows.some((r: any) => r.id === this.state.selectedId)) this.select(rows[0].id);
+  }
+  private notice(text: string, id = this.state.selectedId || "hub") { this.state.notices.set(id, text); this.state.repaint(); }
+  private viewport() {
+    const id = this.state.selectedId!;
+    if (!this.state.viewports.has(id)) this.state.viewports.set(id, { follow: true });
+    return this.state.viewports.get(id)!;
+  }
+  private transcript() {
+    const id = this.state.selectedId; if (!id) return;
+    try {
+      const record = this.hub.load(id);
+      if (!this.transcripts.has(id)) {
+        if (this.transcripts.size >= 3) {
+          const oldest = this.transcripts.keys().next().value!;
+          this.transcripts.get(oldest)!.dispose(); this.transcripts.delete(oldest);
+        }
+        const transcript = new NativeTranscript({ ...this.tui, requestRender: () => this.schedule() }, record);
+        transcript.setExpanded(!!this.state.viewports.get(id)?.expanded);
+        this.transcripts.set(id, transcript);
+      }
+      const transcript = this.transcripts.get(id)!; transcript.sync(record); return transcript;
+    } catch (error: any) { this.notice(error.message, id); return; }
+  }
+  private select(id: string) {
+    if (!this.hub.get(id)) return;
+    this.hub.flushDraft(this.state.selectedId);
+    this.unpin?.(); this.unpin = this.hub.pin(id); this.state.selectedId = id; this.detailScroll = 0;
+    this.setEditorFocus(); this.repaint();
   }
   private move(delta: number) {
-    const records = this.records(); if (!records.length) return;
-    this.state.flush(this.state.selectedId);
-    const previous = this.state.threads.get(this.state.selectedId); if (previous) previous.editor.focused = false;
-    const index = records.findIndex((r: any) => r.id === this.state.selectedId);
-    this.state.selectedId = records[Math.max(0, Math.min(records.length - 1, (index < 0 ? 0 : index) + delta))].id;
-    this.contentOffset = 0; if (this.state.mode === "thread") void this.hub.load(this.state.selectedId);
-    this.requestRender();
+    const rows = this.state.mode === "thread" ? this.hub.list() : this.rows();
+    const i = rows.findIndex((r: any) => r.id === this.state.selectedId);
+    const target = rows[Math.max(0, Math.min(rows.length - 1, i + delta))];
+    if (target) this.select(target.id);
   }
-  private openThread() { if (!this.record()) return; this.state.mode = "thread"; void this.hub.load(this.state.selectedId); this.requestRender(); }
-  private close(value?: any) {
-    if (this.closed) return;
-    this.state.flush(); if (!["thread", "roster"].includes(this.state.mode)) this.state.mode = this.returnMode;
-    this.done(value);
+  private composer(id: string): Composer {
+    let c = this.state.composers.get(id); if (c) return c;
+    const proxy = { terminal: this.tui.terminal || { rows: 24 }, requestRender: () => this.state.repaint() };
+    const editor = new Editor(proxy as any, {
+      borderColor: (s: string) => this.theme.fg("borderAccent", s),
+      selectList: { selectedPrefix: s => s, selectedText: s => s, description: s => s, scrollInfo: s => s, noMatch: s => s },
+    }, { paddingX: 1 });
+    c = { editor, version: 0, sending: false }; this.state.composers.set(id, c);
+    editor.setText(this.hub.get(id)?.draft || "");
+    editor.onChange = () => { c!.version++; this.hub.setDraft(id, editor.getExpandedText()); };
+    // Pi's Editor clears on submission. Restore synchronously; clear only after
+    // acceptance and only if this same thread's draft has not changed meanwhile.
+    editor.onSubmit = text => { editor.setText(text); void this.send(id, "steer"); };
+    return c;
+  }
+  private async send(id: string, mode: "steer" | "followUp") {
+    const c = this.composer(id), text = c.editor.getExpandedText();
+    if (c.sending || !text.trim()) return;
+    const version = c.version; c.sending = true;
+    try {
+      const delivery = await this.hub.send(id, text, mode);
+      if (c.version === version) c.editor.setText("");
+      this.notice(`${delivery.status === "delivered" ? "Delivered" : "Queued"} to ${this.hub.get(id)?.label}. ${mode === "steer" ? "Current tools are not cancelled." : "Runs after current work."}`, id);
+    } catch (error: any) { this.notice(`Not sent: ${error.message}`, id); }
+    finally { c.sending = false; this.hub.flushDraft(id); this.state.repaint(); }
+  }
+  private open() {
+    if (!this.current() || !this.rows().some((r: any) => r.id === this.state.selectedId)) return;
+    this.state.mode = "thread"; this.panel = undefined; this.transcript(); this.composer(this.state.selectedId!);
+    this.setEditorFocus(); this.repaint();
   }
   private back() {
-    this.state.flush(this.state.selectedId);
-    if (this.state.mode === "roster") this.close();
+    if (this.panel) this.panel = undefined;
+    else if (this.state.mode === "roster" && this.narrowDetails) this.narrowDetails = false;
     else if (this.state.mode === "thread") this.state.mode = "roster";
-    else this.state.mode = this.returnMode;
-    this.requestRender();
+    else { this.done(); return; }
+    this.setEditorFocus(); this.repaint();
   }
-
-  async send(mode = "steer") {
-    const record = this.record(); if (!record) return;
-    const id = record.id, thread = this.thread(), text = thread.editor.getExpandedText(), version = thread.version;
-    if (!text.trim() || thread.busy) return;
-    thread.busy = true; thread.notice = `Sending to ${record.label}…`; this.state.flush(id); this.requestRender();
-    try {
-      if (thread.newFollowUp) {
-        const follow = await this.hub.readOnlyFollowUp(record, text);
-        thread.newFollowUp = false;
-        thread.notice = "A new read-only follow-up has started; the old result is unchanged.";
-        if (!this.closed && this.state.mode === "thread" && this.state.selectedId === id && follow?.id) {
-          this.state.selectedId = follow.id;
-          void this.hub.load(follow.id);
-        }
-      } else {
-        const receipt = await this.hub.send(id, text, mode);
-        thread.notice = receipt.state === "delivered" ? "Delivered to this agent's context." : "Queued; the current tool batch continues until the next delivery boundary.";
-        thread.lastReceiptId = receipt.id;
-      }
-      // Never clear newer input, or input belonging to another recipient.
-      if (thread.version === version && thread.editor.getExpandedText() === text) { thread.editor.addToHistory(text); thread.editor.setText(""); }
-      this.state.flush(id);
-    } catch (error: any) { thread.notice = `Not delivered: ${safeText(error.message)} Your draft is preserved.`; }
-    finally { thread.busy = false; this.requestRender(); }
-  }
-
-  private async perform(action: any) {
-    try { await action.run(); }
-    catch (error: any) {
-      if (this.record()) this.thread().notice = safeText(error.message);
-      else this.hub.lastUIError = safeText(error.message);
-      this.state.mode = this.returnMode;
-    }
-    this.requestRender();
+  private stopAction() {
+    const r = this.current(); if (!isActive(r)) return;
+    const scope = r.metadata?.parentId ? "Only this investigation stops. Its parent may continue." : r.metadata?.owner === "workflow" ? "The owning workflow will stop with partial work preserved." : "Only this agent and its children stop.";
+    this.confirm = { title: `Stop ${r.label}? ${scope} Already completed edits/commands are not undone.`, run: () => this.hub.abort(r.id) };
+    this.menuReady = false; this.menuIndex = 0; this.panel = "confirm"; this.setEditorFocus(); this.repaint();
   }
   private actions() {
-    const record = this.record(), id = record?.id;
-    this.returnMode = this.state.mode === "thread" ? "thread" : "roster";
-    const back = () => { this.state.mode = this.returnMode; };
+    const r = this.current(), id = r?.id;
     this.menu = [];
-    for (const question of this.hub.questions()) this.menu.push({ label: `Answer · ${question.title}`, run: () => this.close({ answer: question.id }) });
-    if (record) {
-      this.menu.push({ label: "Inspect task, parent, outcome and context", run: () => { this.contentOffset = 0; this.state.mode = "details"; } });
-      this.menu.push({ label: "Messages: delivery receipts and recoverable text", run: () => { this.contentOffset = 0; this.state.mode = "messages"; } });
-      if (record.controls.send) this.menu.push({ label: "Send draft after the current task (follow-up)", run: () => { back(); return this.send("followUp"); } });
-      if (record.controls.cancelQueued) this.menu.push({ label: "Cancel queued messages (retain their text)", run: () => { record.controls.cancelQueued(); back(); } });
-      if (record.controls.stop) this.menu.push({ label: `Stop ${record.label}…`, run: () => {
-        this.confirmation = { title: `Stop ${record.label}?`, text: record.metadata?.workflowId && record.metadata?.parentId === "main"
-          ? "This worker and its nested calls will stop. The owning workflow run will halt. File changes remain; nothing is reverted."
-          : "This worker and its nested calls will stop. Its caller may continue; unrelated agents are not stopped.", run: () => this.hub.abort(id) };
-        this.menuIndex = 0; this.state.mode = "confirm";
+    const control = this.options.control?.();
+    for (const question of this.hub.questions()) this.menu.push({ title: `Respond: ${this.hub.get(question.ownerId)?.label || "Agent"} · ${question.title} (in Main)`, run: () => { this.done(); setImmediate(() => this.options.respond?.(question.id)); } });
+    if (control?.pending) this.menu.push({ title: `Respond: ${control.pending.title} (in Main)`, run: () => { this.done(); setImmediate(() => this.options.respond?.()); } });
+    if (control?.state === "running") {
+      this.menu.push({ title: "Pause workflow after current safe step", run: () => control.pause() });
+      this.menu.push({ title: "Stop workflow now (preserve partial work)", run: () => {
+        this.confirm = { title: "Stop the workflow and all its workers? Completed effects are not undone.", run: () => control.stop() };
+        this.panel = "confirm"; this.menuReady = false; this.menuIndex = 0;
       } });
-      if (!running(record) && record.metadata?.producer === "dev-workflow" && this.hub.readOnlyFollowUp) this.menu.push({ label: "Ask a NEW read-only follow-up (never replay this attempt)", run: () => { this.thread().newFollowUp = true; this.openThread(); } });
-      this.menu.push({ label: "Toggle full raw evidence", run: () => { this.thread().raw = !this.thread().raw; this.openThread(); } });
-      this.menu.push({ label: "Expand / collapse tool output", run: () => { this.thread().expanded = !this.thread().expanded; this.openThread(); } });
-      this.menu.push({ label: "Show / hide provider-exposed thinking", run: () => { this.thread().thinking = !this.thread().thinking; this.openThread(); } });
-      this.menu.push({ label: "Find text in full transcript", run: () => { this.searchKind = "transcript"; this.search.setValue(""); this.state.mode = "search"; } });
-      this.menu.push({ label: "Copy full transcript", run: async () => { await this.hub.load(id); if (record.historyError) throw new Error(record.historyError); await copyToClipboard(safeText(rawTranscript(record))); back(); } });
-      const undelivered = [...record.receipts].reverse().find((r: any) => ["undelivered", "cancelled"].includes(r.state));
-      if (undelivered) this.menu.push({ label: "Restore latest undelivered/cancelled message to draft", run: () => {
-        const thread = this.thread(); if (thread.editor.getExpandedText()) throw new Error("Keep or clear your current draft before restoring another message. Both texts remain available.");
-        thread.editor.setText(undelivered.text); this.openThread();
-      } });
+    } else if (control?.state === "paused") this.menu.push({ title: "Continue paused workflow (revalidate unchanged work)", run: () => { this.done(); setImmediate(() => this.options.resume?.()); } });
+    else if (control && ["stopped", "failed"].includes(control.state)) this.menu.push({ title: `Recovery: ${control.resumeCommand}`, run: () => this.notice(`Reconcile partial work, then run ${control.resumeCommand} in Main.`) });
+    if (id && this.hub.canSend(id)) this.menu.push({ title: "Queue this draft after the agent's current work", run: () => this.send(id, "followUp") });
+    if (r?.actions?.cancelQueued && r.deliveries.some((d: any) => d.status === "queued")) this.menu.push({ title: "Cancel ALL still-queued messages to this agent", run: () => this.hub.cancelQueued(id).then(n => this.notice(`Cancelled ${n} queued messages. Original text is retained.`, id)) });
+    if (r?.closed && r.file && this.hub.onRelated) this.menu.push({ title: "Investigate this draft in a NEW read-only thread", run: async () => {
+      const c = this.composer(id), text = c.editor.getExpandedText();
+      if (!text.trim()) { this.notice("Write a follow-up question first. Original result remains unchanged.", id); return; }
+      const version = c.version; const newId = await this.hub.related(id, text);
+      if (c.version === version) c.editor.setText("");
+      this.select(newId); this.open();
+    } });
+    const failed = r?.deliveries?.findLast((d: any) => d.status === "failed" || d.status === "cancelled");
+    if (failed) this.menu.push({ title: "Restore undelivered message into this thread's draft", run: () => {
+      const c = this.composer(id);
+      if (c.editor.getExpandedText().trim()) { this.notice("Draft is not empty; copy it before restoring another message.", id); return; }
+      c.editor.setText(failed.text); this.open();
+    } });
+    if (id) {
+      this.menu.push({ title: "Copy full available transcript", run: async () => { this.hub.load(id); const text = this.transcript()?.exportText(); if (text) await (this.options.copy ? this.options.copy(text) : copyToClipboard(text)); this.notice("Transcript copied.", id); } });
+      this.menu.push({ title: "Expand / collapse tool output", run: () => { const v = this.viewport(); v.expanded = !v.expanded; this.transcript()?.setExpanded(!!v.expanded); } });
+      this.menu.push({ title: "Show / hide provider-supplied thinking", run: () => this.transcript()?.toggleThinking() });
+      if (isActive(r)) this.menu.push({ title: `Stop ${r.label}…`, run: () => this.stopAction() });
     }
-    const workflow = this.hub.workflow;
-    if (workflow?.control) {
-      if (["running", "pause requested"].includes(workflow.control.state)) this.menu.push({ label: "Pause workflow after the current operation", run: () => { workflow.control.pause(); back(); } });
-      if (workflow.control.paused) this.menu.push({ label: "Continue paused workflow (revalidate first)", run: async () => { await workflow.control.resume(); back(); } });
-      if (!workflow.control.signal.aborted && !["completed", "failed", "stopped"].includes(workflow.control.state)) this.menu.push({ label: "Stop workflow for manual edits / scope changes…", run: () => {
-        this.confirmation = { title: "Stop this workflow?", text: "Cancels its workers and pending controller operations. Existing changes and checkpoints remain. Reconcile scope in Main before restarting.", run: () => workflow.control.stop() };
-        this.menuIndex = 0; this.state.mode = "confirm";
-      } });
-      this.menu.push({ label: "Inspect controller commands and validation output", run: () => { this.contentOffset = 0; this.state.mode = "workflow"; } });
-    }
-    this.menu.push({ label: "Filter agents by purpose", run: () => { this.searchKind = "agents"; this.search.setValue(this.state.filter); this.state.mode = "search"; } });
-    if (this.hub.history) this.menu.push({ label: "Load read-only history from earlier Main sessions", run: () => { this.hub.restore(this.hub.history.previous()); this.state.mode = "roster"; } });
-    this.menuIndex = 0; this.state.mode = "actions"; this.requestRender();
+    this.menu.push({ title: "Return to Main (agents keep running)", run: () => this.done() });
+    this.menuReady = false; this.menuIndex = 0; this.panel = "actions"; this.setEditorFocus(); this.repaint();
   }
 
   handleInput(data: string) {
-    if (matchesKey(data, "alt+a")) { this.close(); return; }
+    if (matchesKey(data, "alt+a")) { this.done(); return; }
     if (matchesKey(data, "escape")) { this.back(); return; }
-    if (matchesKey(data, "f1") || (this.state.mode === "roster" && data === "?")) {
-      this.returnMode = this.state.mode === "thread" ? "thread" : "roster"; this.state.mode = "help"; this.contentOffset = 0; this.requestRender(); return;
+    if (matchesKey(data, "f1") || (this.state.mode === "roster" && !this.panel && data === "?")) { this.panel = this.panel === "help" ? undefined : "help"; this.setEditorFocus(); this.repaint(); return; }
+    if (this.panel === "help") {
+      if (matchesKey(data, "pageDown") || matchesKey(data, "down")) this.helpScroll += 5;
+      if (matchesKey(data, "pageUp") || matchesKey(data, "up")) this.helpScroll = Math.max(0, this.helpScroll - 5);
+      this.repaint(); return;
     }
-    if (this.height < 7 || this.width < 20) return; // Never accept invisible input in an unusably small viewport.
-    if (matchesKey(data, "f2") && !["search", "confirm"].includes(this.state.mode)) { this.actions(); return; }
-    if (this.state.mode === "search") { this.search.handleInput(data); this.requestRender(); return; }
-    if (this.state.mode === "actions") {
-      if (matchesKey(data, "up")) this.menuIndex = Math.max(0, this.menuIndex - 1);
-      if (matchesKey(data, "down")) this.menuIndex = Math.min(this.menu.length - 1, this.menuIndex + 1);
-      if (matchesKey(data, "enter")) void this.perform(this.menu[this.menuIndex]);
-      this.requestRender(); return;
+    if (this.panel === "search") { this.search.handleInput(data); if (this.state.mode === "roster") this.applyFilter(); this.repaint(); return; }
+    if (this.panel === "actions" || this.panel === "confirm") {
+      const items = this.panel === "confirm" ? [{ title: "Cancel", run: () => {} }, this.confirm!] : this.menu;
+      if (matchesKey(data, "up") || data === "k") { this.menuIndex = Math.max(0, this.menuIndex - 1); this.menuReady = false; }
+      else if (matchesKey(data, "down") || data === "j") { this.menuIndex = Math.min(items.length - 1, this.menuIndex + 1); this.menuReady = false; }
+      else if (matchesKey(data, "enter")) {
+        if (!this.menuReady) return;
+        this.menuReady = false;
+        const action = items[this.menuIndex], actionId = this.state.selectedId; this.panel = undefined;
+        void Promise.resolve().then(() => action.run()).catch((e: Error) => this.notice(e.message, actionId)).finally(() => { this.setEditorFocus(); this.repaint(); });
+      }
+      this.repaint(); return;
     }
-    if (this.state.mode === "confirm") {
-      if (matchesKey(data, "up") || matchesKey(data, "down") || matchesKey(data, "tab")) this.menuIndex = this.menuIndex ? 0 : 1;
-      if (matchesKey(data, "enter")) { const action = this.confirmation; this.state.mode = this.returnMode; if (this.menuIndex === 1) void this.perform(action); }
-      this.requestRender(); return;
+    if (matchesKey(data, "f2")) { this.actions(); return; }
+    if (matchesKey(data, "f3") || (this.state.mode === "roster" && data === "/")) {
+      this.panel = "search"; this.search.setValue(this.state.mode === "roster" ? this.filter : ""); this.setEditorFocus(); this.repaint(); return;
     }
-    if (["help", "details", "messages", "workflow"].includes(this.state.mode)) {
-      const delta = matchesKey(data, "pageUp") ? -8 : matchesKey(data, "pageDown") ? 8 : matchesKey(data, "up") ? -1 : matchesKey(data, "down") ? 1 : 0;
-      this.contentOffset = Math.max(0, this.contentOffset + delta); this.requestRender(); return;
+    if (this.state.mode === "thread") {
+      if (matchesKey(data, "alt+up")) { this.move(-1); return; }
+      if (matchesKey(data, "alt+down")) { this.move(1); return; }
+      if (matchesKey(data, "pageUp") || matchesKey(data, "pageDown")) { this.transcript()?.scroll(this.viewport(), (matchesKey(data, "pageUp") ? -1 : 1) * Math.max(1, (this.viewport().height || 10) - 1)); this.repaint(); return; }
+      if (matchesKey(data, "f4")) { this.transcript()?.live(this.viewport()); this.repaint(); return; }
+      if (matchesKey(data, "ctrl+o")) { const v = this.viewport(); v.expanded = !v.expanded; this.transcript()?.setExpanded(!!v.expanded); this.repaint(); return; }
+      if (matchesKey(data, "ctrl+x")) { this.stopAction(); return; }
+      if (!this.canCompose || (this.tui.terminal?.rows || 24) < 10) { this.notice("Resize the terminal to edit; your draft is preserved."); return; }
+      const id = this.state.selectedId;
+      if (id && this.current()) this.composer(id).editor.handleInput(data);
+      this.repaint(); return;
     }
-    if (this.state.mode === "roster") {
-      if (matchesKey(data, "up") || data === "k") this.move(-1);
-      else if (matchesKey(data, "down") || data === "j") this.move(1);
-      else if (matchesKey(data, "enter")) this.openThread();
-      else if (data === "/") { this.returnMode = "roster"; this.searchKind = "agents"; this.search.setValue(this.state.filter); this.state.mode = "search"; }
-      this.requestRender(); return;
-    }
-    const record = this.record(); if (!record) return;
-    const thread = this.thread();
-    if (matchesKey(data, "alt+up")) this.move(-1);
-    else if (matchesKey(data, "alt+down")) this.move(1);
-    else if (matchesKey(data, "pageUp")) this.transcript(record).scroll(-Math.max(1, this.height - 10), thread);
-    else if (matchesKey(data, "pageDown")) this.transcript(record).scroll(Math.max(1, this.height - 10), thread);
-    else if (matchesKey(data, "alt+end")) { thread.follow = true; thread.anchor = null; }
-    else if (matchesKey(data, "ctrl+o")) thread.expanded = !thread.expanded;
-    else if (matchesKey(data, "ctrl+enter")) void this.send("followUp");
-    else if (matchesKey(data, "enter")) void this.send();
-    else if ((record.state === "working" && record.controls.send) || thread.newFollowUp) thread.editor.handleInput(data);
-    this.requestRender();
+    if (this.narrowDetails && (matchesKey(data, "pageUp") || matchesKey(data, "pageDown"))) { this.detailScroll = Math.max(0, this.detailScroll + (matchesKey(data, "pageUp") ? -5 : 5)); this.repaint(); return; }
+    if (matchesKey(data, "up") || data === "k") this.move(-1);
+    else if (matchesKey(data, "down") || data === "j") this.move(1);
+    else if (matchesKey(data, "enter")) this.open();
+    else if (matchesKey(data, "tab")) this.narrowDetails = !this.narrowDetails;
+    else if (data === "x") this.stopAction();
+    this.repaint();
   }
 
-  private details(record: any) {
-    if (!record) return "No selected agent.";
-    const parent = this.hub.get(record.metadata?.parentId);
-    const stats = record.stats || {}, ctx = record.context;
-    return `${record.label}\n${record.state} · ${record.activity}\n${model(record)}\nElapsed: ${duration(record)}\nParent: ${parent?.label || record.metadata?.parentId || "Main"}\nRoot session: ${record.rootSessionId || "current"}\nWorktree: ${record.metadata?.cwd || "—"}\nContract: ${record.metadata?.contract || "—"}\nOutcome: ${record.outcome || "No controller acceptance recorded"}\n\n${record.error || record.historyError || ""}\n\nTASK\n${record.metadata?.task || "—"}\n\nCONTEXT\n${ctx?.percent === null || ctx?.percent === undefined ? "— (not currently measured)" : `${ctx.percent.toFixed(1)}% · ${compact(ctx.tokens)} / ${compact(ctx.contextWindow)}`}\n${record.metadata?.compaction || "Compaction not reported by producer"}\n\nUSAGE (this attempt)\n${compact(stats.totalTokens)} tokens · ${stats.requests || 0} responses · ${stats.tools || 0} tools\nInput ${compact(stats.input)} · Output ${compact(stats.output)} · Cache read ${compact(stats.cacheRead)}\nReported cost: ${stats.cost === null || stats.cost === undefined ? "—" : `$${stats.cost.toFixed(4)} (provider estimate; not a subscription charge)`}\n\nNative history: ${record.sessionFile || "not retained by producer"}`;
+  private roster(width: number, height: number) {
+    const rows = this.rows();
+    if (!rows.length) return new Text(this.filter ? "No matching agents. F3 changes the filter." : "No child agents yet. Work in Main normally; children appear here when created. Esc returns to Main.", 1, 1).render(width);
+    const selected = rows.findIndex((r: any) => r.id === this.state.selectedId);
+    const count = Math.max(1, Math.floor(height / 3));
+    const start = Math.max(0, Math.min(selected - Math.floor(count / 2), rows.length - count));
+    return rows.slice(start, start + count).flatMap((r: any) => {
+      const chosen = r.id === this.state.selectedId;
+      const parent = this.hub.get(r.metadata?.parentId);
+      const lines = [
+        `${chosen ? this.theme.fg("accent", "›") : " "} ${this.theme.fg(color(r), glyph(r))} ${safe(r.label)}${r.unread && r.closed ? " · new" : ""}`,
+        `    ${safe(r.role)} · ${safe(r.model)} ${safe(r.thinking)} · ${stateText(r)}`,
+        `    ${parent ? `↳ ${safe(parent.label)} · ` : ""}${safe(r.activity)}`,
+      ].map(t => pad(t, width));
+      return chosen ? lines.map(t => this.theme.bg("selectedBg", t)) : lines;
+    });
   }
-  private help() {
-    return "Agent Hub — Main is home; each child has its own conversation.\n\nAlt+A   Open / close the hub. Closing never stops work.\nEsc     Back one level. Drafts are retained.\nF1      This help. '?' is also available in the roster.\nF2      Available actions, questions, workflow controls and evidence.\n\nROSTER\n↑↓ or j/k  Choose an agent; new activity never reorders it.\nEnter      Open its thread.\n/          Filter by purpose.\n\nTHREAD\nEnter       Send to the named recipient. Current tools keep running.\nAlt+↑/↓     Switch threads; draft, cursor and history stay per thread.\nPgUp/PgDn   Read history without following new output.\nAlt+End     Jump back to live output.\nCtrl+O      Expand/collapse native tool output.\nCtrl+Enter  Queue after the current task (also available in F2).\nNormal editor keys and multiline paste work normally.\n\nDELIVERY\nQueued is not delivered. Delivered means added to agent context, not obeyed.\nF2 → Messages retains rejected/cancelled instructions and their exact text.\n\nCONTROL\nF2 → Pause stops the workflow at its next operation boundary.\nContinue rechecks the worktree and approved artifacts.\nStop does not undo file changes. Its confirmation names the affected owner.\nMain remains available for discussion; pause before competing edits.\n\nHISTORY\nFinished attempts are read-only, not automatically revived.\nAsk a new read-only follow-up explicitly; its result cannot replace the old one.\nF2 → Earlier history loads previous sessions without replaying any work.";
+  private details(width: number, height: number) {
+    const r = this.current(); if (!r) return ["Select a thread to inspect it."];
+    const parent = this.hub.get(r.metadata?.parentId);
+    const cost = r.stats?.cost == null ? "Reported cost —" : `Reported cost $${r.stats.cost.toFixed(4)} (not subscription billing)`;
+    const sections = [this.theme.bold(safe(r.label)), `${stateText(r)} · ${duration(r)}`, "",
+      ...(r.storageError ? [`History warning: ${safe(r.storageError)}`] : []),
+      "TASK", safe(r.metadata?.task || "No task supplied"), "", "CURRENT", safe(r.outcome || r.activity), "",
+      contextText(r), statsText(r), cost, `VCC ${r.metadata?.vcc ? "loaded" : "not reported"}`, parent ? `Parent: ${safe(parent.label)}` : "Parent: Main",
+      r.file ? `Saved: ${safe(r.file)}` : "History: memory-only session", r.closed ? "Read-only result. F2 starts a related investigation." : "Enter opens this agent. Your drafts stay with their recipient."];
+    const lines = sections.flatMap(t => wrapTextWithAnsi(t, Math.max(1, width)));
+    this.detailScroll = Math.min(this.detailScroll, Math.max(0, lines.length - height));
+    return lines.slice(this.detailScroll, this.detailScroll + height);
   }
-
+  private thread(width: number, height: number) {
+    const r = this.current(); if (!r) return ["This thread is unavailable. Your draft was not retargeted. Esc returns to agents."];
+    this.canCompose = height >= 7 && width >= 20;
+    if (!this.canCompose) { this.setEditorFocus(); return new Text("Resize to inspect and edit this thread. Input is paused; drafts are preserved. Esc returns to agents.", 0, 0).render(width); }
+    const c = this.composer(r.id); this.setEditorFocus();
+    const editorLines = c.editor.render(Math.max(1, width));
+    const editorHeight = Math.min(Math.max(3, Math.floor(height / 3)), editorLines.length);
+    const delivery = r.deliveries?.at(-1);
+    const recipient = `To: ${safe(r.label)}${this.hub.canSend(r.id) ? "" : " · read-only result"}`;
+    const status = delivery ? `${delivery.status === "failed" ? "NOT DELIVERED" : delivery.status}: ${safe(delivery.error || (delivery.mode === "followUp" ? "after current work" : "next turn boundary"))}` : r.closed ? "F2 → New investigation uses this draft; it does not restart this agent." : `${sendKey()} sends; it does not cancel a running tool.`;
+    const transcriptHeight = Math.max(0, height - editorHeight - 3);
+    const window = this.transcript()?.window(this.viewport(), width, transcriptHeight);
+    const lines = window?.lines || [];
+    while (lines.length < transcriptHeight) lines.push("");
+    // Editor owns its scrolling/cursor. When space is limited retain the rows
+    // around its cursor, not an arbitrary prefix of a multiline paste.
+    const marker = editorLines.findIndex(l => l.includes("\x1b_pi:c\x07"));
+    const from = Math.max(0, Math.min(marker - editorHeight + 2, editorLines.length - editorHeight));
+    return [
+      this.theme.fg("muted", `${contextText(r)} · ${this.viewport().follow ? "Live" : "Reading history · F4 live"} · ${window ? `${window.start + 1}–${window.end}/${window.total}` : ""}`),
+      ...lines, this.theme.fg("accent", recipient), ...editorLines.slice(from, from + editorHeight), this.theme.fg(delivery?.status === "failed" ? "error" : "muted", status),
+    ].slice(0, height);
+  }
+  private panelLines(width: number, height: number) {
+    if (this.panel === "help") {
+      const lines = new Text([
+      "AGENT HUB · Navigation without changing execution", "",
+      "Alt+A opens/closes the hub; agents keep running. Esc goes back and keeps drafts.",
+      "Roster: ↑↓ / j k choose; Enter opens; Tab shows details on narrow terminals; F3 filters.",
+      `Thread: type + ${sendKey()} sends to the named recipient. Left/Home/End still edit text; multiline pastes are preserved.`,
+      "Alt+↑/↓ switches threads. Each thread keeps its own draft and reading position.",
+      "PgUp/PgDn browse history. F4 returns to live. F3 searches; Enter finds next. Ctrl+O expands tool output.",
+      "F2 actions: queue after current work, copy transcript, related investigation, or stop with confirmation.",
+      "Queued is not delivered, and sending does not interrupt executing tools. Failed delivery remains recoverable.",
+      "Completed results are read-only. A new investigation never restarts an accepted Builder or changes an old verdict.",
+      "Workflow pause waits for a safe boundary. Stop requests cancellation; neither action undoes completed effects.",
+      "Human approvals wait in Main until you explicitly choose Respond. Ordinary hub Enter never approves work.",
+    ].join("\n"), 1, 0).render(width);
+      this.helpScroll = Math.min(this.helpScroll, Math.max(0, lines.length - height));
+      return lines.slice(this.helpScroll, this.helpScroll + height);
+    }
+    if (this.panel === "search") return [...this.search.render(width), ...new Text("Enter finds next / applies filter. Esc returns to the saved draft.", 0, 0).render(width)];
+    const items = this.panel === "confirm" ? [{ title: "Cancel", run: () => {} }, { title: "Stop", run: () => {} }] : this.menu;
+    const intro = this.panel === "confirm" ? new Text(safe(this.confirm?.title), 1, 0).render(width) : ["Actions · Nothing runs until selected"];
+    const head = intro.slice(0, Math.max(0, height - (this.panel === "confirm" ? 3 : 2)));
+    const gap = head.length ? [""] : [];
+    const available = Math.max(0, height - head.length - gap.length), start = Math.max(0, this.menuIndex - available + 1);
+    this.menuReady = available > 0 && this.menuIndex >= start && this.menuIndex < Math.min(items.length, start + available);
+    return [...head, ...gap, ...items.slice(start, start + available).map((a, i) => {
+      const t = pad(`${i + start === this.menuIndex ? "›" : " "} ${a.title}`, width);
+      return i + start === this.menuIndex ? this.theme.bg("selectedBg", t) : t;
+    })];
+  }
   render(width: number): string[] {
-    width = Math.max(1, Math.floor(width)); this.width = width; this.height = Math.max(1, Math.floor(this.tui.terminal?.rows || 24));
-    const height = this.height, record = this.record(), mode = this.state.mode;
-    if (height < 7 || width < 20) return [fit("Agent Hub", width), fit("Resize to compose safely", width), fit("Esc Back · F1 Help", width)].slice(0, height);
-    const focusedId = mode === "thread" ? record?.id : undefined;
-    if (this.retained?.id !== focusedId) {
-      this.retained?.release();
-      this.retained = focusedId ? { id: focusedId, release: this.hub.retain(focusedId) } : undefined;
-    }
-    if (mode === "thread" && record && !record.loaded && !record.historyError) void this.hub.load(record.id);
-    const thread = record ? this.thread() : null;
-    const receipt = record?.receipts.find((r: any) => r.id === thread?.lastReceiptId);
-    if (receipt?.state === "delivered" && thread?.notice.startsWith("Queued;")) thread.notice = "Delivered to this agent's context (not a claim of compliance).";
-    const header = this.theme.fg("accent", this.theme.bold("Agent Hub")) + this.theme.fg("muted", ` · ${mode === "thread" ? safeText(record?.label || "Unavailable thread") : "Agents"}`);
-    const workflow = this.hub.workflow;
-    const sub = workflow ? `${workflow.label} · ${workflow.control?.state || workflow.state} · ${workflow.control?.detail || workflow.detail || ""}` : "Main stays in the normal Pi console · Alt+A returns home";
-    const questions = this.hub.questions();
-    const notification = questions.length ? `${questions.length} request(s) need your input · F2 to answer; nothing is approved automatically`
-      : record?.error || record?.historyError || (mode === "thread" ? thread?.notice : this.hub.lastUIError) || "";
-    const footer = mode === "thread" ? "Enter Send · Alt+↑↓ Switch · Esc Back · F1 Help · F2 Actions" : mode === "roster" ? "↑↓ Choose · Enter Open · Esc Main · F1 Help · F2 Actions" : "↑↓ Navigate · Enter Select · Esc Back · F1 Help";
-    const top = [fit(header, width), fit(this.theme.fg("muted", safeText(sub)), width)];
-    if (notification) top.push(fit(this.theme.fg("warning", safeText(notification)), width));
-    const foot = width >= 60 ? footer : "Esc Back · F1 Help · F2 Actions";
-    let bodyHeight = height - top.length - 1;
-    let body: string[] = [];
-    if (mode === "thread" && record) {
-      const writable = (record.state === "working" && !!record.controls.send) || thread.newFollowUp;
-      this.state.editorRows = 17; // Native editor: at most five visible text lines.
-      thread.editor.focused = this.focus && writable;
-      let editorLines = writable ? thread.editor.render(width) : [];
-      const maxEditor = Math.max(1, Math.min(7, bodyHeight - 3));
-      if (editorLines.length > maxEditor) {
-        const cursor = Math.max(0, editorLines.findIndex((l: string) => l.includes(CURSOR_MARKER)));
-        const start = Math.max(1, Math.min(cursor, editorLines.length - maxEditor));
-        editorLines = editorLines.slice(start, start + maxEditor);
-      }
-      const label = writable ? `To: ${thread.newFollowUp ? "NEW read-only follow-up to " : ""}${record.label}${thread.busy ? " · sending" : ""}` : "Read-only history · F2 for a new follow-up / full evidence";
-      const count = Math.max(1, bodyHeight - editorLines.length - 2);
-      if (!record.loaded) body = wrap(record.historyError || "Loading native history…", width).slice(0, count);
-      else {
-        const transcript = this.transcript(record);
-        body = transcript.render(record, width, count, thread);
-        if (thread.searchQuery) {
-          thread.notice = transcript.find(thread.searchQuery, thread) ? `Found: ${thread.searchQuery}` : `Not found: ${thread.searchQuery}`;
-          thread.searchQuery = ""; body = transcript.render(record, width, count, thread);
-        }
-      }
-      while (body.length < count) body.push("");
-      body.push(fit(this.theme.fg("dim", thread.follow ? "LIVE · PgUp reads history" : "READING HISTORY · Alt+End returns live"), width));
-      body.push(fit(this.theme.fg(writable ? "accent" : "muted", safeText(label)), width), ...editorLines);
-    } else if (mode === "roster") {
-      const records = this.records(), index = records.findIndex((r: any) => r.id === this.state.selectedId);
-      const wide = width >= 110 && bodyHeight >= 12;
-      const leftWidth = wide ? Math.floor(width * 0.52) : width;
-      const visible = Math.max(1, Math.floor(bodyHeight / 3));
-      const start = Math.max(0, Math.min(Math.max(0, index) - Math.floor(visible / 2), Math.max(0, records.length - visible)));
-      for (const r of records.slice(start, start + visible)) {
-        const selected = r.id === this.state.selectedId;
-        const first = `${selected ? "›" : " "} ${glyph(r)} ${safeText(r.label)}`;
-        const parent = r.metadata?.parentId !== "main" ? ` ↳ ${this.hub.get(r.metadata?.parentId)?.label || "earlier thread"}` : "";
-        const second = `  ${r.state} · ${model(r)} · ctx ${r.context?.percent == null ? "—" : `${r.context.percent.toFixed(0)}%`}${parent}`;
-        for (const l of [first, safeText(second), `  ${safeText(r.activity)}`]) body.push(selected ? this.theme.bg("selectedBg", pad(l, leftWidth)) : fit(l, leftWidth));
-      }
-      if (!records.length) body = wrap(this.state.filter ? "No matching agents. '/' changes the filter." : "No child agents yet. Explorers spawned from Main and workflow workers appear here automatically.", leftWidth);
-      if (wide) {
-        const rightWidth = width - leftWidth - 3;
-        const details = wrap(safeText(this.details(record)), rightWidth);
-        body = Array.from({ length: bodyHeight }, (_, i) => `${pad(body[i] || "", leftWidth)} ${this.theme.fg("borderMuted", "│")} ${fit(details[i] || "", rightWidth)}`);
-      }
-    } else if (mode === "actions") {
-      const start = Math.max(0, this.menuIndex - Math.floor(bodyHeight / 2));
-      body = this.menu.slice(start, start + bodyHeight).map((item, i) => `${start + i === this.menuIndex ? "›" : " "} ${safeText(item.label)}`);
-    } else if (mode === "confirm") {
-      // Reserve space for both choices; never accept a hidden destructive action.
-      body = [...wrap(safeText(`${this.confirmation.title}\n${this.confirmation.text}`), width).slice(0, Math.max(0, bodyHeight - 3)), "",
-        `${this.menuIndex === 0 ? "›" : " "} Cancel`, `${this.menuIndex === 1 ? "›" : " "} Confirm stop`];
-    } else if (mode === "search") {
-      this.search.focused = this.focus;
-      body = [`Find ${this.searchKind === "agents" ? "agent purpose" : "in complete raw evidence"} · Enter apply · Esc cancel`, ...this.search.render(width)];
-    } else {
-      const text = mode === "help" ? this.help() : mode === "details" ? this.details(record) : mode === "messages"
-        ? (record?.receipts || []).map((r: any) => `${r.state.toUpperCase()} · ${r.mode}\n${r.text}\n${r.error || ""}`).join("\n\n") || "No human messages for this attempt."
-        : (workflow?.control?.operations || []).map((op: any) => `${op.state} · $ ${op.program} ${op.args.join(" ")}\n${op.stdout || ""}${op.stderr || ""}`).join("\n\n") || "No controller operations in this run.";
-      const lines = wrap(safeText(text), width);
-      this.contentOffset = Math.min(this.contentOffset, Math.max(0, lines.length - bodyHeight));
-      body = lines.slice(this.contentOffset, this.contentOffset + bodyHeight);
-    }
-    while (body.length < bodyHeight) body.push("");
-    return [...top, ...body.slice(0, bodyHeight), this.theme.fg("muted", fit(foot, width))].map(l => fit(l, width));
+    width = Math.max(1, width);
+    const height = Math.max(1, this.tui.terminal?.rows || process.stdout.rows || 24);
+    const title = typeof this.title === "function" ? this.title() : this.title;
+    const r = this.current();
+    const header = [this.theme.fg("accent", this.theme.bold(`Agent Hub · ${this.state.mode === "thread" ? safe(r?.label || "Unavailable thread") : safe(title)}`))];
+    const control = this.options.control?.();
+    if (this.hub.questions().length && height >= 12) header.push(this.theme.fg("warning", `${this.hub.questions().length} agents need you · F2 respond`));
+    if (control && height >= 12) header.push(this.theme.fg(control.pending ? "warning" : "muted", safe(`${control.phase} · ${control.state} · ${control.pending ? `Needs you: ${control.pending.title} · F2 respond` : control.pauseRequested ? "Pause requested; finishing current step" : control.activity}`)));
+    const hints = this.panel ? ["Esc back", "F1 help", ...(this.panel === "help" ? ["PgUp/Dn more"] : []), ...(this.panel === "actions" || this.panel === "confirm" ? ["↑↓ choose", "Enter select"] : [])]
+      : this.state.mode === "thread" ? ["Esc back", "F1 help", `${sendKey()} send`, "Alt+↑↓ switch", "F2 actions", "PgUp/Dn history", "F4 live"]
+      : ["Esc Main", "F1 help", "↑↓ choose", "Enter open", "F2 actions", "F3 find", "Tab details", ...(this.narrowDetails ? ["PgUp/Dn more"] : [])];
+    const footer = height < 8 || width < 20
+      ? hintLines(["Esc", "F1 help"], width).slice(0, Math.max(1, height - 1))
+      : hintLines(hints, width).slice(0, Math.max(2, Math.min(3, Math.floor(height / 4))));
+    const notice = this.state.notices.get(this.state.selectedId || "hub");
+    const noticeRows = notice && height >= 12 ? 1 : 0;
+    const bodyHeight = Math.max(0, height - header.length - footer.length - noticeRows);
+    let body: string[];
+    if (this.panel) body = this.panelLines(width, bodyHeight);
+    else if (this.state.mode === "thread") body = this.thread(width, bodyHeight);
+    else if (width >= 100) {
+      const leftWidth = Math.floor((width - 3) * .45), rightWidth = width - 3 - leftWidth;
+      const left = this.roster(leftWidth, bodyHeight), right = this.details(rightWidth, bodyHeight);
+      body = Array.from({ length: bodyHeight }, (_, i) => `${pad(left[i] || "", leftWidth)} ${this.theme.fg("borderMuted", "│")} ${pad(right[i] || "", rightWidth)}`);
+    } else body = this.narrowDetails ? this.details(width, bodyHeight) : this.roster(width, bodyHeight);
+    body = body.slice(0, bodyHeight); while (body.length < bodyHeight) body.push("");
+    const lines = [...header, ...body, ...(noticeRows ? [this.theme.fg("warning", safe(notice))] : []), ...footer.map(t => this.theme.fg("muted", t))];
+    return lines.slice(0, height).map(t => truncateToWidth(t, width));
   }
-  invalidate() { for (const t of this.transcripts.values()) t.invalidate(); }
+  invalidate() { for (const t of this.transcripts.values()) t.invalidate(); for (const c of this.state.composers.values()) c.editor.invalidate(); }
   dispose() {
-    if (this.closed) return; this.state.flush(); this.closed = true; clearTimeout(this.renderTimer); this.unsubscribe();
-    this.retained?.release(); this.retained = undefined;
-    this.state.repaint = () => {}; for (const t of this.transcripts.values()) t.dispose();
-    for (const thread of this.state.threads.values()) thread.editor.focused = false;
+    this.hub.flush(); this.disposed = true; clearTimeout(this.timer); this.unsubscribe(); this.unpin?.();
+    for (const t of this.transcripts.values()) t.dispose();
+    this.state.repaint = () => {}; for (const c of this.state.composers.values()) c.editor.focused = false;
   }
 }
 
-export function registerWorkerHubUI(pi: any, hub: any) {
-  let ctx: any, view: AgentHubView | undefined, closeView: (() => void) | undefined, answering = false, disposed = false;
-  const state = createHubViewState(hub);
-  let widgetTimer: any;
-  const renderWidget = () => {
-    clearTimeout(widgetTimer); widgetTimer = undefined;
+export function registerWorkerHubUI(pi: any, hub: any, options: any = {}) {
+  let ctx: any, title = "Main session", open: Promise<any> | undefined, close: (() => void) | undefined, disposed = false;
+  let state = createHubViewState();
+  const seen = new Map<string, string>();
+  const widget = () => {
     if (!ctx?.hasUI || disposed) return;
-    const questions = hub.questions();
-    const workflow = hub.workflow;
-    const text = [...(workflow ? [`${workflow.label} · ${workflow.control?.state || workflow.state} · ${workflow.control?.detail || workflow.detail || ""}`] : []),
-      ...(questions.length ? [`! ${questions.length} request(s) need your input · Alt+A then F2`] : []), ...compactWorkerLines(hub.list())];
-    const lines = text.map((s: string) => safeText(s).replace(/\n/g, " "));
-    ctx.ui.setWidget("dev-workers", () => ({ render: (width: number) => lines.map((s: string) => fit(s, width)), invalidate() {} }));
+    ctx.ui.setWidget("dev-workers", (_tui: any, theme: any) => ({
+      render: (width: number) => {
+        const control = options.control?.();
+        const status = control ? [safe(`${control.phase} · ${control.state} · ${control.pending ? `Needs you: ${control.pending.title} · /dev-respond` : control.pauseRequested ? "Pause requested" : control.activity}`)] : [];
+        const questions = hub.questions();
+        return [...status, ...(questions.length ? [`${questions.length} agents need you · /dev-respond`] : []), ...compactWorkerLines(hub.list())].map(t => theme.fg("muted", truncateToWidth(t, width)));
+      }, invalidate() {},
+    }));
   };
-  const unsubscribe = hub.subscribe(() => {
-    if (widgetTimer || disposed) return;
-    widgetTimer = setTimeout(() => {
-      try { renderWidget(); } catch (error: any) { hub.lastUIError = safeText(error.message); }
-    }, 33);
-    widgetTimer.unref?.();
-  });
-  const show = async (context = ctx) => {
-    if (!context?.hasUI || disposed) return;
-    if (answering) { context.ui.notify("Finish or cancel the open question before switching agents.", "info"); return; }
-    if (closeView) { closeView(); return; }
-    let result: any;
-    try {
-      result = await context.ui.custom((tui: any, theme: any, _keys: any, done: any) => {
-        closeView = () => { state.flush(); done(); };
-        view = new AgentHubView(tui, theme, hub, "session", done, state); return view;
-      }, { overlay: true, overlayOptions: { anchor: "center", width: "100%", maxHeight: "100%", margin: 0 } });
-    } finally { view?.dispose(); view = undefined; closeView = undefined; }
-    if (result?.answer && !disposed) {
-      const question = hub.questions().find((q: any) => q.id === result.answer);
-      if (!question) return;
-      answering = true;
-      try { await question.answer(context); } finally { answering = false; }
-      if (!disposed) await show(context);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const refresh = () => { if (!timer && !disposed) timer = setTimeout(() => { timer = undefined; widget(); }, 50); };
+  const unsubscribe = hub.subscribe((records: any[]) => {
+    refresh();
+    for (const r of records) {
+      if (seen.get(r.id) === r.state) continue;
+      seen.set(r.id, r.state);
+      if (!r.closed || r.unread) pi.appendEntry?.("dev-worker-event", { id: r.id, label: r.label, state: r.state, file: r.file, outcome: r.outcome });
     }
+  });
+  pi.registerEntryRenderer?.("dev-worker-event", (entry: any, _options: any, theme: any) => new Text(theme.fg("muted", `${safe(entry.data.label)} · ${safe(entry.data.state)}${entry.data.outcome ? ` · ${safe(entry.data.outcome)}` : ""}`), 0, 0));
+  const show = async (commandCtx = ctx) => {
+    if (!commandCtx?.hasUI || disposed) return;
+    if (open) { close?.(); return open; }
+    ctx = commandCtx;
+    open = ctx.ui.custom((tui: any, theme: any, _keys: any, done: any) => {
+      close = () => done(undefined);
+      return new AgentHubView(tui, theme, hub, () => title, close, state, options);
+    }, { overlay: true, overlayOptions: { anchor: "center", width: "100%", maxHeight: "100%", margin: 0 } });
+    try { await open; } finally { open = undefined; close = undefined; widget(); }
   };
-  pi.registerCommand("dev-workers", { description: "Open Agent Hub: inspect, message and control child threads", handler: async (_args: string, context: any) => { ctx = context; await show(context); } });
-  pi.registerShortcut("alt+a", { description: "Toggle Agent Hub", handler: async (context: any) => { ctx = context; await show(context); } });
-  pi.registerCommand("dev-attention", { description: "Answer the next explicit human request", handler: async (_args: string, context: any) => {
-    const question = hub.questions()[0]; if (!question) { context.ui.notify("No pending requests.", "info"); return; }
-    if (closeView) closeView(); answering = true;
-    try { await question.answer(context); } finally { answering = false; }
-  } });
+  pi.registerCommand("dev-workers", { description: "Agent Hub: inspect, message, or stop child agents", handler: async (_args: string, nextCtx: any) => { ctx = nextCtx; await show(); } });
+  pi.registerShortcut("alt+a", { description: "Agent Hub: switch child threads or return to Main", handler: async (nextCtx: any) => { ctx = nextCtx; await show(); } });
   return {
-    state,
-    setContext(context: any) {
-      ctx = context;
-      if (hub.history && !state.restored) { for (const [id, draft] of hub.history.drafts()) state.saved.set(id, draft.text); state.restored = true; }
-      renderWidget();
-    },
-    setWorkflow(title?: string) { if (title && title !== "session") hub.setWorkflow({ label: title, state: "running" }); renderWidget(); },
-    open: show,
-    dispose() { disposed = true; clearTimeout(widgetTimer); closeView?.(); state.dispose(); view?.dispose(); unsubscribe(); try { ctx?.ui.setWidget("dev-workers", undefined); } catch { /* parent runtime already closed */ } ctx = undefined; },
+    setContext(next: any) { ctx = next; widget(); },
+    setWorkflow(next?: string) { title = next || "Main session"; refresh(); },
+    refresh,
+    async beforePrompt() { close?.(); if (open) await open; await new Promise(resolve => setImmediate(resolve)); },
+    dispose() { disposed = true; close?.(); clearTimeout(timer); unsubscribe(); hub.flush(); ctx?.ui.setWidget("dev-workers", undefined); state = createHubViewState(); ctx = undefined; },
   };
 }

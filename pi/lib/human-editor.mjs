@@ -1,7 +1,6 @@
 import { ExtensionEditorComponent } from "@earendil-works/pi-coding-agent";
 
-/** Pi's editor() does not accept a signal. Keep cancellation attached to the
- * actual native dialog, not just the promise waiting for its answer. */
+/** Cancel the actual native editor, not just the caller awaiting its result. */
 export async function humanEditor(ctx, title, prefill = "", signal) {
   signal?.throwIfAborted();
   if (!ctx.hasUI) throw new Error("Human input requires interactive Pi.");
@@ -17,14 +16,13 @@ export async function humanEditor(ctx, title, prefill = "", signal) {
       };
       const abort = () => finish(undefined);
       const component = new ExtensionEditorComponent(tui, keys, title, prefill, finish, () => finish(undefined));
-      // Use public Container children and Editor API, not private editor fields.
+      // Public Container children and Editor API, never private editor fields.
       editor = component.children.find(child => typeof child.getExpandedText === "function" && typeof child.setText === "function");
       if (!editor) throw new Error("Pinned Pi editor is unavailable; refusing to open an unrecoverable response editor.");
       detach = () => signal?.removeEventListener("abort", abort);
       signal?.addEventListener("abort", abort, { once: true });
       const dispose = component.dispose?.bind(component);
       component.dispose = () => { detach(); dispose?.(); };
-      // Mount before settling an abort that raced with component construction.
       if (signal?.aborted) queueMicrotask(abort);
       return component;
     });

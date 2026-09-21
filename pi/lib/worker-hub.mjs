@@ -1,238 +1,239 @@
 import { randomUUID } from "node:crypto";
 
-const contentText = content => typeof content === "string" ? content : (content || []).filter(p => p.type === "text").map(p => p.text).join("\n");
-const terminalStates = new Set(["completed", "failed", "aborted", "interrupted"]);
-const number = value => typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : null;
+const tokens = ["input", "output", "cacheRead", "cacheWrite", "totalTokens"];
+const textOf = message => typeof message?.content === "string" ? message.content : (message?.content || []).filter(p => p.type === "text").map(p => p.text).join("\n");
+export const isActive = record => !!record?.session && !record.closed;
+const emptyStats = () => ({ input: null, output: null, cacheRead: null, cacheWrite: null, totalTokens: null, cost: null, requests: 0, tools: 0 });
+function addUsage(stats, message) {
+  if (message.role !== "assistant") return;
+  stats.requests++;
+  stats.tools += Array.isArray(message.content) ? message.content.filter(p => p.type === "toolCall").length : 0;
+  if (!message.usage) return;
+  for (const key of tokens) if (Number.isFinite(message.usage[key])) stats[key] = (stats[key] ?? 0) + message.usage[key];
+  if (Number.isFinite(message.usage.cost?.total)) stats.cost = (stats.cost ?? 0) + message.usage.cost.total;
+}
 
-/** A projection of externally owned sessions, never a scheduler or workflow authority. */
+/** Presentation + owner-supplied actions, never workflow policy or spawning. */
 export class WorkerHub {
   #records = new Map();
   #listeners = new Set();
+  #disposed = false;
+  #history;
+  #draftTimers = new Map();
+  #pins = new Map();
   #questions = new Map();
-  #closed = false;
-  #clock;
-  history;
-  workflow = null;
-  lastUIError = null;
-
-  constructor({ history, now = Date.now } = {}) { this.history = history; this.#clock = now; }
+  constructor({ history, onError = () => {}, onRelated } = {}) {
+    this.#history = history; this.onError = onError; this.onRelated = onRelated;
+  }
+  setHistory(history) { this.#history = history; }
   nextId(role) { return `${role}:${randomUUID()}`; }
   subscribe(listener) { this.#listeners.add(listener); return () => this.#listeners.delete(listener); }
-  #emit() {
-    if (this.#closed) return;
+  #warn(error) { try { this.onError(error instanceof Error ? error : new Error(String(error))); } catch { /* reporting must not break execution */ } }
+  #emit(record) {
+    if (this.#disposed) return;
     for (const listener of this.#listeners) {
-      try { listener(this.list()); } catch (error) { this.lastUIError = String(error?.message || error); }
+      try { listener(this.list(), record); } catch (error) { this.#warn(error); }
     }
   }
-  #persist(record) {
-    try { this.history?.record(record); } catch (error) { record.historyError = `History could not be saved: ${error.message}`; }
-  }
+  #persist(record) { try { this.#history?.saveMetadata(record); } catch (error) { record.storageError = error.message; this.#warn(error); } }
 
-  register({ id, label, role, model, thinking, session, metadata = {}, controls = {}, state }) {
-    if (this.#closed) throw new Error("Agent Hub is closed.");
+  register({ id, label, role, model, thinking, session, metadata = {}, actions }) {
+    if (this.#disposed) throw new Error("Agent Hub is closed.");
     if (this.#records.has(id)) throw new Error(`Worker ${id} is already registered.`);
-    const now = this.#clock();
+    const messages = [...(session.messages || [])];
     const record = {
-      id, label: label || role || id, role, model, thinking, metadata, controls,
-      state: state || (session ? "working" : "starting"), activity: "Starting",
-      startedAt: now, updatedAt: now, endedAt: null, revision: 0,
-      messages: [], streaming: null, liveTools: new Map(), receipts: [],
-      stats: { input: null, output: null, cacheRead: null, cacheWrite: null, totalTokens: null, cost: null, requests: 0, tools: 0 },
-      context: null, seen: new WeakSet(), loaded: true,
+      id, label: label || id, role, model, thinking, session, metadata, actions,
+      state: "working", activity: "Starting", startedAt: Date.now(), updatedAt: Date.now(), endedAt: null,
+      messages, stats: emptyStats(), context: undefined, partial: undefined, tools: new Map(),
+      deliveries: [], draft: "", version: 0, unread: true, closed: false, seen: new WeakSet(messages),
+      file: session.sessionFile ?? session.sessionManager?.getSessionFile?.(),
     };
-    this.#records.set(id, record);
-    if (session) this.attach(id, session);
-    this.#persist(record); this.#emit();
+    for (const message of messages) addUsage(record.stats, message);
+    record.unsubscribe = session.subscribe(event => {
+      try { this.#event(record, event); } catch (error) { this.#warn(error); }
+    });
+    this.#records.set(id, record); this.#persist(record); this.#emit(record);
     return id;
   }
 
-  attach(id, session) {
-    const record = this.get(id);
-    if (!record || terminalStates.has(record.state)) throw new Error("Cannot attach to a finished worker.");
-    record.unsubscribe?.();
-    record.session = session;
-    record.sessionFile = session.sessionFile;
-    for (const message of session.messages || []) this.#message(record, message);
-    record.unsubscribe = session.subscribe(event => this.#event(record, event));
-    this.#persist(record); this.#emit();
-  }
-
-  #message(record, message) {
-    if (!message || record.seen.has(message) || message.role === "system") return;
-    record.seen.add(message);
-    record.messages.push(message);
-    if (message.role !== "assistant") return;
-    record.stats.requests++;
-    for (const key of ["input", "output", "cacheRead", "cacheWrite", "totalTokens"]) {
-      const n = number(message.usage?.[key]);
-      if (n !== null) record.stats[key] = (record.stats[key] ?? 0) + n;
-    }
-    const cost = number(message.usage?.cost?.total);
-    if (cost !== null) record.stats.cost = (record.stats.cost ?? 0) + cost;
-  }
-
   #event(record, event) {
-    if (!record.session || this.#closed) return;
-    record.updatedAt = this.#clock(); record.revision++;
-    if (event.type === "message_start" && event.message?.role === "user") {
-      const text = contentText(event.message.content);
-      const receipt = record.receipts.find(r => ["sending", "queued"].includes(r.state) && r.wireText === text);
-      if (receipt) { receipt.state = "delivered"; receipt.deliveredAt = this.#clock(); this.#persist(record); }
+    if (record.closed || this.#disposed) return;
+    record.updatedAt = Date.now();
+    const { type } = event;
+    if (type === "message_start" && event.message.role === "user") {
+      const text = textOf(event.message);
+      const delivery = record.deliveries.find(d => ["sending", "queued"].includes(d.status) && d.text === text);
+      if (delivery) { delivery.status = "delivered"; delivery.deliveredAt = Date.now(); this.#persist(record); }
     }
-    if (event.type === "message_update") {
-      record.streaming = event.message || record.session.agent?.state?.streamingMessage || null;
-      record.activity = "Responding";
-    } else if (event.type === "message_end") {
-      this.#message(record, event.message);
-      if (event.message?.role === "assistant") record.streaming = null;
-      if (event.message?.role === "toolResult") record.liveTools.delete(event.message.toolCallId);
-      try { record.context = record.session.getContextUsage?.() || null; } catch { record.context = null; }
-    } else if (event.type === "tool_execution_start") {
-      record.stats.tools++;
-      record.liveTools.set(event.toolCallId, { ...event, revision: 0, state: "running" });
-      const detail = event.args?.path || event.args?.file_path || event.args?.command || event.args?.query || "";
+    if (type === "message_update") {
+      record.partial = event.message;
+      record.activity = event.assistantMessageEvent?.type?.startsWith("thinking") ? "Thinking" : "Responding";
+      record.version++;
+    } else if (type === "message_end") {
+      const fresh = !record.seen.has(event.message);
+      record.seen.add(event.message);
+      if (fresh) record.messages.push(event.message);
+      if (event.message.role === "assistant") record.partial = undefined;
+      if (event.message.role === "toolResult") record.tools.delete(event.message.toolCallId);
+      if (fresh) addUsage(record.stats, event.message);
+      record.version++; record.unread = true;
+      record.context = record.session.getContextUsage?.();
+    } else if (type === "tool_execution_start" || type === "tool_execution_update") {
+      record.tools.set(event.toolCallId, { ...record.tools.get(event.toolCallId), ...event });
+      const detail = event.args?.path || event.args?.command || event.args?.query || "";
       record.activity = `${event.toolName}${detail ? ` ${String(detail).replace(/\s+/g, " ").slice(0, 160)}` : ""}`;
-    } else if (event.type === "tool_execution_update" || event.type === "tool_execution_end") {
-      const tool = record.liveTools.get(event.toolCallId) || { ...event, revision: 0 };
-      Object.assign(tool, { result: event.partialResult || event.result, isError: !!event.isError,
-        state: event.type === "tool_execution_end" ? "finished" : "running", revision: tool.revision + 1 });
-      record.liveTools.set(event.toolCallId, tool);
-    } else if (event.type === "agent_start") record.activity = "Thinking";
-    else if (event.type === "agent_end") record.activity = "Settling";
-    else if (event.type === "auto_retry_start") record.activity = "Retrying provider request";
-    else if (["compaction_start", "auto_compaction_start"].includes(event.type)) record.activity = "Compacting context";
-    else if (["compaction_end", "auto_compaction_end", "session_compact"].includes(event.type)) record.context = null;
-    this.#emit();
+      record.version++;
+    } else if (type === "tool_execution_end") {
+      record.tools.set(event.toolCallId, { ...record.tools.get(event.toolCallId), ...event });
+      record.activity = event.isError ? `${event.toolName} failed` : `${event.toolName} finished`;
+      record.version++; record.unread = true;
+    } else if (type === "agent_start") record.activity = "Waiting for model";
+    else if (type === "compaction_start") record.activity = "Compacting context";
+    else if (type === "compaction_end") {
+      record.context = record.session.getContextUsage?.();
+      record.activity = event.errorMessage ? `Compaction failed: ${event.errorMessage}` : "Context compacted";
+    } else if (type === "auto_retry_start") record.activity = `Provider retry ${event.attempt}/${event.maxAttempts}`;
+    else if (type === "agent_end") record.activity = event.willRetry ? "Retrying" : "Finishing";
+    else if (type === "agent_settled") record.activity = "Settled";
+    else if (type === "queue_update") record.queue = { steering: event.steering.length, followUp: event.followUp.length };
+    this.#emit(record);
   }
 
+  restore(data) {
+    if (this.#disposed || this.#records.has(data.id)) return;
+    this.#records.set(data.id, { ...data, stats: data.stats || emptyStats(), metadata: data.metadata || {}, tools: new Map(), deliveries: data.deliveries || [], draft: data.draft || "", version: 0, unread: false, closed: true });
+    this.#emit(this.get(data.id));
+  }
   update(id, patch) {
-    const record = this.get(id);
-    if (!record || this.#closed) return false;
-    // Identity, transcript, and control handles cannot be replaced by display updates.
-    for (const key of ["label", "activity", "state", "outcome", "error", "context", "metadata"]) {
-      if (Object.hasOwn(patch, key)) record[key] = patch[key];
-    }
-    record.updatedAt = this.#clock(); record.revision++;
-    this.#persist(record); this.#emit(); return true;
+    const record = this.get(id); if (!record) return false;
+    for (const key of ["label", "metadata", "state", "activity", "accepting", "outcome", "context"]) if (Object.hasOwn(patch, key)) record[key] = patch[key];
+    record.updatedAt = Date.now();
+    if (record.closed) this.#persist(record);
+    this.#emit(record); return true;
   }
-
+  seal(id) { const record = this.get(id); if (record) { record.accepting = false; this.#emit(record); } }
   unregister(id, state = "completed") {
-    const record = this.get(id);
-    if (!record || record.endedAt !== null) return false;
+    const record = this.get(id); if (!record || record.closed) return false;
     record.unsubscribe?.(); record.unsubscribe = undefined;
-    for (const message of record.session?.messages || []) this.#message(record, message);
-    try { record.context = record.session?.getContextUsage?.() || record.context; } catch { /* final snapshot is best effort */ }
-    record.session = undefined; record.controls = {};
-    record.state = state; record.activity = state === "completed" ? "Agent finished" : state;
-    record.endedAt = this.#clock(); record.updatedAt = record.endedAt; record.revision++;
-    record.streaming = null;
-    for (const receipt of record.receipts) {
-      if (["sending", "queued"].includes(receipt.state)) {
-        receipt.state = "undelivered"; receipt.error = "Agent finished before delivery. The original message is retained.";
-      }
+    record.state = state; record.activity = state === "completed" ? "Worker finished" : state;
+    record.endedAt = Date.now(); record.closed = true; record.accepting = false; record.unread = true;
+    for (const d of record.deliveries) if (["queued", "sending"].includes(d.status)) {
+      d.status = "failed"; d.error = "Agent stopped before delivery. Restore this message to send it elsewhere.";
     }
-    this.#persist(record);
-    // Keep every identity. Only evict reloadable transcript bodies, never the selected recipient.
-    if (this.history) {
-      const cached = this.list().filter(r => r.endedAt !== null && r.loaded && !r.readers && r.sessionFile && this.history.canLoad?.(r));
-      for (const old of cached.slice(0, Math.max(0, cached.length - 12))) {
-        old.messages = []; old.liveTools.clear(); old.loaded = false;
-      }
-    }
-    this.#emit(); return true;
+    this.flushDraft(id); this.#persist(record);
+    record.session = undefined; record.actions = undefined; record.partial = undefined; record.tools.clear();
+    this.#trim(); this.#emit(record); return true;
   }
-
-  restore(records) {
-    for (const saved of records) {
-      if (!saved?.id || this.#records.has(saved.id)) continue;
-      this.#records.set(saved.id, { ...saved, controls: {}, session: undefined, streaming: null,
-        state: terminalStates.has(saved.state) ? saved.state : "interrupted",
-        activity: terminalStates.has(saved.state) ? saved.activity : "Previous process ended; inspect before resuming",
-        endedAt: saved.endedAt ?? saved.updatedAt, messages: [], liveTools: new Map(), receipts: (saved.receipts || []).map(receipt => ["sending", "queued"].includes(receipt.state)
-          ? { ...receipt, state: "undelivered", error: "The previous process ended before delivery was confirmed. Original text retained." } : { ...receipt }),
-        revision: 0, loaded: false, seen: new WeakSet() });
-    }
-    this.#emit();
-  }
-  async load(id) {
-    const record = this.get(id);
-    if (!record || record.loaded || !this.history) return record;
-    if (!record.loading) record.loading = Promise.resolve().then(() => this.history.load(record)).then(messages => {
-      record.messages = messages; record.loaded = true; record.historyError = undefined; record.revision++;
-      return record;
-    }).catch(error => { record.historyError = `Cannot open history: ${error.message}`; return record; })
-      .finally(() => { record.loading = undefined; this.#emit(); });
-    return record.loading;
-  }
-  retain(id) {
-    const record = this.get(id);
-    if (!record) return () => {};
-    record.readers = (record.readers || 0) + 1;
-    let released = false;
-    return () => { if (!released) { released = true; record.readers--; } };
-  }
-  list() { return [...this.#records.values()]; } // Stable creation order; activity never moves a row.
+  list() { return [...this.#records.values()]; } // Stable order: activity never moves a target under the cursor.
   get(id) { return this.#records.get(id); }
-
+  pin(id) {
+    this.#pins.set(id, (this.#pins.get(id) || 0) + 1);
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      const count = (this.#pins.get(id) || 0) - 1;
+      if (count > 0) this.#pins.set(id, count); else this.#pins.delete(id);
+      this.#trim();
+    };
+  }
+  #trim() {
+    const cached = this.list().filter(r => r.closed && r.messages && r.file && !this.#pins.get(r.id));
+    for (const record of cached.slice(0, -12)) record.messages = undefined;
+  }
+  load(id) {
+    const record = this.get(id); if (!record) throw new Error("Thread is no longer available.");
+    if (!record.messages) {
+      try { record.messages = this.#history?.load(record) || []; record.version++; }
+      catch (error) { record.storageError = error.message; throw error; }
+    }
+    record.unread = false;
+    return record;
+  }
+  setDraft(id, text) {
+    const record = this.get(id); if (!record) return;
+    record.draft = text;
+    clearTimeout(this.#draftTimers.get(id));
+    this.#draftTimers.set(id, setTimeout(() => this.flushDraft(id), 250));
+    this.#draftTimers.get(id).unref?.();
+  }
+  flushDraft(id) {
+    clearTimeout(this.#draftTimers.get(id)); this.#draftTimers.delete(id);
+    const record = this.get(id); if (!record || record.savedDraft === record.draft) return;
+    try { this.#history?.saveDraft(record, record.draft); record.savedDraft = record.draft; }
+    catch (error) { record.storageError = error.message; this.#warn(error); }
+  }
+  canSend(id) {
+    const r = this.get(id);
+    return !!(isActive(r) && r.accepting !== false && r.state === "working" && (r.actions?.send || r.session?.steer));
+  }
   async send(id, text, mode = "steer") {
-    const record = this.get(id);
-    if (!record || record.state !== "working" || !record.controls.send) throw new Error("This attempt no longer accepts messages. Your draft is unchanged.");
-    if (!text.trim()) throw new Error("Write a message first.");
     if (!["steer", "followUp"].includes(mode)) throw new Error("Unknown delivery mode.");
-    const receipt = { id: randomUUID(), workerId: id, text, wireText: text, mode, state: "sending", timestamp: this.#clock() };
-    record.receipts.push(receipt); this.#emit();
+    if (!text?.trim()) throw new Error("Message is empty.");
+    const record = this.get(id);
+    if (!this.canSend(id)) throw new Error("Agent is no longer accepting messages. Your draft is preserved.");
+    const delivery = { id: randomUUID(), text, mode, status: "sending", at: Date.now() };
+    record.deliveries.push(delivery); this.#persist(record); this.#emit(record);
     try {
-      await record.controls.send(text, mode, receipt);
-      if (receipt.state === "undelivered") throw new Error(receipt.error);
-      if (receipt.state === "sending") receipt.state = "queued";
-      return receipt;
+      if (record.actions?.send) await record.actions.send(text, mode);
+      else await record.session[mode](text);
+      if (delivery.status === "failed" || (record.closed && delivery.status !== "delivered")) throw new Error(delivery.error || "Agent finished before delivery.");
+      if (delivery.status === "sending") delivery.status = "queued";
+      return delivery;
     } catch (error) {
-      receipt.state = "undelivered"; receipt.error = error.message || String(error); throw error;
-    } finally { this.#persist(record); this.#emit(); }
+      delivery.status = "failed"; delivery.error = error.message;
+      throw error;
+    } finally { this.#persist(record); this.#emit(record); }
   }
   steer(id, text) { return this.send(id, text, "steer"); }
   followUp(id, text) { return this.send(id, text, "followUp"); }
-  async cancelMessage(id, receiptId) {
-    const record = this.get(id), receipt = record?.receipts.find(r => r.id === receiptId);
-    if (!receipt || !["queued", "sending"].includes(receipt.state) || !record.controls.cancelMessage) throw new Error("This message can no longer be cancelled.");
-    await record.controls.cancelMessage(receipt);
-    receipt.state = "cancelled"; this.#persist(record); this.#emit();
-  }
   async abort(id) {
     const record = this.get(id);
-    if (!record?.controls.stop || terminalStates.has(record.state) || record.state === "aborting") return false;
-    const stop = record.controls.stop;
-    this.update(id, { state: "aborting", activity: "Cancellation requested; existing changes are not reverted" });
-    await stop(); return true;
+    if (!isActive(record) || record.state === "aborting") return false;
+    const previous = record.state;
+    this.update(id, { state: "aborting", accepting: false, activity: "Stopping; completed effects are not undone" });
+    try { await (record.actions?.stop ? record.actions.stop() : record.session.abort()); return true; }
+    catch (error) { this.update(id, { state: previous, activity: `Stop failed: ${error.message}` }); throw error; }
   }
-  async stopAll() { await Promise.allSettled(this.list().map(r => this.abort(r.id))); }
-  setWorkflow(workflow) { this.workflow = workflow; this.#emit(); }
-
-  request({ ownerId = "main", title, run }, signal) {
-    if (this.interactive === false) return Promise.reject(new Error("Human input requires interactive Pi; this worker is blocked, not approved."));
-    if (this.#closed || signal?.aborted) return Promise.reject(signal?.reason || new Error("Session closed."));
+  async cancelQueued(id) {
+    const record = this.get(id);
+    if (!isActive(record) || !record.actions?.cancelQueued) throw new Error("This owner cannot cancel a queue.");
+    const removed = await record.actions.cancelQueued();
+    const texts = [...removed.steering, ...removed.followUp];
+    let count = 0;
+    for (const d of record.deliveries) if (["sending", "queued"].includes(d.status)) {
+      const at = texts.indexOf(d.text);
+      if (at >= 0) { texts.splice(at, 1); d.status = "cancelled"; count++; }
+    }
+    this.#persist(record); this.#emit(record); return count;
+  }
+  request({ ownerId, title, run }, signal) {
+    if (this.#disposed || signal?.aborted) return Promise.reject(signal?.reason || new Error("Session closed."));
     return new Promise((resolve, reject) => {
       const id = randomUUID();
-      const cleanup = () => { signal?.removeEventListener("abort", abort); this.#questions.delete(id); this.#emit(); };
-      const abort = () => { cleanup(); reject(signal?.reason || new Error("Request cancelled.")); };
-      const question = { id, ownerId, title, signal, answering: false,
-        answer: async ctx => {
-          if (question.answering || signal?.aborted) return;
-          question.answering = true; this.#emit();
-          try { const value = await run(ctx, signal); if (!signal?.aborted) resolve(value); }
-          catch (error) { reject(error); }
-          finally { cleanup(); }
-        }, cancel: abort };
-      this.#questions.set(id, question);
-      signal?.addEventListener("abort", abort, { once: true }); this.#emit();
+      const cleanup = () => { signal?.removeEventListener("abort", cancel); this.#questions.delete(id); this.#emit(); };
+      const cancel = () => { cleanup(); reject(signal?.reason || new Error("Question cancelled.")); };
+      const question = { id, ownerId, title, answering: false, cancel, answer: async ctx => {
+        if (question.answering || signal?.aborted || !this.#questions.has(id)) return;
+        question.answering = true; this.#emit();
+        try { const value = await run(ctx, signal); signal?.throwIfAborted(); resolve(value); }
+        catch (error) { reject(error); }
+        finally { cleanup(); }
+      } };
+      this.#questions.set(id, question); signal?.addEventListener("abort", cancel, { once: true }); this.#emit();
     });
   }
   questions() { return [...this.#questions.values()]; }
+  async related(id, text) {
+    const record = this.get(id);
+    if (!record?.closed || !record.file || !this.onRelated) throw new Error("A related investigation is unavailable for this thread.");
+    return this.onRelated(record, text);
+  }
+  flush() { for (const id of this.#draftTimers.keys()) this.flushDraft(id); }
   dispose() {
-    if (this.#closed) return;
-    this.#closed = true;
+    this.flush(); this.#disposed = true;
     for (const question of this.#questions.values()) question.cancel();
-    for (const record of this.#records.values()) record.unsubscribe?.();
-    this.#listeners.clear();
+    for (const r of this.list()) r.unsubscribe?.();
+    this.#records.clear(); this.#listeners.clear(); this.#pins.clear();
   }
 }
