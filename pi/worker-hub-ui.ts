@@ -155,7 +155,7 @@ export class AgentHubView {
     try {
       if (thread.newFollowUp) {
         await this.hub.readOnlyFollowUp(record, text);
-        thread.newFollowUp = false; thread.notice = "Read-only follow-up finished; its separate thread is in Agents.";
+        thread.newFollowUp = false; thread.notice = "Read-only follow-up started; inspect its separate thread in Agents for progress and the result.";
       } else {
         const receipt = await this.hub.send(id, text, mode);
         thread.notice = receipt.state === "delivered" ? "Delivered to this agent's context." : "Queued; the current tool batch continues until the next delivery boundary.";
@@ -276,7 +276,7 @@ export class AgentHubView {
     const height = this.height, record = this.record(), mode = this.state.mode;
     if (height < 7 || width < 20) return [fit("Agent Hub", width), fit("Resize to compose safely", width), fit("Esc Back · F1 Help", width)].slice(0, height);
     const thread = record ? this.thread() : null;
-    const header = this.theme.fg("accent", this.theme.bold("Agent Hub")) + this.theme.fg("muted", ` · ${mode === "thread" ? safeText(record?.label || "Unavailable thread") : "Agents"}`);
+    const header = this.theme.fg("accent", this.theme.bold("Agent Hub")) + this.theme.fg("muted", ` · ${mode === "thread" ? safeText(record?.label || "Unavailable thread")}` : "Agents");
     const workflow = this.hub.workflow;
     const sub = workflow ? `${workflow.label} · ${workflow.control?.state || workflow.state} · ${workflow.control?.detail || workflow.detail || ""}` : "Main stays in the normal Pi console · Alt+A returns home";
     const questions = this.hub.questions();
