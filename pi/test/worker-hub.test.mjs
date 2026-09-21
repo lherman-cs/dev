@@ -1,41 +1,65 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { WorkerHub } from '../lib/worker-hub.mjs';
-import { createJiti } from 'jiti';
-const { WorkerViewer, compactWorkerLines, workerLines } = await createJiti(import.meta.url).import('../worker-hub-ui.ts');
+import { WorkerHub, session, register, assistant, user, compactWorkerLines } from './helpers/hub.mjs';
 
-function session() {
-  const listeners=new Set(), calls=[];
-  return {messages:[],calls,subscribe(fn){listeners.add(fn);return()=>listeners.delete(fn);},emit(event){for(const fn of listeners)fn(event);},
-    async steer(text){calls.push(['steer',text]);},async followUp(text){calls.push(['followUp',text]);},async abort(){calls.push(['abort']);},listenerCount(){return listeners.size;}};
-}
-function register(hub,s,id='build:1') {hub.register({id,label:'build:P001',role:'build',model:'gpt-5.6-sol',thinking:'low',session:s,metadata:{phase:'build'}});}
-
-test('register, live update, completion snapshot, bounded UI visibility and cleanup',()=>{
-  const hub=new WorkerHub(),s=session(),states=[];hub.subscribe(records=>states.push(records.map(r=>r.state)));
-  register(hub,s);s.messages.push({role:'assistant',content:[{type:'text',text:'implementing'}],usage:{input:4,output:2,totalTokens:6}});
-  s.emit({type:'tool_execution_start',toolName:'edit',args:{path:'src/foo.rs'}});
-  assert.match(compactWorkerLines(hub.list(),'dev-build').join('\n'),/build:P001.*working.*edit src\/foo.rs.*6 tok/);
-  assert.match(workerLines(hub.get('build:1')).join('\n'),/assistant implementing/);
-  hub.unregister('build:1','completed');
-  assert.equal(hub.get('build:1').session,undefined);assert.equal(hub.get('build:1').state,'completed');assert.equal(s.listenerCount(),0);
-  hub.dispose();assert.deepEqual(hub.list(),[]);assert.ok(states.length>=3);
+test('incremental usage distinguishes unknown data and is not double counted', () => {
+  const hub=new WorkerHub(),s=session(),r=register(hub,s);
+  assert.equal(r.stats.totalTokens,null); assert.equal(r.stats.cost,null);
+  const message={...assistant('done'),content:[{type:'text',text:'done'},{type:'toolCall',id:'one',name:'read',arguments:{path:'a'}}],usage:{input:4,output:2,totalTokens:6,cost:{total:0}}};
+  s.append(message); s.emit({type:'message_end',message});
+  assert.equal(r.stats.totalTokens,6);assert.equal(r.stats.cost,0);assert.equal(r.stats.requests,1);assert.equal(r.stats.tools,1);
+  assert.equal(r.context.percent,4.2); hub.dispose();
 });
 
-test('steering, follow-up and abort only interact with the supplied running session',async()=>{
-  const hub=new WorkerHub(),s=session();register(hub,s);
-  await hub.steer('build:1','use the existing parser');await hub.followUp('build:1','also check the regression');await hub.abort('build:1');
-  assert.deepEqual(s.calls.map(call=>call[0]),['steer','followUp','abort']);
-  assert.match(s.calls[0][1],/current approved contract/);assert.match(s.calls[0][1],/NEEDS_REPLAN/);
-  assert.equal(hub.get('build:1').state,'aborting');
-  assert.deepEqual(hub.get('build:1').metadata,{phase:'build'},'UI must not acquire orchestration state');
+test('live assistant and tool output are separate from settled context and survive compaction', () => {
+  const hub=new WorkerHub(),s=session(),r=register(hub,s);
+  const message=assistant('working'); s.emit({type:'message_update',message,assistantMessageEvent:{type:'text_delta'}});
+  assert.equal(r.partial,message);
+  s.emit({type:'tool_execution_start',toolCallId:'t',toolName:'bash',args:{command:'cargo test'}});
+  s.emit({type:'tool_execution_update',toolCallId:'t',toolName:'bash',partialResult:{content:[{type:'text',text:'compiling'}]}});
+  assert.equal(r.tools.get('t').partialResult.content[0].text,'compiling');
+  s.append(message); s.messages=[]; s.emit({type:'compaction_start'}); s.emit({type:'compaction_end'});
+  assert.equal(r.messages.length,1,'history is not the compacted model context'); assert.equal(r.partial,undefined);
+  hub.dispose();
 });
 
-test('focused viewer updates live and returns control without stopping the worker',()=>{
-  const hub=new WorkerHub(),s=session();register(hub,s);
-  let renders=0,action;const viewer=new WorkerViewer({requestRender(){renders++;}},hub,'build:1',value=>{action=value;});
-  s.messages.push({role:'assistant',content:[{type:'toolCall',name:'bash',arguments:{command:'npm test'}}]});s.emit({type:'message_update'});
-  assert.match(viewer.render(120).join('\n'),/→ bash.*npm test/);assert.ok(renders>0);
-  viewer.handleInput('\u001b');assert.equal(action,'back');assert.deepEqual(s.calls,[]);
-  viewer.dispose();assert.equal(s.listenerCount(),1,'only the hub lifecycle subscription remains');
+test('generic actions send exact text, track actual delivery, and reject after sealing',async()=>{
+  const hub=new WorkerHub(),s=session(),r=register(hub,s);
+  const d=await hub.steer(r.id,'look at tests\nnot implementation');
+  assert.equal(d.status,'queued');assert.equal(s.calls[0][1],'look at tests\nnot implementation');
+  s.append(user(d.text));assert.equal(d.status,'delivered');
+  await hub.followUp(r.id,'afterwards'); hub.seal(r.id);
+  await assert.rejects(hub.steer(r.id,'too late'),/no longer accepting/);
+  hub.unregister(r.id);assert.equal(r.deliveries[1].status,'failed');assert.equal(r.session,undefined);assert.equal(s.listenerCount(),0);
+  hub.dispose();
+});
+
+test('completion during asynchronous queue acceptance is never reported as delivered',async()=>{
+  const hub=new WorkerHub(),s=session();let resolve;
+  const r=register(hub,s,'agent:a',{actions:{send:()=>new Promise(r=>resolve=r),stop:()=>s.abort()}});
+  const send=hub.steer(r.id,'race');const rejection=assert.rejects(send,/stopped before delivery/);
+  hub.unregister(r.id);resolve();await rejection;
+  assert.equal(r.deliveries[0].status,'failed');hub.dispose();
+});
+
+test('a faulty observer cannot break tool execution or hide other observers',()=>{
+  const errors=[],hub=new WorkerHub({onError:e=>errors.push(e)}),s=session();let updates=0;
+  hub.subscribe(()=>{throw new Error('UI fault');});hub.subscribe(()=>updates++);
+  const r=register(hub,s); s.append(assistant('done'));
+  assert.equal(r.messages.length,1);assert.ok(updates>=2);assert.ok(errors.length>=2);hub.dispose();
+});
+
+test('activity never reorders agents and completion retains an inspectable record',()=>{
+  const hub=new WorkerHub(),s1=session(),s2=session();register(hub,s1,'a');register(hub,s2,'b');
+  const release=hub.pin('a');hub.unregister('a');
+  for(let i=0;i<30;i++){register(hub,session(),`r${i}`);hub.unregister(`r${i}`);}
+  assert.deepEqual(hub.list().slice(0,2).map(r=>r.id),['a','b']);assert.ok(hub.get('a'));
+  assert.match(compactWorkerLines(hub.list()).join('\n'),/Alt\+A inspect/);
+  release();hub.dispose();
+});
+
+test('stop calls only owner-supplied action, failures remain visible and do not affect siblings',async()=>{
+  const hub=new WorkerHub(),s=session(),other=session();register(hub,s);register(hub,other,'b');
+  assert.equal(await hub.abort('agent:a'),true);assert.deepEqual(s.calls,[['abort']]);assert.deepEqual(other.calls,[]);
+  assert.equal(await hub.abort('agent:a'),false);hub.dispose();
 });

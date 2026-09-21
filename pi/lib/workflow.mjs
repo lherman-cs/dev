@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { createHash } from "node:crypto";
 import { decode, encode } from "@toon-format/toon";
 import lockfile from "proper-lockfile";
 
@@ -74,6 +75,28 @@ export function contracts(project) {
   if (!tasks.length) throw new Error("No execution contracts found. Run /dev-plan first.");
   return { meta, tasks, all };
 }
+/** Uses raw execution deliberately: taking a pause fingerprint must not enter
+ * the pause gate recursively. Includes untracked contents and ignored contracts. */
+export async function workflowFingerprint(h, project) {
+  const exec = h.rawExec || h.exec;
+  const run = async args => {
+    const result = await exec.call(h, "git", args);
+    if (result.code !== 0) throw new Error(`Cannot revalidate worktree: ${result.stderr}`);
+    return result.stdout;
+  };
+  const hash = createHash("sha256");
+  for (const args of [["rev-parse", "HEAD"], ["status", "--porcelain=v1", "-uall"], ["diff", "HEAD", "--binary"]]) hash.update(await run(args)).update("\0");
+  for (const file of (await run(["ls-files", "--others", "--exclude-standard", "-z"])).split("\0").filter(Boolean)) {
+    const absolute = path.resolve(project.root, file);
+    if (!inside(project.root, absolute)) throw new Error("Untracked path escaped worktree.");
+    hash.update(file).update("\0");
+    hash.update(fs.lstatSync(absolute).isSymbolicLink() ? fs.readlinkSync(absolute) : fs.readFileSync(absolute));
+  }
+  hash.update(fs.readFileSync(path.join(project.dir, "spec.md")));
+  const approved = contracts(project);
+  hash.update(JSON.stringify([approved.meta, approved.all]));
+  return hash.digest("hex");
+}
 export async function checks(h, commands) {
   for (const line of commands || []) await command(h, "bash", ["-c", line]);
 }
@@ -100,6 +123,7 @@ export async function build(h, project) {
     state.head = await git(h, "rev-parse", "HEAD");
   }
   while (tasks.some(t => !accepted.has(t.id))) {
+    h.checkpoint?.("Selecting the next approved contract");
     const task = state.current ? tasks.find(t => t.id === state.current) : tasks.find(t => !accepted.has(t.id) && (t.depends_on || []).every(id => accepted.has(id)));
     if (!task) throw new Error("No dependency-ready task; review the dependency graph or interrupted task.");
     if (state.current && await git(h, "rev-parse", "HEAD") !== state.head) {
@@ -109,16 +133,21 @@ export async function build(h, project) {
     save(stateFile, state);
     let failure = "";
     for (let attempt = 0; attempt < 2; attempt++) {
+      h.checkpoint?.();
       const role = attempt ? "build_retry" : "build";
       h.report(`${attempt ? "Retrying" : "Building"} ${task.id}: ${task.title || task.goal} (${accepted.size + 1}/${tasks.length}).`);
-      const result = await h.delegate(role, `Spec: ${path.join(project.dir, "spec.md")}\nExecution contract: ${task.file}\nAccepted predecessor: ${state.head}\n${failure}`, "dev-implement");
+      const result = await h.delegate(role, `Spec: ${path.join(project.dir, "spec.md")}\nExecution contract: ${task.file}\nAccepted predecessor: ${state.head}\n${failure}`, "dev-implement", undefined, { metadata: { label: `Builder · ${task.title || task.goal || task.id}`, task: task.goal || task.title, contract: task.id, attempt: attempt + 1, predecessor: state.head } });
       // Infrastructure failures throw from delegate: never retry with another model.
       if (/\bNEEDS_REPLAN\b/.test(result)) throw Object.assign(new Error(result), { blocked: true });
       try {
+        h.report(`Verifying ${task.id}: independent contract checks.`);
+        h.workerOutcome?.(h.lastWorkerId, "Verifying independent contract checks");
         state.head = await verify(h, state.head, task);
         failure = "";
         break;
       } catch (error) {
+        h.signal?.throwIfAborted();
+        h.workerOutcome?.(h.lastWorkerId, `Verification failed: ${error.message}`);
         failure = `Verification failed: ${error.message}\nAmend the same contract commit; do not add another.`;
         if (!attempt) h.report(`${task.id} did not pass verification. Retrying the same commit.`);
       }
@@ -127,8 +156,10 @@ export async function build(h, project) {
     accepted.add(task.id);
     state.done = [...accepted]; state.current = null;
     save(stateFile, state);
+    h.workerOutcome?.(h.lastWorkerId, `Verified and accepted: ${state.head}`);
     h.report(`Completed ${task.id} (${accepted.size}/${tasks.length}).`);
   }
+  h.checkpoint?.("All approved contracts verified");
   return { meta, tasks };
 }
 
@@ -136,6 +167,7 @@ export async function runWorkflow(h, phase, target) {
   if (!["build", "prepare", "review", "ship"].includes(phase)) throw new Error(`Unknown phase ${phase}`);
   const project = await resolveProject(h, target);
   h.cwd = project.root;
+  if (h.control) h.control.snapshot = () => workflowFingerprint(h, project);
   await excludeState(h);
   const lockfilePath = await git(h, "rev-parse", "--path-format=absolute", "--git-path", "dev-workflow.lock");
   const release = await lockfile.lock(project.root, { lockfilePath, retries: 0 });

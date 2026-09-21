@@ -48,9 +48,11 @@ async function rebaseActive(h) {
 }
 async function finishRebase(h, project) {
   while (await rebaseActive(h)) {
+    h.checkpoint?.("Resolving rebase conflicts");
     const files = (await git(h, "diff", "--name-only", "--diff-filter=U")).split("\n").filter(Boolean);
     if (files.length) {
       const result = await h.delegate("build_retry", `Approved spec: ${specPath(project)}\nConflicted files:\n${files.join("\n")}`, undefined, undefined, {
+        metadata: { label: "Builder · Resolve rebase conflicts", task: files.join("\n"), kind: "conflicts" },
         tools: [...readTools, "edit", "write"],
         system: "Resolve only these rebase-conflicted files, preserving the approved spec and each commit's intent. Do not sequence Git. Return NEEDS_HUMAN with evidence for a new semantic decision.",
       });
@@ -73,6 +75,7 @@ async function unchanged(h, expected) {
   return pr;
 }
 async function prepare(h, project, ship) {
+  h.checkpoint?.("Preparing exact candidate");
   const { state, persist } = ship;
   const progress = requireComplete(project);
   const baseBranch = contracts(project).meta.base_branch || "main";
@@ -105,6 +108,7 @@ async function prepare(h, project, ship) {
   const gates = finalChecks(project);
   if (gates.length) h.report(`Preparation: running ${gates.length} final validation ${gates.length === 1 ? "check" : "checks"}.`);
   for (const line of gates) {
+    h.checkpoint?.(`Final check: ${line}`);
     h.report(`Validating: ${line}`);
     const result = await h.exec("bash", ["-c", line]);
     if (result.code) {
@@ -114,6 +118,7 @@ async function prepare(h, project, ship) {
   }
   if (!await clean(h) || await git(h, "rev-parse", "HEAD") !== head) throw new Error("Final gates modified the candidate; refusing to publish.");
   state.verified_head = head; state.validation = gates; persist();
+  h.checkpoint?.("Before publishing verified candidate");
   h.report(`Preparation: publishing verified candidate ${head.slice(0, 12)}.`);
   await git(h, "push", "--force-with-lease", "--set-upstream", "origin", `HEAD:refs/heads/${branch}`);
   const prs = await ghJSON(h, ["pr", "list", "--head", branch, "--state", "open", "--json", "number,baseRefName,isDraft"]);
@@ -151,6 +156,7 @@ async function settled(h, c) {
   let previous, since = 0, status;
   while (true) {
     h.signal?.throwIfAborted();
+    h.checkpoint?.();
     const data = await signals(h, c);
     const signature = digest(data);
     const now = h.now ? h.now() : Date.now();
@@ -211,9 +217,10 @@ async function evidence(h, project, c) {
     local_validation: { commands: finalChecks(project), verified: verifiedHead === c.head, verified_head: verifiedHead } } };
 }
 async function review(h, project, c, feedback = "") {
+  h.checkpoint?.("Independent candidate review");
   const before = await evidence(h, project, c);
   const result = await h.delegate("review", `Approved spec: ${specPath(project)}\nPlans/repairs: ${project.dir}\nCandidate: ${JSON.stringify(c)}\nEvidence: ${JSON.stringify(before.data)}${feedback ? `\nHuman feedback: ${feedback}\nThis invocation must return repairs or blocked, never pass.` : ""}`,
-    "dev-review", reviewSchema, { tools: readTools });
+    "dev-review", reviewSchema, { tools: readTools, metadata: { label: `Reviewer · Candidate ${c.head.slice(0, 12)}`, task: `Review PR #${c.pr} against approved spec and checks`, candidate: c.head } });
   if (!["pass", "repairs", "blocked"].includes(result.verdict) || !Array.isArray(result.repairs)) throw new Error("Invalid review result.");
   if (feedback && result.verdict === "pass") throw new Error("Human feedback may not be silently passed.");
   if (result.verdict === "pass" && result.repairs.length) throw new Error("PASS cannot contain unaddressed repairs.");
@@ -278,6 +285,7 @@ export async function shipping(h, project, phase) {
   try {
     while (true) {
       h.signal?.throwIfAborted();
+      h.checkpoint?.();
       applyPending(project, ship);
       if (state.phase === "build") { await build(h, project); state.phase = "prepare"; persist(); }
       if (state.phase === "prepare") {
@@ -302,6 +310,7 @@ export async function shipping(h, project, phase) {
         state.phase = "human"; persist();
       }
       if (state.phase === "human") {
+        h.checkpoint?.("Human review of exact candidate");
         const file = path.join(project.dir, "review.toon");
         const report = fs.existsSync(file) ? read(file) : null;
         const current = await evidence(h, project, c);
@@ -313,10 +322,12 @@ export async function shipping(h, project, phase) {
           if (decision.action !== "approve") return;
           state.approved_head = c.head; persist();
         }
+        h.checkpoint?.("Preparing PR title and body");
         const finalized = await h.delegate("ship", `Approved spec: ${specPath(project)}\nReview: ${file}\nCandidate: ${JSON.stringify(c)}`, undefined,
           { type: "object", required: ["title", "body"], additionalProperties: false, properties: { title: { type: "string" }, body: { type: "string" } } },
-          { tools: readTools, system: "Return concise human-facing PR title and Markdown body for this approved candidate. Conventional Commit title; no workflow IDs. Do not modify files or GitHub." });
+          { tools: readTools, metadata: { label: "PR summary · Approved candidate", task: "Write title/body without changing code", candidate: c.head }, system: "Return concise human-facing PR title and Markdown body for this approved candidate. Conventional Commit title; no workflow IDs. Do not modify files or GitHub." });
         if (!/^[a-z][a-z0-9-]*(\([^)]+\))?!?: .+/.test(finalized.title) || /\b[PR]\d{3,}\b|Plan-ID:/i.test(finalized.title)) throw new Error("Final title must be a Conventional Commit without workflow IDs.");
+        h.checkpoint?.("Before final candidate publication");
         const final = await evidence(h, project, c);
         if (final.red || final.signature !== report.signature) { state.approved_head = null; state.phase = "await"; persist(); continue; }
         await command(h, "gh", ["pr", "edit", String(c.pr), "--title", finalized.title, "--body", finalized.body]);

@@ -16,7 +16,15 @@ dev a resume                       # native Pi continuation
 dev a stats                        # interactive Pi session dashboard for this directory
 ```
 
-All six phases have the same interface: no prompt opens the selected interactive model; a prompt invokes the same `/dev-<phase>` command you would type manually. Spec/Plan stay in the current conversation. Build/Prepare/Review/Ship are deterministic code; fresh native SDK workers handle bounded judgment. Every role can use narrow read-only `explore`. There is no `pi-subagents`, agent registry, coordinator model, background scheduler, or custom rendering stack. `/dev-stop` cancels through Pi.
+All six phases have the same interface: no prompt opens the selected interactive model; a prompt invokes the same `/dev-<phase>` command you would type manually. Spec/Plan stay in the current conversation. Build/Prepare/Review/Ship are deterministic code; fresh native SDK workers handle bounded judgment. Every role can use narrow read-only `explore`. There is no `pi-subagents`, coordinator model, background scheduler, or second orchestration layer. `/dev-stop` cancels through Pi.
+
+## Agent Hub
+
+`Alt+A` opens the same session-wide Agent Hub for controller workers and children spawned directly from Main. Choose an agent, press `Enter`, and use its named-recipient editor. Each thread keeps its own multiline draft and reading position. `Esc` goes back without stopping work; `Alt+A` returns directly to Main. `F1` teaches the controls, `F2` shows available actions, `F3` searches, and `F4` returns to live output. Full native Pi messages, tool results, and streaming output are inspectable; long output can be expanded and copied.
+
+`/dev-pause` pauses a controller at a safe boundary; `/dev-stop` cancels the controller and child agents without undoing existing changes. Wait for Paused/Stopped before editing manually. Main remains the main conversation, not an implicit message router. Controller decisions wait visibly until you explicitly choose **Respond** or run `/dev-respond`; typing in a worker never approves a candidate.
+
+Native child sessions and drafts are saved beside the parent Pi session and restored as historical threads. Opening history never restarts an agent. A completed Builder stays read-only; a follow-up starts a separate read-only investigation through its owner. Git/TOON state remains the workflow authority. [Controls, recovery, integration and validation](pi/AGENT_HUB.md).
 
 Skills use **Pi's native lazy-skill mechanism**. Only skill names/descriptions are discoverable up front; the full `SKILL.md` body is injected only by an explicit `/skill:dev-*` invocation. Bare `dev a <phase>` therefore does not preload phase instructions into the session. Fresh workers discover only the one assigned skill and invoke it natively for that task.
 

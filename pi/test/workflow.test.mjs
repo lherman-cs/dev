@@ -66,9 +66,9 @@ test("real spec path with spaces, real TOON, bounded retry, two clean commits, l
   await runWorkflow(f.h, "build", f.target);
   assert.deepEqual(f.calls, ["build", "build", "build_retry"]);
   assert.deepEqual(f.reports, [
-    "Building P001: task 1 (1/2).", "Completed P001 (1/2).",
-    "Building P002: task 2 (2/2).", "P002 did not pass verification. Retrying the same commit.",
-    "Retrying P002: task 2 (2/2).", "Completed P002 (2/2).",
+    "Building P001: task 1 (1/2).", "Verifying P001: independent contract checks.", "Completed P001 (1/2).",
+    "Building P002: task 2 (2/2).", "Verifying P002: independent contract checks.", "P002 did not pass verification. Retrying the same commit.",
+    "Retrying P002: task 2 (2/2).", "Verifying P002: independent contract checks.", "Completed P002 (2/2).",
   ]);
   assert.equal(f.git("rev-list", "--count", `${f.base}..HEAD`), "2");
   assert.equal(f.git("status", "--porcelain"), "");
@@ -123,3 +123,37 @@ test("prepare never quietly starts an unfinished build", async t => {
   assert.equal(f.calls.length, 0);
 });
 
+
+test('pause requested inside a Builder verifies and persists that contract but dispatches nothing else',async t=>{
+  const {WorkflowControl,WorkflowPaused}=await import('../lib/workflow-control.mjs');
+  const f=fixture(t),c=new WorkflowControl('build',f.target),delegate=f.h.delegate;
+  f.h.checkpoint=activity=>c.checkpoint(activity);
+  f.h.delegate=async(...args)=>{const result=await delegate(...args);c.pause();return result;};
+  await assert.rejects(runWorkflow(f.h,'build',f.target),WorkflowPaused);
+  assert.deepEqual(f.calls,['build']);
+  const progress=decode(fs.readFileSync(path.join(f.dir,'progress.toon'),'utf8'));
+  assert.deepEqual(progress.done,['P001']);assert.equal(progress.current,null);
+  delete f.h.checkpoint;f.h.delegate=delegate;await runWorkflow(f.h,'build',f.target);
+  assert.equal(f.git('rev-list','--count',`${f.base}..HEAD`),'2');
+});
+
+test('human-readable worker metadata uses contract purpose, never the first prompt path',async t=>{
+  const f=fixture(t,{taskCount:1}),delegate=f.h.delegate;
+  f.h.delegate=async(name,task,skill,schema,options)=>{
+    assert.match(options.metadata.label,/Builder · task 1/);assert.equal(options.metadata.task,'Create tested output');
+    assert.equal(options.metadata.contract,'P001');return delegate(name,task);
+  };
+  await runWorkflow(f.h,'build',f.target);
+});
+
+test('pause fingerprint includes tracked/untracked contents and ignored approved contracts',async t=>{
+  const f=fixture(t);const {workflowFingerprint}=await import('../lib/workflow.mjs');
+  const project=await resolveProject(f.h,f.dir);await f.h.exec('git',['config','--local','user.name','Test']);
+  await f.h.exec('git',['update-index','--refresh']);
+  fs.appendFileSync(path.join(f.root,'.git/info/exclude'),'\n/plans/\n');
+  const original=await workflowFingerprint(f.h,project);
+  fs.writeFileSync(path.join(f.root,'untracked'),'first');const added=await workflowFingerprint(f.h,project);assert.notEqual(added,original);
+  fs.writeFileSync(path.join(f.root,'untracked'),'second');assert.notEqual(await workflowFingerprint(f.h,project),added);
+  fs.rmSync(path.join(f.root,'untracked'));assert.equal(await workflowFingerprint(f.h,project),original);
+  fs.appendFileSync(path.join(f.dir,'spec.md'),'Changed semantic constraint\n');assert.notEqual(await workflowFingerprint(f.h,project),original);
+});

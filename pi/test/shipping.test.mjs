@@ -181,3 +181,13 @@ test('manual repair selection refuses evidence that changed during the human dec
   await assert.rejects(runWorkflow(f.h,'review',f.dir),/Candidate or base changed/);
   assert.ok(!fs.existsSync(path.join(f.dir,'repairs')));
 });
+
+test('pause during agentless CI polling preserves candidate and stops before reviewer dispatch',async t=>{
+  const {WorkflowControl,WorkflowPaused}=await import('../lib/workflow-control.mjs');
+  const f=fixture(t),c=new WorkflowControl('ship',f.dir),sleep=f.h.sleep;
+  f.h.checkpoint=activity=>c.checkpoint(activity);f.h.sleep=async ms=>{await sleep(ms);c.pause();};
+  await assert.rejects(runWorkflow(f.h,'ship',f.dir),WorkflowPaused);
+  assert.deepEqual(f.delegations,['build']);assert.equal(f.read('ship.toon').phase,'await');assert.ok(f.read('ship.toon').candidate.head);
+  delete f.h.checkpoint;f.h.sleep=sleep;await runWorkflow(f.h,'ship',f.dir);
+  assert.equal(f.read('ship.toon').phase,'done');assert.deepEqual(f.delegations,['build','review','ship']);
+});
