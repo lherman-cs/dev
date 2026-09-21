@@ -1,6 +1,7 @@
 ---
 name: dev-review
 description: Adversarially review one exact completed candidate.
+disable-model-invocation: true
 ---
 
 # dev-review

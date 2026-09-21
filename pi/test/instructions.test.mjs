@@ -18,6 +18,15 @@ test('94d10a6 semantic contracts retain authority, outputs and stop conditions a
     assert.ok(Buffer.byteLength(text)<2000,'keep semantic skills compact');
   }
 });
+test('only the explorer skill allows model invocation',()=>{
+  const skillsDir=new URL('../skills/',import.meta.url);
+  const names=fs.readdirSync(skillsDir).filter(name=>fs.statSync(new URL(`${name}/SKILL.md`,skillsDir)).isFile());
+  for(const name of names) {
+    const text=fs.readFileSync(new URL(`${name}/SKILL.md`,skillsDir),'utf8');
+    if(name==='dev-explore') assert.ok(!text.includes('disable-model-invocation: true'),name);
+    else assert.match(text,/^disable-model-invocation: true$/m,name);
+  }
+});
 test('instruction invariants and original user preferences are retained, without stale plugin authority',()=>{
   const agents=fs.readFileSync(new URL('../../AGENTS.md',import.meta.url),'utf8');
   for(const term of ['No duplication or contradiction','Least-privilege scope','Do not teach defaults','Explorer-first context economy','Pi lazy-skills','explicit `/skill:<name>` invocation','must use Explorer heavily','independent scopes in parallel','raw exploration stays out of the main context','must not duplicate skill semantics','do not add precedence prose']) assert.ok(agents.includes(term),term);

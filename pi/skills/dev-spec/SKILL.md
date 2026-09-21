@@ -1,6 +1,7 @@
 ---
 name: dev-spec
 description: Make project semantics decision-complete and human-approved before planning.
+disable-model-invocation: true
 ---
 
 # dev-spec

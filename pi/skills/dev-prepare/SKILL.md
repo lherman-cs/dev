@@ -1,6 +1,7 @@
 ---
 name: dev-prepare
 description: Manually create the exact remote review candidate, then stop.
+disable-model-invocation: true
 ---
 
 # dev-prepare

@@ -1,6 +1,7 @@
 ---
 name: dev-plan
 description: Compile an approved spec into small immutable execution contracts.
+disable-model-invocation: true
 ---
 
 # dev-plan

@@ -1,6 +1,7 @@
 ---
 name: dev-implement
 description: Implement one approved execution contract as one verified commit.
+disable-model-invocation: true
 ---
 
 # dev-implement
