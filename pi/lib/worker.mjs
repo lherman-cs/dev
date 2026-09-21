@@ -38,9 +38,8 @@ export function createWorkerRunner({ runtime, create = createAgentSession, hub }
       stop,
       async send(text, mode, receipt) {
         if (!accepting || lifetime.signal.aborted || !session?.isStreaming) throw new Error("This attempt finished before acceptance. Your message has not been delivered.");
-        if (text.trimStart().startsWith("/")) throw new Error("Use Main for slash commands. This composer sends instructions to the named child only.");
         receipt.wireText = metadata.policy === "contract" ? contractMessage(text) : text;
-        const pending = session[mode](receipt.wireText);
+        const pending = session.prompt(receipt.wireText, { streamingBehavior: mode, expandPromptTemplates: false, source: "extension" });
         sends.add(pending);
         try { await pending; } finally { sends.delete(pending); }
       },
