@@ -6,7 +6,8 @@
   "description": "Personal Pi roles, skills, and bounded workflow glue",
   "scripts": {
     "test": "node --test test/*.test.mjs",
-    "check": "npm test"
+    "check": "npm run typecheck && npm test",
+    "typecheck": "tsc --noEmit"
   },
   "pi": {
     "extensions": [
@@ -41,7 +42,8 @@
     "pi-mcp-adapter": "2.34.0"
   },
   "devDependencies": {
-    "jiti": "2.7.0"
+    "jiti": "2.7.0",
+    "typescript": "5.9.2"
   },
   "engines": {
     "node": ">=22.19.0"
