@@ -15,10 +15,21 @@ export function nativeSessionFile(cwd, file, parentSession) {
   return SessionManager.open(file);
 }
 
+function worktree(cwd) {
+  let current = fs.realpathSync(cwd);
+  for (;;) {
+    if (fs.existsSync(path.join(current, ".git"))) return current;
+    const parent = path.dirname(current);
+    if (parent === current) return fs.realpathSync(cwd);
+    current = parent;
+  }
+}
+
 export class WorkerHistory {
   constructor({ cwd, sessionId, sessionDir, parentFile }) {
     if (!/^[a-zA-Z0-9_-]+$/.test(sessionId)) throw new Error("Invalid parent session identity.");
     this.cwd = path.resolve(cwd);
+    this.worktree = worktree(cwd);
     this.root = path.join(sessionDir, ".workers");
     this.directory = path.join(this.root, sessionId);
     this.parentFile = parentFile;
@@ -28,6 +39,7 @@ export class WorkerHistory {
   }
 
   createSession(cwd) {
+    if (worktree(cwd) !== this.worktree) throw new Error("Child session is outside the parent's worktree.");
     return nativeSessionFile(cwd, path.join(this.directory, `${randomUUID()}.jsonl`), this.parentFile);
   }
 
@@ -69,13 +81,14 @@ export class WorkerHistory {
     const file = fs.realpathSync(record.sessionFile);
     if (!file.startsWith(root + path.sep) || !file.endsWith(".jsonl")) throw new Error("Transcript is outside this parent's worker storage.");
     const session = SessionManager.open(file);
-    if (path.resolve(session.getCwd()) !== this.cwd) throw new Error("Transcript belongs to another worktree.");
-    const entries = session.getEntries();
-    const messages = entries.filter(e => e.type === "message" && e.message.role !== "system").map(e => e.message);
-    for (const entry of entries) {
-      if (entry.type === "compaction") messages.push({ role: "custom", content: `Context compacted at ${entry.timestamp}; original messages remain above.`, timestamp: Date.parse(entry.timestamp) });
-    }
-    return messages.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+    if (worktree(session.getCwd()) !== this.worktree) throw new Error("Transcript belongs to another worktree.");
+    // Native entry order is authoritative, even if message timestamps are absent,
+    // equal, or the wall clock moved. Compaction does not erase prior evidence.
+    return session.getEntries().flatMap(entry => {
+      if (entry.type === "message" && entry.message.role !== "system") return [entry.message];
+      if (entry.type === "compaction") return [{ role: "custom", content: `Context compacted at ${entry.timestamp}; original messages remain above.`, timestamp: Date.parse(entry.timestamp) }];
+      return [];
+    });
   }
 
   previous() {
@@ -86,7 +99,7 @@ export class WorkerHistory {
       if (!fs.existsSync(file)) continue;
       try {
         const journal = SessionManager.open(file);
-        if (path.resolve(journal.getCwd()) !== this.cwd) continue;
+        if (worktree(journal.getCwd()) !== this.worktree) continue;
         const records = new Map();
         for (const entry of journal.getEntries()) {
           if (entry.type === "custom" && entry.customType === "dev-worker" && entry.data?.id) records.set(entry.data.id, entry.data);
