@@ -94,3 +94,21 @@ test('earlier PR native child journal and drafts remain inspectable without cros
   assert.throws(()=>history.open(outside.getSessionFile()),/outside this parent/);
   assert.ok(fs.existsSync(journal.getSessionFile()),'migration never deletes original history');
 });
+
+
+test('early parent persistence accepts a Pi-compatible manager from a different module identity',t=>{
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),'hub-history-foreign-'));t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
+  const parent=SessionManager.create(root,path.join(root,'parents'));
+  parent.appendCustomEntry('controller-start',{phase:'ship'});
+  const methods=['getSessionFile','getSessionDir','getSessionId','getCwd','getHeader','getEntries','getLeafId','setSessionFile','branch'];
+  const foreign=Object.create(null);
+  for(const name of methods) foreign[name]=parent[name].bind(parent);
+  assert.equal(foreign instanceof SessionManager,false,'regression requires a different nominal identity');
+  const history=new WorkerHistory(foreign);
+  history.ensureParent();
+  assert.ok(fs.existsSync(parent.getSessionFile()));
+  parent.appendMessage(assistant('Later real reply'));
+  const restored=SessionManager.open(parent.getSessionFile());
+  assert.equal(restored.getSessionId(),parent.getSessionId());
+  assert.equal(restored.getEntries().filter(e=>e.type==='message').length,1);
+});
