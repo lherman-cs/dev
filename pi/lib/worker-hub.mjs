@@ -100,8 +100,8 @@ export class WorkerHub {
     } else if (event.type === "agent_start") record.activity = "Thinking";
     else if (event.type === "agent_end") record.activity = "Settling";
     else if (event.type === "auto_retry_start") record.activity = "Retrying provider request";
-    else if (event.type === "auto_compaction_start") record.activity = "Compacting context";
-    else if (event.type === "auto_compaction_end" || event.type === "session_compact") record.context = null;
+    else if (["compaction_start", "auto_compaction_start"].includes(event.type)) record.activity = "Compacting context";
+    else if (["compaction_end", "auto_compaction_end", "session_compact"].includes(event.type)) record.context = null;
     this.#emit();
   }
 
@@ -148,7 +148,8 @@ export class WorkerHub {
       this.#records.set(saved.id, { ...saved, controls: {}, session: undefined, streaming: null,
         state: terminalStates.has(saved.state) ? saved.state : "interrupted",
         activity: terminalStates.has(saved.state) ? saved.activity : "Previous process ended; inspect before resuming",
-        endedAt: saved.endedAt ?? saved.updatedAt, messages: [], liveTools: new Map(), receipts: saved.receipts || [],
+        endedAt: saved.endedAt ?? saved.updatedAt, messages: [], liveTools: new Map(), receipts: (saved.receipts || []).map(receipt => ["sending", "queued"].includes(receipt.state)
+          ? { ...receipt, state: "undelivered", error: "The previous process ended before delivery was confirmed. Original text retained." } : { ...receipt }),
         revision: 0, loaded: false, seen: new WeakSet() });
     }
     this.#emit();
