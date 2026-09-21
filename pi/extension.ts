@@ -54,10 +54,11 @@ export default function (pi) {
           delegate(name, task, skill, schema, options = {}) {
             const contract = /(?:Execution contract: .*\/|Conflicted files:\n)([PR]\d+)(?:\.toon)?/.exec(task)?.[1];
             const label = contract ? `${name}:${contract}` : undefined;
+            const { metadata: extraMetadata = {}, ...delegateOptions } = options;
             return run({
               cwd: this.cwd, name, task, skill, schema, signal: this.signal,
-              metadata: { label, phase, task: task.split("\n", 1)[0]?.slice(0, 140), ...(options.metadata || {}) },
-              ...options,
+              ...delegateOptions,
+              metadata: { label, phase, task: task.split("\n", 1)[0]?.slice(0, 140), ...extraMetadata },
               report: text => { try { ctx.ui.setStatus("dev-worker", text); } catch { /* session closed */ } },
             });
           },
