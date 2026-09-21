@@ -25,7 +25,9 @@ export class WorkerHistory {
     // sessions may never do so. Use the public native SessionManager reload
     // operation after an exact snapshot, preserving id, entries and active leaf;
     // no fabricated assistant turn and no private `flushed` field mutation.
-    if (!(this.parent instanceof SessionManager)) throw new Error("Early session persistence requires the pinned native SessionManager.");
+    const required = ["getSessionFile", "getSessionDir", "getSessionId", "getCwd", "getHeader", "getEntries", "getLeafId", "setSessionFile", "branch"];
+    const missing = required.filter(name => typeof this.parent?.[name] !== "function");
+    if (missing.length) throw new Error(`Early session persistence requires Pi's native session-manager API; missing: ${missing.join(", ")}.`);
     const leaf = this.parent.getLeafId();
     fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
     fs.writeFileSync(file, [this.parent.getHeader(), ...this.parent.getEntries()].map(e => JSON.stringify(e)).join("\n") + "\n", { flag: "wx", mode: 0o600 });
