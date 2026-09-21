@@ -10,9 +10,10 @@ const explorerResultChars = 4000;
 const toolResult = text => ({ content: [{ type: "text", text }], details: {} });
 
 // One fresh native Pi session. No subprocess protocol, agent registry, or scheduler.
-export function createWorkerRunner({ runtime, create = createAgentSession } = {}) {
+export function createWorkerRunner({ runtime, create = createAgentSession, hub } = {}) {
+  if (!hub?.register || !hub?.unregister || !hub?.nextId) throw new Error("createWorkerRunner requires a WorkerHub so workflow child sessions cannot be hidden.");
   let modelsPromise;
-  async function run({ cwd, name, task, skill, schema, signal = new AbortController().signal, report = () => {}, system = "", tools }) {
+  async function run({ cwd, name, task, skill, schema, signal = new AbortController().signal, report = () => {}, system = "", tools, metadata = {} }) {
     signal.throwIfAborted();
     const selected = role(name);
     const models = runtime || await (modelsPromise ||= ModelRuntime.create());
@@ -43,11 +44,15 @@ export function createWorkerRunner({ runtime, create = createAgentSession } = {}
     const { session } = await create({ cwd, model, thinkingLevel: selected.thinking, modelRuntime: models,
       settingsManager: settings, resourceLoader: loader, sessionManager: SessionManager.inMemory(cwd),
       tools: [...allowed, ...customTools.map(t => t.name)], customTools });
+    const workerId = hub.nextId(name);
+    let workerState = "completed";
+    let unsubscribe = () => {};
     const abort = () => { void session.abort(); };
-    const unsubscribe = session.subscribe(event => {
-      if (event.type === "tool_execution_start") report(`${name}: ${event.toolName}`);
-    });
     try {
+      hub.register({ id: workerId, label: metadata.label || name, role: name, model: selected.model, thinking: selected.thinking, session, metadata });
+      unsubscribe = session.subscribe(event => {
+        if (event.type === "tool_execution_start") report(`${name}: ${event.toolName}`);
+      });
       if (session.model?.id !== selected.model || session.model?.provider !== selected.provider || session.thinkingLevel !== selected.thinking) throw new Error(`Pi changed the ${name} model/thinking selection; stopped.`);
       await session.bindExtensions({ mode: "json" });
       signal.addEventListener("abort", abort, { once: true });
@@ -65,10 +70,16 @@ export function createWorkerRunner({ runtime, create = createAgentSession } = {}
       const text = message.content.filter(p => p.type === "text").map(p => p.text).join("\n").trim();
       if (!text) throw new Error(`${name}: empty final result.`);
       return text;
+    } catch (error) {
+      workerState = signal.aborted || session.messages.some(message => message.stopReason === "aborted") ? "aborted" : "failed";
+      throw error;
     } finally {
       signal.removeEventListener("abort", abort);
       unsubscribe();
-      try { await session.extensionRunner.emit({ type: "session_shutdown" }); } finally { session.dispose(); }
+      try { await session.extensionRunner.emit({ type: "session_shutdown" }); } finally {
+        hub.unregister(workerId, workerState);
+        session.dispose();
+      }
       report(`${name}: stopped`);
     }
   }

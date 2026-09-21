@@ -1,11 +1,15 @@
 import { createWorkerRunner, exploreTool } from "./lib/worker.mjs";
+import { WorkerHub } from "./lib/worker-hub.mjs";
+import { registerWorkerHubUI } from "./worker-hub-ui.ts";
 import { runWorkflow, excludeState } from "./lib/workflow.mjs";
 
 export const explorerOnlyTools = new Set(["web_search", "source_check", "fetch_content", "get_search_content"]);
 export const workflowError = (error, phase, target = "") => `${error.message}\n\nProgress is preserved. After resolving the issue, resume with /dev-${phase}${target ? ` ${target}` : ""}.`;
 
 export default function (pi) {
-  const run = createWorkerRunner();
+  const hub = new WorkerHub();
+  const run = createWorkerRunner({ hub });
+  const hubUI = registerWorkerHubUI(pi, hub);
   let active;
   pi.registerTool(exploreTool(run));
   pi.on("tool_call", event => explorerOnlyTools.has(event.toolName)
@@ -29,11 +33,14 @@ export default function (pi) {
       handler: async (args, ctx) => {
         if (active) { ctx.ui.notify("A workflow is running. Use /dev-stop to cancel.", "warning"); return; }
         const controller = new AbortController(); active = controller;
+        hubUI.setContext(ctx, `dev-${phase}`);
         const h = {
           cwd: ctx.cwd, signal: controller.signal,
           exec(program, argv) { return pi.exec(program, argv, { cwd: this.cwd, signal: this.signal }); },
           delegate(name, task, skill, schema, options = {}) {
-            return run({ cwd: this.cwd, name, task, skill, schema, signal: this.signal, ...options,
+            const contract = /(?:Execution contract: .*\/|Conflicted files:\n)([PR]\d+)(?:\.toon)?/.exec(task)?.[1];
+            const label = contract ? `${name}:${contract}` : name;
+            return run({ cwd: this.cwd, name, task, skill, schema, signal: this.signal, metadata: { label, phase }, ...options,
               report: text => { try { ctx.ui.setStatus("dev-worker", text); } catch { /* session closed */ } } });
           },
           select: (title, choices) => ctx.ui.select(title, choices),
@@ -72,5 +79,5 @@ export default function (pi) {
     });
   }
   pi.registerCommand("dev-stop", { description: "Cancel the workflow and its native Pi worker", handler: async () => active?.abort() });
-  pi.on("session_shutdown", () => active?.abort());
+  pi.on("session_shutdown", () => { active?.abort(); hubUI.dispose(); hub.dispose(); });
 }

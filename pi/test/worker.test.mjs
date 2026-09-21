@@ -6,6 +6,7 @@ import path from "node:path";
 import { ModelRuntime, createAgentSession } from "@earendil-works/pi-coding-agent";
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import { createWorkerRunner, exploreTool } from "../lib/worker.mjs";
+import { WorkerHub } from "../lib/worker-hub.mjs";
 
 async function fixture(t, answer) {
   const cwd=fs.mkdtempSync(path.join(os.tmpdir(),'native-worker-'));
@@ -21,11 +22,16 @@ async function fixture(t, answer) {
     if(result) queueMicrotask(()=>stream.push({type:'done',reason:result.stopReason,message:result}));
     return stream;
   };
-  const run=createWorkerRunner({runtime,create:async options=>{
+  const hub=new WorkerHub();
+  const run=createWorkerRunner({runtime,hub,create:async options=>{
     const result=await createAgentSession(options); sessions.push(result.session); return result;
   }});
-  return {cwd,runtime,run,sessions,calls};
+  t.after(()=>hub.dispose());
+  return {cwd,runtime,run,sessions,calls,hub};
 }
+test('worker runner requires the native session hub boundary',()=>{
+  assert.throws(()=>createWorkerRunner(),/requires a WorkerHub/);
+});
 function message(model,content,stopReason='stop') {
   return {role:'assistant',content,stopReason,provider:model.provider,model:model.id,api:model.api,timestamp:Date.now(),
     usage:{input:1,output:1,cacheRead:0,cacheWrite:0,totalTokens:2,cost:{input:0,output:0,cacheRead:0,cacheWrite:0,total:0}}};
@@ -49,6 +55,8 @@ test('actual Pi SDK: fresh contexts, exact role, repo instructions, lazy skill, 
     assert.match(JSON.stringify(call.context),/Use explore for every open-ended or input-heavy codebase investigation/);
   }
   assert.ok(!JSON.stringify(f.calls[1].context.messages).includes('task 0'));
+  assert.equal(f.hub.list().filter(worker=>worker.state==='completed').length,2);
+  assert.ok(f.hub.list().every(worker=>!worker.session));
 });
 test('native SDK validates structured result tool instead of scraping model prose', async t=>{
   const f=await fixture(t,(n,c,m)=>message(m,n===1?[{type:'toolCall',id:'result',name:'submit_result',arguments:{verdict:'pass'}}]:[{type:'text',text:'recorded'}],n===1?'toolUse':'stop'));
@@ -86,6 +94,8 @@ test('cancellation reaches the native Pi session and cleans it up', async t=>{
   });
   await assert.rejects(f.run({cwd:f.cwd,name:'build',task:'wait',signal:controller.signal}),/abort|cancel/i);
   assert.equal(f.sessions[0].isStreaming,false);
+  assert.equal(f.hub.list()[0].state,'aborted');
+  assert.equal(f.hub.list()[0].session,undefined);
 });
 test('a native Builder can call Explorer without inheriting the Builder conversation',async t=>{
   let builderTurns=0;
