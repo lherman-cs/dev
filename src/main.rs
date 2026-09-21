@@ -1,4 +1,5 @@
 mod agent;
+mod agent_stats;
 use anyhow::{Context, Result, anyhow, bail};
 use clap::{Parser, Subcommand};
 use regex::Regex;
@@ -182,6 +183,12 @@ enum AgentAction {
     Review { prompt: Vec<String> },
     /// Open the Shipper role, or run /dev-ship immediately when a prompt is given
     Ship { prompt: Vec<String> },
+    /// Show an interactive dashboard for a Pi session
+    Stats {
+        /// Session path or ID (defaults to the active/latest session for this directory)
+        #[arg(long)]
+        session: Option<String>,
+    },
     /// Resume an Pi session with workflow configuration available
     Resume {
         /// Optional session id/path. Omitted continues the most recent session.
@@ -1670,6 +1677,7 @@ fn cmd_agent(action: Option<AgentAction>) -> Result<()> {
         Some(AgentAction::Prepare { prompt }) => agent::launch(Some("prepare"), prompt, None),
         Some(AgentAction::Review { prompt }) => agent::launch(Some("review"), prompt, None),
         Some(AgentAction::Ship { prompt }) => agent::launch(Some("ship"), prompt, None),
+        Some(AgentAction::Stats { session }) => agent_stats::run(session),
         Some(AgentAction::Resume { session }) => agent::launch(None, vec![], Some(session)),
     }
 }
