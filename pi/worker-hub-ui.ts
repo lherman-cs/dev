@@ -73,7 +73,6 @@ export class AgentHubView {
   private menuIndex = 0;
   private returnMode = "roster";
   private confirmation: any;
-  private helpOffset = 0;
   private contentOffset = 0;
   private search = new Input();
   private searchKind = "agents";
@@ -82,9 +81,9 @@ export class AgentHubView {
   constructor(private tui: any, private theme: any, private hub: any, private title: string, private done: (value?: any) => void,
     public state: any = createHubViewState(hub)) {
     state.tui = tui; state.theme = theme; state.repaint = () => this.requestRender();
-    if (!state.selectedId) state.selectedId = hub.list()[0]?.id;
+    if (!state.selectedId) state.selectedId = this.records()[0]?.id;
     this.unsubscribe = hub.subscribe(() => {
-      if (!state.selectedId) state.selectedId = hub.list()[0]?.id;
+      if (!state.selectedId) state.selectedId = this.records()[0]?.id;
       for (const record of hub.list()) {
         const thread = state.threads.get(record.id);
         if (!thread) continue;
@@ -98,7 +97,12 @@ export class AgentHubView {
       this.requestRender();
     });
     this.search.onSubmit = () => {
-      if (this.searchKind === "agents") { state.filter = this.search.getValue(); state.mode = "roster"; }
+      if (this.searchKind === "agents") {
+        state.flush(state.selectedId);
+        state.filter = this.search.getValue(); state.mode = "roster";
+        const visible = this.records();
+        if (!visible.some((record: any) => record.id === state.selectedId)) state.selectedId = visible[0]?.id;
+      }
       else { const thread = this.thread(); thread.raw = true; thread.searchQuery = this.search.getValue(); state.mode = "thread"; }
       this.requestRender();
     };
@@ -216,7 +220,7 @@ export class AgentHubView {
     if (matchesKey(data, "alt+a")) { this.close(); return; }
     if (matchesKey(data, "escape")) { this.back(); return; }
     if (matchesKey(data, "f1") || (this.state.mode === "roster" && data === "?")) {
-      this.returnMode = this.state.mode === "thread" ? "thread" : "roster"; this.state.mode = "help"; this.helpOffset = 0; this.requestRender(); return;
+      this.returnMode = this.state.mode === "thread" ? "thread" : "roster"; this.state.mode = "help"; this.contentOffset = 0; this.requestRender(); return;
     }
     if (this.height < 7 || this.width < 20) return; // Never accept invisible input in an unusably small viewport.
     if (matchesKey(data, "f2") && !["search", "confirm"].includes(this.state.mode)) { this.actions(); return; }
@@ -332,7 +336,8 @@ export class AgentHubView {
       const start = Math.max(0, this.menuIndex - Math.floor(bodyHeight / 2));
       body = this.menu.slice(start, start + bodyHeight).map((item, i) => `${start + i === this.menuIndex ? "›" : " "} ${safeText(item.label)}`);
     } else if (mode === "confirm") {
-      body = [...wrap(safeText(`${this.confirmation.title}\n${this.confirmation.text}`), width), "",
+      // Reserve space for both choices; never accept a hidden destructive action.
+      body = [...wrap(safeText(`${this.confirmation.title}\n${this.confirmation.text}`), width).slice(0, Math.max(0, bodyHeight - 3)), "",
         `${this.menuIndex === 0 ? "›" : " "} Cancel`, `${this.menuIndex === 1 ? "›" : " "} Confirm stop`];
     } else if (mode === "search") {
       this.search.focused = this.focus;
