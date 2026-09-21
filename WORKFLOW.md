@@ -18,21 +18,37 @@ Three normal human gates remain: approve semantics, approve architecture/contrac
 | Prepare | Code fetches/rebases, delegates only conflicted files when needed, runs final gates before push, creates/updates an exact draft PR, then stops. |
 | Await | Code polls terminal CI/reviews and a 60-second quiet period. No model is running. |
 | Review | Fresh read-only Reviewer gets approved artifacts, diff/history, local validation, terminal CI, focused failures and PR/bot threads. Concrete material repairs or semantic BLOCKED only. |
-| Human | Native Markdown presentation and choices; feedback returns to Reviewer, never silently PASS. Approval binds exact HEAD and evidence. |
+| Human | Explicit queued request and native presentation/choices; feedback returns to Reviewer, never silently PASS. Approval binds exact HEAD and evidence. |
 | Finalize | Luna-medium prose worker only; code updates title/body/readiness after revalidation. Never merges. |
 
 An infrastructure/authentication failure preserves work and stops; it is not a reason to switch providers or escalate to another model. Rebase failure preserves the in-progress rebase. A final integration failure becomes one narrow repair during Ship, or precise failure evidence during standalone Prepare. Repair rounds and recurring stable root-cause keys bound automatic convergence.
 
 ## Small durable state
 
-Ignored `plans/<project>/` retains `spec.md`, `project.toon`, immutable `plans/Pxxx.toon` and `repairs/Rxxx.toon`, `progress.toon`, `ship.toon`, and `review.toon`. Updates are atomic. No database, raw CI log store, model transcript store, or generic event log is added.
+Ignored `plans/<project>/` retains `spec.md`, `project.toon`, immutable `plans/Pxxx.toon` and `repairs/Rxxx.toon`, `progress.toon`, `ship.toon`, and `review.toon`. Updates are atomic. No database or second workflow state machine is added.
 
 Progress binds accepted work to Git HEAD. Shipping persists phase, candidate, local verification, repair count, exact approved HEAD, bounded pending repairs, and blocked reason/resume phase. Pending repair publication is replayable; stale candidate/base/evidence cannot reuse approval. Legacy state lacking an evidence fingerprint is re-reviewed rather than blindly trusted.
 
+AgentHub evidence is separate from workflow authority. Interactive workers retain Pi-native session JSONL files under the parent's session storage, with native custom entries for worker references, delivery receipts, and drafts. These records support inspection/recovery, not scheduling or approval. Model-context compaction does not delete the original transcript. Historical workers reopen read-only; unfinished historical attempts are marked interrupted. Recent controller command/output records are available for inspecting the current run, not a substitute for Git/TOON verification.
+
+## Human interaction
+
+`Alt+A` and `/dev-workers` open one session-wide hub. Normal Main conversations, Spec/Plan Explorers, and controller workers share navigation. `F1` teaches the keys and `F2` exposes owner-provided actions. Each recipient owns its draft and scroll position. Opening, inspecting, or closing a thread never starts, cancels, or resumes execution.
+
+Sending queues a message at the native Pi delivery boundary; it does not interrupt an executing command. A receipt distinguishes queued, delivered, cancelled, and undelivered text. Delivered means present in agent context, not compliance. An undelivered intervention or a structured result that predates required human feedback cannot silently advance the workflow.
+
+Pending questions/approvals are presented only after explicit selection through `F2` or `/dev-attention`. Merely opening a worker or typing in another thread cannot answer them. Cancelling a multiline response preserves unsent text in Main's draft without sending it.
+
+Pause belongs to the controller: `/dev-pause` requests a safe boundary and `/dev-continue` revalidates the paused worktree and approved artifacts before releasing it. Stop requests cancellation and preserves existing changes; it never promises rollback. Manual edits or changed semantics require reconciliation through the existing workflow. Main stays available for discussion and read-only exploration while the controller owns writes.
+
+Worker completion and controller acceptance are distinct outcomes. Accepted Builder attempts remain frozen. A requested follow-up to a completed attempt starts a new read-only Explorer; it never replaces the result already consumed by its parent.
+
 ## Scope and integration
 
-`pi/roles.json` is the single role policy. Original global preferences remain at user scope; reusable semantics live in six skills. Skills use Pi's native progressive disclosure: only name/description metadata is resident until an explicit `/skill:...` invocation loads the body. Bare role sessions do not preload phase skill bodies, and a fresh worker discovers only its assigned skill before invoking it. Internal conflict/finalizer prompts contain only their narrow invocation contracts. `AGENTS.md` defines instruction ownership; this file documents behavior rather than supplying a second agent policy.
+`pi/roles.json` is the single role policy. Original global preferences remain at user scope; reusable semantics live in six skills. Skills use Pi's native progressive disclosure: name/description metadata is discoverable before the body is loaded. Bare role sessions do not preload phase skill bodies, and a fresh worker discovers only its assigned skill before invoking it. Internal conflict/finalizer prompts contain only their narrow invocation contracts. `AGENTS.md` defines instruction ownership; this file documents behavior rather than supplying a second agent policy.
 
-Native SDK workers are in-memory sessions, with their own context and cancellation. Every child created through the shared worker boundary registers in one session-wide Agent Hub, whether it came from a deterministic `/dev-*` controller or from `explore` in the ordinary main conversation. `Alt+A` opens the live roster/inspector/thread UI; the Hub may steer, follow up, or abort the supplied session but never owns scheduling, Git, verification, workflow state, or model policy. The only exposed delegation primitive is `explore`: read-only, bounded output, no shell or recursion. Every open-ended or input-heavy codebase investigation, web search, or other evidence-gathering scope is delegated separately; independent scopes may run in parallel and return compact findings. Workers do not inherit the foreground conversation. Implementation workers load LSP/browser capabilities, while web research is available only inside Explorer; foreground-only PR/usage UI and MCP configurations are not replicated into children.
+Native SDK workers have their own context and cancellation. Every child created through the shared worker boundary registers in AgentHub, whether created by a deterministic `/dev-*` controller or `explore` in the ordinary main conversation. The hub invokes supplied controls but never owns scheduling, Git, verification, workflow state, or model policy. Other extension-owned agents can explicitly register via the `dev:agent-hub` producer seam; the hub does not discover unrelated sessions automatically.
 
-Pi and the requested plugins own rendering and integrations. `pi-github-pr` displays status; the controller still reads exact GitHub evidence through `gh`. The installer does not ship MCP servers, browser-cookie opt-ins, permission bypasses, or user credential files.
+The only general delegation primitive exposed by this package is `explore`: read-only, bounded output, no shell or recursive delegation. Independent evidence-gathering scopes may run in parallel and return compact findings. Workers do not inherit the foreground conversation. Implementation workers load LSP/browser capabilities; web research is confined to Explorer. VCC is explicitly loaded in children with its registered recall tools. Foreground-only PR/usage UI and MCP configurations are not replicated into children.
+
+Pi and the requested plugins own rendering and integrations. AgentHub reuses native editors, message components, and tool rendering, with full raw evidence as a fallback. `pi-github-pr` displays status; the controller still reads exact GitHub evidence through `gh`. The installer does not ship MCP servers, browser-cookie opt-ins, permission bypasses, or user credential files.
