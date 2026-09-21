@@ -134,7 +134,7 @@ export class WorkerHub {
     this.#persist(record);
     // Keep every identity. Only evict reloadable transcript bodies, never the selected recipient.
     if (this.history) {
-      const cached = this.list().filter(r => r.endedAt !== null && r.loaded && r.sessionFile);
+      const cached = this.list().filter(r => r.endedAt !== null && r.loaded && !r.readers && r.sessionFile && this.history.canLoad?.(r));
       for (const old of cached.slice(0, Math.max(0, cached.length - 12))) {
         old.messages = []; old.liveTools.clear(); old.loaded = false;
       }
@@ -163,6 +163,13 @@ export class WorkerHub {
     }).catch(error => { record.historyError = `Cannot open history: ${error.message}`; return record; })
       .finally(() => { record.loading = undefined; this.#emit(); });
     return record.loading;
+  }
+  retain(id) {
+    const record = this.get(id);
+    if (!record) return () => {};
+    record.readers = (record.readers || 0) + 1;
+    let released = false;
+    return () => { if (!released) { released = true; record.readers--; } };
   }
   list() { return [...this.#records.values()]; } // Stable creation order; activity never moves a row.
   get(id) { return this.#records.get(id); }
@@ -202,6 +209,7 @@ export class WorkerHub {
   setWorkflow(workflow) { this.workflow = workflow; this.#emit(); }
 
   request({ ownerId = "main", title, run }, signal) {
+    if (this.interactive === false) return Promise.reject(new Error("Human input requires interactive Pi; this worker is blocked, not approved."));
     if (this.#closed || signal?.aborted) return Promise.reject(signal?.reason || new Error("Session closed."));
     return new Promise((resolve, reject) => {
       const id = randomUUID();
