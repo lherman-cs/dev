@@ -11,15 +11,27 @@ export default function (pi) {
   const run = createWorkerRunner({ hub });
   const hubUI = registerWorkerHubUI(pi, hub);
   let active;
+
+  // Agent Hub is a session surface, not a controller surface. Explorers spawned
+  // from ordinary Spec/Plan/main turns use the same registry and navigation as
+  // workflow-owned builders/reviewers.
+  pi.on("session_start", (_event, ctx) => {
+    hubUI.setContext(ctx);
+    hubUI.setWorkflow("session");
+  });
+
   pi.registerTool(exploreTool(run));
   pi.on("tool_call", event => explorerOnlyTools.has(event.toolName)
     ? { block: true, reason: `Delegate ${event.toolName} to one or more narrowly scoped explore calls.` }
     : undefined);
+
   for (const phase of ["spec", "plan"]) {
     pi.registerCommand(`dev-${phase}`, {
       description: `Invoke dev-${phase} in the current conversation`,
       handler: async (args, ctx) => {
         if (active) { ctx.ui.notify("Stop the automated workflow before changing its spec/plans.", "warning"); return; }
+        hubUI.setContext(ctx);
+        hubUI.setWorkflow(`dev-${phase}`);
         try {
           await excludeState({ cwd: ctx.cwd, exec: (program, argv) => pi.exec(program, argv, { cwd: ctx.cwd }) });
           pi.sendUserMessage(`/skill:dev-${phase}${args ? ` ${args}` : ""}`, { expandPromptTemplates: true });
@@ -27,21 +39,27 @@ export default function (pi) {
       },
     });
   }
+
   for (const phase of ["build", "prepare", "review", "ship"]) {
     pi.registerCommand(`dev-${phase}`, {
       description: `Run ${phase} for an approved project or spec path`,
       handler: async (args, ctx) => {
         if (active) { ctx.ui.notify("A workflow is running. Use /dev-stop to cancel.", "warning"); return; }
         const controller = new AbortController(); active = controller;
-        hubUI.setContext(ctx, `dev-${phase}`);
+        hubUI.setContext(ctx);
+        hubUI.setWorkflow(`dev-${phase}`);
         const h = {
           cwd: ctx.cwd, signal: controller.signal,
           exec(program, argv) { return pi.exec(program, argv, { cwd: this.cwd, signal: this.signal }); },
           delegate(name, task, skill, schema, options = {}) {
             const contract = /(?:Execution contract: .*\/|Conflicted files:\n)([PR]\d+)(?:\.toon)?/.exec(task)?.[1];
-            const label = contract ? `${name}:${contract}` : name;
-            return run({ cwd: this.cwd, name, task, skill, schema, signal: this.signal, metadata: { label, phase }, ...options,
-              report: text => { try { ctx.ui.setStatus("dev-worker", text); } catch { /* session closed */ } } });
+            const label = contract ? `${name}:${contract}` : undefined;
+            return run({
+              cwd: this.cwd, name, task, skill, schema, signal: this.signal,
+              metadata: { label, phase, task: task.split("\n", 1)[0]?.slice(0, 140), ...(options.metadata || {}) },
+              ...options,
+              report: text => { try { ctx.ui.setStatus("dev-worker", text); } catch { /* session closed */ } },
+            });
           },
           select: (title, choices) => ctx.ui.select(title, choices),
           confirm: (title, message) => ctx.hasUI ? ctx.ui.confirm(title, message) : Promise.reject(new Error("Human approval requires interactive Pi.")),
@@ -71,13 +89,16 @@ export default function (pi) {
           report: content => pi.sendMessage({ customType: "dev-workflow", content, display: true }, { triggerTurn: false }),
         };
         try { await runWorkflow(h, phase, args); }
-        catch (error) {
-          ctx.ui.notify(workflowError(error, phase, args), "error");
+        catch (error) { ctx.ui.notify(workflowError(error, phase, args), "error"); }
+        finally {
+          ctx.ui.setStatus("dev-worker", undefined);
+          if (active === controller) active = undefined;
+          hubUI.setWorkflow("session");
         }
-        finally { ctx.ui.setStatus("dev-worker", undefined); if (active === controller) active = undefined; }
       },
     });
   }
+
   pi.registerCommand("dev-stop", { description: "Cancel the workflow and its native Pi worker", handler: async () => active?.abort() });
   pi.on("session_shutdown", () => { active?.abort(); hubUI.dispose(); hub.dispose(); });
 }
