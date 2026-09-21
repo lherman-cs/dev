@@ -6,8 +6,8 @@ package="$repo/pi"
 
 npm ci --ignore-scripts --prefix "$package"
 mkdir -p "$agent"
-# Seed preferences only once; existing user instructions are never overwritten.
-[[ -e "$agent/AGENTS.md" || -L "$agent/AGENTS.md" ]] || cp "$package/preferences.md" "$agent/AGENTS.md"
+# Seed user instructions only once; existing instructions are never overwritten.
+[[ -e "$agent/AGENTS.md" || -L "$agent/AGENTS.md" ]] || cp "$package/AGENTS.md" "$agent/AGENTS.md"
 # Retire only this repository's old runtime; never delete user settings/auth.
 for item in extensions/dev-workflow.ts dev-workflow.json; do
   if [[ -e "$agent/$item" || -L "$agent/$item" ]]; then

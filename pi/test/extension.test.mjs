@@ -19,8 +19,8 @@ test("six symmetric commands, session-wide Agent Hub and narrow Explorer registe
   assert.ok(handlers.has("session_start"), "main-session UI context must be registered for skill-spawned Explorers");
   assert.deepEqual(tools.map(tool => tool.name), ["explore"]);
   assert.equal(messages.length, 0);
-  assert.match(tools[0].promptGuidelines.join("\n"), /Give each explore call one explicit independent scope/);
-  assert.match(tools[0].promptGuidelines.join("\n"), /multiple Explorers, in parallel/);
+  assert.match(tools[0].promptGuidelines.join("\n"), /Give each explore call one self-contained scope/);
+  assert.match(tools[0].promptGuidelines.join("\n"), /separate calls for independent scopes/);
   assert.match(tools[0].promptGuidelines.join("\n"), /boundaries, sibling exclusions, and expected evidence/);
   for (const toolName of explorerOnlyTools) assert.match(handlers.get("tool_call")({ toolName }).reason, /narrowly scoped explore calls/);
   assert.equal(handlers.get("tool_call")({ toolName: "read" }), undefined);

@@ -5,12 +5,12 @@ const skill = name => fs.readFileSync(new URL(`../skills/dev-${name}/SKILL.md`,i
 
 test('94d10a6 semantic contracts retain authority, outputs and stop conditions at skill scope',()=>{
   const requirements={
-    spec:['non-goals','acceptance evidence','manages any extra worktrees','Do not design implementation tasks','Only explicit human approval','Stop after the approved spec'],
-    plan:['independently testable','Dispatched plans are immutable','not ordinary debugging','supersedes','Do not duplicate','Stop after approved'],
-    implement:['exactly the assigned','Conventional Commit','On retry, amend','Never edit workflow artifacts','NEEDS_REPLAN'],
+    spec:['speculative requirements','callers/callees','data ownership','failure paths','acceptance evidence','manages any extra worktrees','Do not design implementation tasks','Only explicit human approval','Stop after the approved spec'],
+    plan:['independently testable','simplest durable design','robustness','scalability','long-term maintainability','diff size','Avoid unrelated cleanup','principled local rework','Delete before adding','standard/native facilities','minimum custom code','speculative abstractions','flexibility','future-proofing','Dispatched plans are immutable','not ordinary debugging','supersedes','Do not duplicate','Stop after approved'],
+    implement:['exactly the assigned','user-visible boundary','lower-level proof','Fix root causes','fast and deterministic','stable behavior','Never weaken, delete, or bypass','invalid states difficult to represent','hidden fallbacks','trust-boundary validation','data safety','accessibility','necessary observability','failed approach without new evidence','Conventional Commit','On retry, amend','Never edit workflow artifacts','NEEDS_REPLAN'],
     prepare:['Operational candidate preparation only','clean worktree','mechanical/minimal','draft','Then stop','wait/poll'],
-    review:['exact HEAD','Red CI is evidence','bounded/adversarial but conservative','stable root-cause key','BLOCKED is only','Never edit product code','Do not rerun passing tests'],
-    explore:['one independently scoped factual question','boundaries and sibling exclusions','parent conversation context is unavailable','Remain read-only','Do not delegate','Stop when the assigned scope is answered','FOUND','path:line','submit_result'],
+    review:['exact HEAD','Red CI is evidence','verified Explorer findings','bounded/adversarial but conservative','stable root-cause key','BLOCKED is only','Never edit product code','Do not rerun passing tests'],
+    explore:['one independently scoped factual question','boundaries and sibling exclusions','parent conversation context is unavailable','Remain read-only','Do not delegate','primary sources for external facts','Repository and tool evidence outrank summaries','Stop when the assigned scope is answered','FOUND','path:line','submit_result'],
   };
   for(const [name,terms] of Object.entries(requirements)) {
     const text=skill(name);for(const term of terms)assert.ok(text.includes(term),`${name}: ${term}`);
@@ -26,11 +26,11 @@ test('all role skills require explicit invocation',()=>{
     assert.match(text,/^disable-model-invocation: true$/m,name);
   }
 });
-test('instruction invariants and original user preferences are retained, without stale plugin authority',()=>{
+test('instruction invariants and user-wide preferences are retained, without stale plugin authority',()=>{
   const agents=fs.readFileSync(new URL('../../AGENTS.md',import.meta.url),'utf8');
   for(const term of ['No duplication or contradiction','Least-privilege scope','Do not teach defaults','Explorer-first context economy','Pi lazy-skills','explicit `/skill:<name>` invocation','must use Explorer heavily','independent scopes in parallel','raw exploration stays out of the main context','must not duplicate skill semantics','do not add precedence prose']) assert.ok(agents.includes(term),term);
-  const preferences=fs.readFileSync(new URL('../preferences.md',import.meta.url),'utf8');
-  for(const term of ['Do not use em dashes','unresolved semantics','never discard unrelated changes']) assert.ok(preferences.includes(term));
+  const preferences=fs.readFileSync(new URL('../AGENTS.md',import.meta.url),'utf8');
+  for(const term of ['Do not use em dashes','consequential decision remains unresolved','Preserve user work']) assert.ok(preferences.includes(term),term);
   assert.ok(!agents.includes('pi-subagents'));
   const workflow=fs.readFileSync(new URL('../../WORKFLOW.md',import.meta.url),'utf8');
   for(const term of ['Runtime allowlists enforce isolation','semantic parent responsibilities','rather than misrepresented as mechanically provable']) assert.ok(workflow.includes(term),term);

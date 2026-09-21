@@ -52,7 +52,7 @@ test('actual Pi SDK: fresh contexts, exact role, repo instructions, lazy skill, 
     assert.ok(f.sessions[0].getActiveToolNames().includes('explore'));
     assert.ok(!f.sessions[0].getActiveToolNames().includes('subagent'));
     for(const name of ['web_search','source_check','fetch_content','get_search_content']) assert.ok(!f.sessions[0].getActiveToolNames().includes(name),name);
-    assert.match(JSON.stringify(call.context),/Use explore for every open-ended or input-heavy codebase investigation/);
+    assert.match(JSON.stringify(call.context),/one self-contained scope/);
   }
   assert.ok(!JSON.stringify(f.calls[1].context.messages).includes('task 0'));
   assert.equal(f.hub.list().filter(worker=>worker.state==='completed').length,2);

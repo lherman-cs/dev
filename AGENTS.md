@@ -9,7 +9,7 @@ Treat instructions like least-privilege permissions.
 
 Instruction ownership:
 
-- `pi/preferences.md` (seed for the user-owned Pi `AGENTS.md`): user-wide preferences only.
+- `pi/AGENTS.md` (seed for the user-owned Pi `AGENTS.md`): user-wide preferences only.
 - Repository/local `AGENTS.md`: repository-specific facts and conventions.
 - `pi/skills/dev-*/SKILL.md`: reusable role-specific authority, outputs, and stop conditions.
 - `pi/extension.ts` and `pi/lib/*.mjs`: deterministic lifecycle mechanics; invocation schemas/boundaries; tiny contracts for non-reusable internal workers.

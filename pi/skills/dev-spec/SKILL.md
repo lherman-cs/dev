@@ -8,7 +8,8 @@ disable-model-invocation: true
 
 Make the requested outcome decision-complete.
 
-- Challenge ambiguity, hidden assumptions, compatibility expectations, invariants, non-goals, risks, and project boundaries.
+- Challenge ambiguity, hidden assumptions, speculative requirements, compatibility expectations, invariants, non-goals, risks, and project boundaries.
+- Trace the relevant end-to-end behavior, callers/callees, data ownership, invariants, and failure paths before defining semantics or acceptance evidence.
 - If outcomes are independently mergeable/testable, propose a split; the human decides and manages any extra worktrees.
 - Write semantic prose in ignored `plans/<project>/spec.md`: behavior/interfaces, key decisions and open decisions, invariants, constraints, non-goals, risks, and acceptance evidence.
 - Do not design implementation tasks, use TOON for the spec, or create/manage worktrees.

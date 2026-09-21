@@ -200,9 +200,8 @@ export function exploreTool(run, report = () => {}, parentMetadata = {}) {
     description: "Delegate one independent, narrowly scoped read-only investigation. Use separate calls for separate scopes. Returns compact evidence, not a transcript.",
     promptSnippet: "Delegate a narrow codebase, web, or other evidence-heavy investigation to an independent Explorer",
     promptGuidelines: [
-      "Use explore for every open-ended or input-heavy codebase investigation, web search, or other evidence gathering. Read directly only for known-target implementation work or quick verification.",
-      "Give each explore call one explicit independent scope. Call multiple Explorers, in parallel when useful, for separable questions and consume their compact results instead of raw research.",
-      "Make each scope self-contained: state the factual question, boundaries, sibling exclusions, and expected evidence. Run dependent follow-ups only after their prerequisite result.",
+      "Give each explore call one self-contained scope: state the factual question, boundaries, sibling exclusions, and expected evidence.",
+      "Use separate calls for independent scopes; run dependent follow-ups only after their prerequisite result.",
     ],
     parameters: Type.Object({ task: Type.String() }),
     async execute(_id, { task }, signal, _onUpdate, ctx) {

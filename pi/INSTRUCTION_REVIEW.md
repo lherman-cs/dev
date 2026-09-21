@@ -5,7 +5,7 @@ Baseline: `94d10a650b3d10198043afa602d4887fbeee34ce`. This is migration evidence
 | Original intention | Final owner / regression coverage |
 | --- | --- |
 | No duplicate/contradictory instructions; least scope; do not teach defaults | Root `AGENTS.md` retains the original invariants and source ownership rules. |
-| User preferences remain user-wide | `preferences.md` seeds a missing Pi `AGENTS.md` only. Existing instructions/settings/auth are preserved. |
+| User preferences remain user-wide | `AGENTS.md` seeds a missing user Pi `AGENTS.md` only. Existing instructions/settings/auth are preserved. |
 | Spec is semantic, split decisions are human-owned, stop after approval | Restored `dev-spec`; structured Markdown/choices replace only the retired renderer. |
 | Plan is independently testable, immutable after dispatch, replan is not debugging | Restored `dev-plan`; no progress edits or research transcript duplication. |
 | Implement one contract/commit; retry amends; no controller Git operations | Restored `dev-implement`; real-Git commit/check/recovery tests. |
