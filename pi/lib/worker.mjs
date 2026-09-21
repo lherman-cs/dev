@@ -10,8 +10,10 @@ const explorerResultChars = 4000;
 const toolResult = text => ({ content: [{ type: "text", text }], details: {} });
 
 // One fresh native Pi session. No subprocess protocol, agent registry, or scheduler.
+// Every child created here is registered in the session-wide WorkerHub so the
+// human gets one consistent Agent Hub whether or not a /dev-* controller exists.
 export function createWorkerRunner({ runtime, create = createAgentSession, hub } = {}) {
-  if (!hub?.register || !hub?.unregister || !hub?.nextId) throw new Error("createWorkerRunner requires a WorkerHub so workflow child sessions cannot be hidden.");
+  if (!hub?.register || !hub?.unregister || !hub?.nextId) throw new Error("createWorkerRunner requires a WorkerHub so child sessions cannot be hidden.");
   let modelsPromise;
   async function run({ cwd, name, task, skill, schema, signal = new AbortController().signal, report = () => {}, system = "", tools, metadata = {} }) {
     signal.throwIfAborted();
@@ -45,11 +47,23 @@ export function createWorkerRunner({ runtime, create = createAgentSession, hub }
       settingsManager: settings, resourceLoader: loader, sessionManager: SessionManager.inMemory(cwd),
       tools: [...allowed, ...customTools.map(t => t.name)], customTools });
     const workerId = hub.nextId(name);
+    const workerMetadata = {
+      task: String(metadata.task || task || "").split("\n", 1)[0].slice(0, 140),
+      ...metadata,
+    };
     let workerState = "completed";
     let unsubscribe = () => {};
     const abort = () => { void session.abort(); };
     try {
-      hub.register({ id: workerId, label: metadata.label || name, role: name, model: selected.model, thinking: selected.thinking, session, metadata });
+      hub.register({
+        id: workerId,
+        label: metadata.label || workerId,
+        role: name,
+        model: selected.model,
+        thinking: selected.thinking,
+        session,
+        metadata: workerMetadata,
+      });
       unsubscribe = session.subscribe(event => {
         if (event.type === "tool_execution_start") report(`${name}: ${event.toolName}`);
       });
@@ -97,7 +111,7 @@ export function exploreTool(run, report = () => {}) {
     ],
     parameters: Type.Object({ task: Type.String() }),
     async execute(_id, { task }, signal, _onUpdate, ctx) {
-      const text = await run({ name: "explorer", cwd: ctx.cwd, task, signal, report });
+      const text = await run({ name: "explorer", cwd: ctx.cwd, task, signal, report, metadata: { task } });
       return toolResult(text.length > explorerResultChars ? `${text.slice(0, explorerResultChars)}\n[Explorer result truncated]` : text);
     } };
 }
