@@ -1,3 +1,4 @@
+mod agent;
 use anyhow::{Context, Result, anyhow, bail};
 use clap::{Parser, Subcommand};
 use regex::Regex;
@@ -156,7 +157,7 @@ enum Commands {
     /// Runs a tui to play a lofi radio
     Radio,
 
-    /// Launch an OMP development phase with the phase's configured role
+    /// Launch an Pi development phase with the phase's configured role
     #[command(alias = "a")]
     Agent {
         #[command(subcommand)]
@@ -181,7 +182,7 @@ enum AgentAction {
     Review { prompt: Vec<String> },
     /// Open the Shipper role, or run /dev-ship immediately when a prompt is given
     Ship { prompt: Vec<String> },
-    /// Resume an OMP session with workflow configuration available
+    /// Resume an Pi session with workflow configuration available
     Resume {
         /// Optional session id/path. Omitted continues the most recent session.
         session: Option<String>,
@@ -1660,114 +1661,16 @@ fn match_json_path(value: &Value, path: &str, pattern: &Regex) -> bool {
     }
 }
 
-fn omp_workflow_config_paths() -> Result<Vec<PathBuf>> {
-    let home = dirs::home_dir().ok_or_else(|| anyhow!("Could not determine home directory"))?;
-    let agent_dir = home.join(".omp").join("agent");
-    let defaults = agent_dir.join("dev-workflow.yml");
-    if !defaults.is_file() {
-        bail!(
-            "Missing {}. Re-run install.sh to install the OMP workflow assets.",
-            defaults.display()
-        );
-    }
-
-    Ok(vec![defaults])
-}
-
-fn omp_workflow_command() -> Result<Command> {
-    let mut command = Command::new("omp");
-    for config in omp_workflow_config_paths()? {
-        command.arg("--config").arg(config);
-    }
-    Ok(command)
-}
-
-fn run_omp(mut command: Command) -> Result<()> {
-    #[cfg(unix)]
-    {
-        use std::os::unix::process::CommandExt;
-        Err(command.exec()).context("Failed to exec omp")
-    }
-    #[cfg(not(unix))]
-    {
-        let status = command.status().context("Failed to launch omp")?;
-        if !status.success() {
-            bail!("omp exited with status {status}");
-        }
-        Ok(())
-    }
-}
-
-fn omp_phase_args(phase: &str, prompt: &[String]) -> Vec<String> {
-    let mut args = vec!["--model".into(), format!("@{phase}")];
-    if !prompt.is_empty() {
-        args.push("--".into());
-        args.push(format!("/dev-{phase} {}", prompt.join(" ")));
-    }
-    args
-}
-
-fn exec_omp_phase(phase: &str, prompt: Vec<String>) -> Result<()> {
-    let mut command = omp_workflow_command()?;
-    command.args(omp_phase_args(phase, &prompt));
-    info!("Starting OMP '{}' phase", phase);
-    run_omp(command)
-}
-
-fn exec_omp_resume(session: Option<String>) -> Result<()> {
-    let mut command = omp_workflow_command()?;
-    if let Some(session) = session {
-        if session.trim().is_empty() {
-            bail!("Session ID/path must not be empty");
-        }
-        command.arg("--resume").arg(session);
-    } else {
-        command.arg("--continue");
-    }
-    run_omp(command)
-}
-
 fn cmd_agent(action: Option<AgentAction>) -> Result<()> {
     match action {
-        None => run_omp(omp_workflow_command()?),
-        Some(AgentAction::Spec { prompt }) => exec_omp_phase("spec", prompt),
-        Some(AgentAction::Plan { prompt }) => exec_omp_phase("plan", prompt),
-        Some(AgentAction::Build { prompt }) => exec_omp_phase("build", prompt),
-        Some(AgentAction::Prepare { prompt }) => exec_omp_phase("prepare", prompt),
-        Some(AgentAction::Review { prompt }) => exec_omp_phase("review", prompt),
-        Some(AgentAction::Ship { prompt }) => exec_omp_phase("ship", prompt),
-        Some(AgentAction::Resume { session }) => exec_omp_resume(session),
-    }
-}
-
-#[cfg(test)]
-mod agent_launcher_tests {
-    use super::omp_phase_args;
-
-    #[test]
-    fn bare_phase_selects_role_without_user_turn() {
-        assert_eq!(
-            omp_phase_args("spec", &[]),
-            vec!["--model".to_string(), "@spec".to_string()]
-        );
-        assert_eq!(
-            omp_phase_args("ship", &[]),
-            vec!["--model".to_string(), "@ship".to_string()]
-        );
-    }
-
-    #[test]
-    fn prompted_phase_routes_through_symmetric_slash_command() {
-        let prompt = vec!["implement".to_string(), "the".to_string(), "plan".to_string()];
-        assert_eq!(
-            omp_phase_args("build", &prompt),
-            vec![
-                "--model".to_string(),
-                "@build".to_string(),
-                "--".to_string(),
-                "/dev-build implement the plan".to_string(),
-            ]
-        );
+        None => agent::launch(None, vec![], None),
+        Some(AgentAction::Spec { prompt }) => agent::launch(Some("spec"), prompt, None),
+        Some(AgentAction::Plan { prompt }) => agent::launch(Some("plan"), prompt, None),
+        Some(AgentAction::Build { prompt }) => agent::launch(Some("build"), prompt, None),
+        Some(AgentAction::Prepare { prompt }) => agent::launch(Some("prepare"), prompt, None),
+        Some(AgentAction::Review { prompt }) => agent::launch(Some("review"), prompt, None),
+        Some(AgentAction::Ship { prompt }) => agent::launch(Some("ship"), prompt, None),
+        Some(AgentAction::Resume { session }) => agent::launch(None, vec![], Some(session)),
     }
 }
 

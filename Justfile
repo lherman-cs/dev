@@ -5,7 +5,7 @@ install:
 
 test-fast:
     python3 tests/validate_assets.py
-    node tests/check_omp_extension.mjs
+    npm run check --prefix pi
 
 test-slow:
     cargo test --locked

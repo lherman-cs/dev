@@ -1,104 +1,38 @@
-# OMP-native development workflow
+# Pi-first development workflow
 
-## Principle
+Pi is the harness. Code owns lifecycle transitions, Git/GitHub sequencing, polling, retries, and independent verification. Models own bounded engineering judgment. The human owns worktrees and unresolved semantics. Git is implementation truth, the approved spec is semantic truth, and GitHub is remote-candidate truth.
 
-> **Code decides workflow; models decide engineering.**
+## Entry points
 
-The public workflow surface is symmetric:
+`dev a <phase>` selects the configured model/thinking and opens Pi without a user turn. Adding a prompt submits `/dev-<phase> <prompt>` immediately. Spec and Plan are native current-session skill aliases. Build, Prepare, Review, and Ship use deterministic code. Resume keeps Pi's saved session model.
 
-```text
-dev a <phase> [prompt...]
-/dev-<phase> [args...]
-```
+Three normal human gates remain: approve semantics, approve architecture/contracts, then approve the exact final candidate. Standalone Build/Prepare/Review remain available. The normal approved-plan path is Ship.
 
-Phases are `spec`, `plan`, `build`, `prepare`, `review`, and `ship`.
+## Boundaries
 
-## Launcher semantics
-
-`dev a <phase>` selects the phase role and starts OMP interactively without creating a user turn.
-
-`dev a <phase> "prompt"` starts the exact same role and submits `/dev-<phase> prompt` as the initial action.
-
-`dev a resume [session]` uses OMP's native continue/resume path while reapplying only the workflow config overlays; it does not replace the saved session model.
-
-Role defaults:
-
-| Phase | Model / thinking |
+| Phase | Responsibility and stopping point |
 | --- | --- |
-| spec | Sol medium |
-| plan | Sol high |
-| build | Sol low |
-| build_retry | Sol medium |
-| prepare | Luna medium |
-| review | Astra low |
-| ship | Luna medium |
-| explorer | Luna medium |
+| Spec | Challenge semantics/scope/splits, present a compact Markdown/diagram review with structured choices, persist approval, then stop. |
+| Plan | Compile independent immutable contracts, show architecture/dataflow/outcome/proof/risk, obtain approval, then stop. |
+| Build | Fresh native Pi Implementer per dependency-ready contract; one coherent Conventional Commit, independent checks, clean worktree; at most one implementation retry. |
+| Prepare | Code fetches/rebases, delegates only conflicted files when needed, runs final gates before push, creates/updates an exact draft PR, then stops. |
+| Await | Code polls terminal CI/reviews and a 60-second quiet period. No model is running. |
+| Review | Fresh read-only Reviewer gets approved artifacts, diff/history, local validation, terminal CI, focused failures and PR/bot threads. Concrete material repairs or semantic BLOCKED only. |
+| Human | Native Markdown presentation and choices; feedback returns to Reviewer, never silently PASS. Approval binds exact HEAD and evidence. |
+| Finalize | Luna-medium prose worker only; code updates title/body/readiness after revalidation. Never merges. |
 
-## Slash commands
+An infrastructure/authentication failure preserves work and stops; it is not a reason to switch providers or escalate to another model. Rebase failure preserves the in-progress rebase. A final integration failure becomes one narrow repair during Ship, or precise failure evidence during standalone Prepare. Repair rounds and recurring stable root-cause keys bound automatic convergence.
 
-### Spec and Plan
+## Small durable state
 
-`/dev-spec` and `/dev-plan` are thin aliases that send `/skill:dev-spec` and `/skill:dev-plan` back through OMP's normal prompt pipeline.
+Ignored `plans/<project>/` retains `spec.md`, `project.toon`, immutable `plans/Pxxx.toon` and `repairs/Rxxx.toon`, `progress.toon`, `ship.toon`, and `review.toon`. Updates are atomic. No database, raw CI log store, model transcript store, or generic event log is added.
 
-That means:
+Progress binds accepted work to Git HEAD. Shipping persists phase, candidate, local verification, repair count, exact approved HEAD, bounded pending repairs, and blocked reason/resume phase. Pending repair publication is replayable; stale candidate/base/evidence cannot reuse approval. Legacy state lacking an evidence fingerprint is re-reviewed rather than blindly trusted.
 
-- work stays in the current interactive session and keeps its full conversation;
-- no Specifier/Planner subprocess is created;
-- the native OMP skill invocation path remains the single semantic implementation;
-- the skill itself owns its feedback and explicit human-approval loop.
+## Scope and integration
 
-### Build
+`pi/roles.json` is the single role policy. Original global preferences remain at user scope; reusable semantics live in five skills. Skills use Pi's native progressive disclosure: only name/description metadata is resident until an explicit `/skill:...` invocation loads the body. Bare role sessions do not preload phase skill bodies, and a fresh worker discovers only its assigned skill before invoking it. Internal conflict/finalizer prompts contain only their narrow invocation contracts. `AGENTS.md` defines instruction ownership; this file documents behavior rather than supplying a second agent policy.
 
-`/dev-build` is deterministic code:
+Native SDK workers are in-memory sessions, with their own context and cancellation. The only exposed delegation primitive is `explore`: read-only, bounded output, no shell or recursion. Workers do not inherit the foreground conversation. Implementation workers load LSP/browser/web capabilities; foreground-only PR/usage UI and MCP configurations are not replicated into children.
 
-1. reconcile Git with `progress.toon`;
-2. skip superseded contracts;
-3. choose the next dependency-ready `Pxxx` / `Rxxx`;
-4. launch a fresh isolated `@build` worker with the `dev-implement` skill;
-5. independently verify exactly one Conventional Commit, clean worktree, and declared checks;
-6. retry once with `@build_retry` if verification fails;
-7. persist accepted progress and repeat.
-
-The foreground model does not relay worker results or choose workflow transitions.
-
-### Prepare
-
-`/dev-prepare` deterministically owns fetch/rebase/final checks/push/draft-PR binding. Ordinary mechanics consume no model tokens. If a rebase conflict needs judgment, the driver launches a bounded isolated worker.
-
-### Review
-
-`/dev-review` gathers exact candidate evidence and launches a fresh isolated `@review` worker. Structured findings are validated by code and concrete repairs are selected through OMP's native UI.
-
-### Ship
-
-`/dev-ship` is the restartable state machine:
-
-```text
-BUILD -> PREPARE -> AWAIT -> REVIEW/REPAIR -> HUMAN -> FINALIZE
-```
-
-`ship.toon` persists the phase, exact candidate, repair count, recurrence guards, and approved HEAD. Await is exact-HEAD GitHub polling and consumes no model tokens. Final PR prose uses the explicit `@ship` Luna-medium role.
-
-## Configuration ownership
-
-The repository **never** manages `~/.omp/agent/config.yml`.
-
-Workflow-owned defaults live at `~/.omp/agent/dev-workflow.yml`. Both the CLI launcher and isolated workers pass that file as an OMP `--config` overlay.
-
-## Workflow state
-
-Durable workflow artifacts live under `plans/<project>/`:
-
-- `spec.md`: approved semantic contract
-- `project.toon`: project/base/dependencies/final checks/status
-- `plans/*.toon`: immutable execution contracts
-- `repairs/*.toon`: immutable repair contracts
-- `progress.toon`: accepted work and HEAD
-- `ship.toon`: restartable shipping state
-- `review.toon`: compact exact-HEAD review result
-
-The extension checks whether Git already tracks `plans/`. If not, it idempotently adds `/plans/` to `.git/info/exclude`. A project may be selected by name, its directory, `spec.md`, `project.toon`, or any plan/repair path inside it. It never requires or edits the repository's `.gitignore`.
-
-## Explorer
-
-There is no custom Explorer implementation. OMP's bundled `scout` is routed through the workflow `@explorer` role and is available to interactive phases and isolated workers.
+Pi and the requested plugins own rendering and integrations. `pi-github-pr` displays status; the controller still reads exact GitHub evidence through `gh`. The installer does not ship MCP servers, browser-cookie opt-ins, permission bypasses, or user credential files.
