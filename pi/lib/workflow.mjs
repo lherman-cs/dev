@@ -1,9 +1,10 @@
 import fs from "node:fs";
 import path from "node:path";
+import { createHash } from "node:crypto";
 import { decode, encode } from "@toon-format/toon";
 import lockfile from "proper-lockfile";
 
-export const read = (file) => decode(fs.readFileSync(file, "utf8"));
+export const read = file => decode(fs.readFileSync(file, "utf8"));
 export function save(file, data) {
   const temporary = `${file}.${process.pid}.tmp`;
   fs.mkdirSync(path.dirname(file), { recursive: true });
@@ -16,11 +17,10 @@ export async function command(h, program, args) {
   return result.stdout.trim();
 }
 export const git = (h, ...args) => command(h, "git", args);
-export const clean = async (h) => !(await git(h, "status", "--porcelain"));
+export const clean = async h => !(await git(h, "status", "--porcelain"));
 export const ghJSON = async (h, args) => JSON.parse(await command(h, "gh", args));
 const inside = (root, file) => { const r = path.relative(root, file); return r !== ".." && !r.startsWith(`..${path.sep}`) && !path.isAbsolute(r); };
 
-// Resolve real files, not substrings of 'plans'. Check the execution manifest later.
 export async function resolveProject(h, target) {
   const root = fs.realpathSync(await git(h, "rev-parse", "--show-toplevel"));
   let value = String(target || "").trim();
@@ -74,6 +74,29 @@ export function contracts(project) {
   if (!tasks.length) throw new Error("No execution contracts found. Run /dev-plan first.");
   return { meta, tasks, all };
 }
+
+/** Uses raw execution deliberately: taking a pause fingerprint must not enter
+ * the pause gate recursively. Includes untracked contents and ignored contracts. */
+export async function workflowFingerprint(h, project) {
+  const exec = h.rawExec || h.exec;
+  const run = async args => {
+    const result = await exec.call(h, "git", args);
+    if (result.code !== 0) throw new Error(`Cannot revalidate worktree: ${result.stderr}`);
+    return result.stdout;
+  };
+  const hash = createHash("sha256");
+  for (const args of [["rev-parse", "HEAD"], ["status", "--porcelain=v1", "-uall"], ["diff", "HEAD", "--binary"]]) hash.update(await run(args)).update("\0");
+  for (const file of (await run(["ls-files", "--others", "--exclude-standard", "-z"])).split("\0").filter(Boolean)) {
+    const absolute = path.resolve(project.root, file);
+    if (!inside(project.root, absolute)) throw new Error("Untracked path escaped worktree.");
+    hash.update(file).update("\0");
+    hash.update(fs.lstatSync(absolute).isSymbolicLink() ? fs.readlinkSync(absolute) : fs.readFileSync(absolute));
+  }
+  hash.update(fs.readFileSync(path.join(project.dir, "spec.md")));
+  const approved = contracts(project);
+  hash.update(JSON.stringify([approved.meta, approved.all]));
+  return hash.digest("hex");
+}
 export async function checks(h, commands) {
   for (const line of commands || []) await command(h, "bash", ["-c", line]);
 }
@@ -100,34 +123,35 @@ export async function build(h, project) {
     state.head = await git(h, "rev-parse", "HEAD");
   }
   while (tasks.some(t => !accepted.has(t.id))) {
+    h.signal?.throwIfAborted();
     const task = state.current ? tasks.find(t => t.id === state.current) : tasks.find(t => !accepted.has(t.id) && (t.depends_on || []).every(id => accepted.has(id)));
     if (!task) throw new Error("No dependency-ready task; review the dependency graph or interrupted task.");
     if (state.current && await git(h, "rev-parse", "HEAD") !== state.head) {
-      try { state.head = await verify(h, state.head, task); accepted.add(task.id); state.done = [...accepted]; state.current = null; save(stateFile, state); continue; } catch { /* retain partial work for same-task retry */ }
+      try { state.head = await verify(h, state.head, task); accepted.add(task.id); state.done = [...accepted]; state.current = null; save(stateFile, state); continue; }
+      catch { h.signal?.throwIfAborted(); /* retain partial work for same-task retry */ }
     }
-    state.current = task.id;
-    save(stateFile, state);
+    state.current = task.id; save(stateFile, state);
     let failure = "";
     for (let attempt = 0; attempt < 2; attempt++) {
       const role = attempt ? "build_retry" : "build";
       h.report(`${attempt ? "Retrying" : "Building"} ${task.id}: ${task.title || task.goal} (${accepted.size + 1}/${tasks.length}).`);
-      const result = await h.delegate(role, `Spec: ${path.join(project.dir, "spec.md")}\nExecution contract: ${task.file}\nAccepted predecessor: ${state.head}\n${failure}`, "dev-implement");
-      // Infrastructure failures throw from delegate: never retry with another model.
-      if (/\bNEEDS_REPLAN\b/.test(result)) throw Object.assign(new Error(result), { blocked: true });
+      const result = await h.delegate(role, `Spec: ${path.join(project.dir, "spec.md")}\nExecution contract: ${task.file}\nAccepted predecessor: ${state.head}\n${failure}`, "dev-implement", undefined,
+        { metadata: { contract: task.id, label: `${attempt ? "Retry" : "Builder"} · ${task.title || task.goal}`, task: task.goal || task.title, attempt: attempt + 1, predecessor: state.head } });
+      if (/\bNEEDS_REPLAN\b/.test(result)) { h.outcome?.(task.id, "Needs replanning"); throw Object.assign(new Error(result), { blocked: true }); }
       try {
+        h.outcome?.(task.id, "Agent finished; independent verification running");
         state.head = await verify(h, state.head, task);
-        failure = "";
-        break;
+        h.outcome?.(task.id, `Contract accepted at ${state.head}`);
+        failure = ""; break;
       } catch (error) {
+        h.signal?.throwIfAborted(); h.outcome?.(task.id, `Verification failed: ${error.message}`);
         failure = `Verification failed: ${error.message}\nAmend the same contract commit; do not add another.`;
         if (!attempt) h.report(`${task.id} did not pass verification. Retrying the same commit.`);
       }
     }
     if (failure) throw new Error(failure);
-    accepted.add(task.id);
-    state.done = [...accepted]; state.current = null;
-    save(stateFile, state);
-    h.report(`Completed ${task.id} (${accepted.size}/${tasks.length}).`);
+    accepted.add(task.id); state.done = [...accepted]; state.current = null;
+    save(stateFile, state); h.report(`Completed ${task.id} (${accepted.size}/${tasks.length}).`);
   }
   return { meta, tasks };
 }
@@ -136,6 +160,7 @@ export async function runWorkflow(h, phase, target) {
   if (!["build", "prepare", "review", "ship"].includes(phase)) throw new Error(`Unknown phase ${phase}`);
   const project = await resolveProject(h, target);
   h.cwd = project.root;
+  if (h.control) h.control.snapshot = () => workflowFingerprint(h, project);
   await excludeState(h);
   const lockfilePath = await git(h, "rev-parse", "--path-format=absolute", "--git-path", "dev-workflow.lock");
   const release = await lockfile.lock(project.root, { lockfilePath, retries: 0 });
