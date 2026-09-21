@@ -1,5 +1,6 @@
 name: hardening workspace
 on:
+  workflow_dispatch:
   push:
     branches: [feat/agent-hub-dx]
     paths: [.github/workflows/hardening-workspace.yml]
