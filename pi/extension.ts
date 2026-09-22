@@ -70,7 +70,7 @@ export default function (pi: PiAPI, dependencies: ExtensionDependencies = {}) {
     if (active?.pending) return active.pending.respond();
     const questions = hub.questions();
     const choices = questions.map(q => `${hub.get(q.ownerId)?.label || "Agent"} · ${q.title}`);
-    const selected = await context.ui.select("Choose a question to answer", ["Cancel", ...choices]);
+    const selected = await ctx.ui.select("Choose a question to answer", ["Cancel", ...choices]);
     const index = choices.indexOf(selected);
     if (index >= 0) await questions[index].answer(ctx);
   };
@@ -199,11 +199,11 @@ export default function (pi: PiAPI, dependencies: ExtensionDependencies = {}) {
           const chosen = new Set<string>();
           while (true) {
             const labels = repairs.map((r, i) => `${i + 1}. ${chosen.has(r.key) ? "[x]" : "[ ]"} ${r.title}`);
-            const selected = await ctx.ui.select(title, ["Cancel", ...labels, "Apply selected"], { signal: current.signal });
+            const selected = await context.ui.select(title, ["Cancel", ...labels, "Apply selected"], { signal: current.signal });
             current.signal.throwIfAborted();
             if (selected === "Apply selected") return { action: "repairs", keys: [...chosen] };
             if (!selected || selected === "Cancel") return { action: "cancel" };
-            const key = repairs[labels.indexOf(selected)].key;
+            const repair = repairs[labels.indexOf(selected)];\n            if (!repair) return { action: "cancel" };\n            const key = repair.key;
             chosen.has(key) ? chosen.delete(key) : chosen.add(key);
           }
         }
@@ -232,7 +232,7 @@ export default function (pi: PiAPI, dependencies: ExtensionDependencies = {}) {
     }
   }
   for (const phase of ["build", "prepare", "review", "ship"] as const) pi.registerCommand(`dev-${phase}`, {
-    description: `Run ${phase} for an approved project or spec path`, handler: (args, nextCtx) => start(phase, args, nextCtx),
+    description: `Run ${phase} for an approved project or spec path`, handler: (args, nextCtx) => start(phase, args, nextCtx as AppContext),
   });
   pi.registerCommand("dev-continue", { description: "Continue a safely paused workflow only if repository and contracts are unchanged", handler: async (_args, nextCtx) => { ctx = nextCtx; await continueWorkflow(); } });
   pi.registerCommand("dev-pause", { description: "Pause the controller at the next safe boundary; no rollback", handler: async () => {
