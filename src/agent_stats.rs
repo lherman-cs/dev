@@ -14,7 +14,7 @@ use ratatui::widgets::{Block, Borders, Clear, Paragraph};
 use serde_json::Value;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs::{self, File};
-use std::io::{self, IsTerminal, Read, Seek, SeekFrom};
+use std::io::{self, BufRead, BufReader, IsTerminal, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant, SystemTime};
 use walkdir::WalkDir;
@@ -208,7 +208,7 @@ impl Diagnostics {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 struct Metrics {
     usage: Option<NormalizedUsage>,
     wall_ms: Option<i64>,
@@ -252,6 +252,90 @@ struct Dashboard {
     turn_starts: Vec<i64>,
     diagnostics: Diagnostics,
     provisional: bool,
+    family: AgentFamily,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+struct FamilyDiagnostics {
+    unreadable: u64,
+    relationship: u64,
+    invalid_timing: u64,
+    missing_role: u64,
+    ownership: u64,
+}
+
+impl FamilyDiagnostics {
+    fn issue_count(&self) -> u64 {
+        self.unreadable
+            .saturating_add(self.relationship)
+            .saturating_add(self.invalid_timing)
+            .saturating_add(self.missing_role)
+            .saturating_add(self.ownership)
+    }
+}
+
+#[derive(Clone, Debug, Default)]
+struct AgentTelemetry {
+    turns: usize,
+    generations: usize,
+    tools: usize,
+    wall_ms: Option<i64>,
+}
+
+#[derive(Clone, Debug, Default)]
+struct AgentNode {
+    id: String,
+    role: String,
+    label: String,
+    parent: Option<String>,
+    unlinked_reason: Option<String>,
+    state: String,
+    path: PathBuf,
+    start: Option<i64>,
+    end: Option<i64>,
+    provisional: bool,
+    depth: usize,
+    telemetry: AgentTelemetry,
+}
+
+#[derive(Clone, Debug, Default)]
+struct RoleWall {
+    role: String,
+    agent_count: usize,
+    timed_count: usize,
+    wall_ms: Option<i64>,
+    provisional: bool,
+}
+
+#[derive(Clone, Debug, Default)]
+struct AgentFamily {
+    agents: Vec<AgentNode>,
+    roles: Vec<RoleWall>,
+    start: Option<i64>,
+    end: Option<i64>,
+    cross_role_overlap_ms: Option<i64>,
+    diagnostics: FamilyDiagnostics,
+}
+
+#[derive(Clone, Debug)]
+struct SessionHeader {
+    id: String,
+    cwd: PathBuf,
+    parent_session: Option<PathBuf>,
+}
+
+#[derive(Clone, Debug)]
+struct WorkerRecord {
+    id: String,
+    label: String,
+    role: Option<String>,
+    parent_id: Option<String>,
+    state: String,
+    started_at: Option<i64>,
+    ended_at: Option<i64>,
+    latest_at: Option<i64>,
+    path: PathBuf,
+    telemetry: AgentTelemetry,
 }
 
 struct LiveSource {
@@ -1258,13 +1342,13 @@ fn find_session(root: &Path, cwd: &Path, requested: Option<&str>) -> Result<Path
         if let Some(requested) = requested {
             if !entry.file_name().to_string_lossy().contains(requested)
                 && read_header(entry.path())
-                    .map(|header| header.0 != requested)
+                    .map(|header| header.id != requested)
                     .unwrap_or(true)
             {
                 continue;
             }
         } else if read_header(entry.path())
-            .map(|header| !same_path(&header.1, cwd))
+            .map(|header| !same_path(&header.cwd, cwd))
             .unwrap_or(true)
         {
             continue;
@@ -1286,19 +1370,613 @@ fn find_session(root: &Path, cwd: &Path, requested: Option<&str>) -> Result<Path
     })
 }
 
-fn read_header(path: &Path) -> Option<(String, PathBuf)> {
+fn read_header(path: &Path) -> Option<SessionHeader> {
     let mut file = File::open(path).ok()?;
     let mut bytes = Vec::new();
     file.by_ref().take(16 * 1024).read_to_end(&mut bytes).ok()?;
     let line = bytes.split(|byte| *byte == b'\n').next()?;
     let value: Value = serde_json::from_slice(line).ok()?;
-    Some((
-        text(&value, "id")?.to_owned(),
-        PathBuf::from(text(&value, "cwd")?),
-    ))
+    if text(&value, "type") != Some("session") {
+        return None;
+    }
+    Some(SessionHeader {
+        id: text(&value, "id")?.to_owned(),
+        cwd: PathBuf::from(text(&value, "cwd")?),
+        parent_session: text(&value, "parentSession").map(PathBuf::from),
+    })
 }
 fn same_path(left: &Path, right: &Path) -> bool {
     fs::canonicalize(left).map_or_else(|_| left == right, |left| left == right)
+}
+
+fn read_worker(path: &Path) -> Result<WorkerRecord> {
+    let file =
+        File::open(path).with_context(|| format!("open worker session {}", path.display()))?;
+    let mut model = SessionModel::default();
+    let mut latest_at = None;
+    let mut metadata: Option<(i64, usize, Value)> = None;
+    for (sequence, line) in BufReader::new(file).lines().enumerate() {
+        let line = line?;
+        if line.trim().is_empty() {
+            continue;
+        }
+        let value: Value = serde_json::from_str(&line)
+            .with_context(|| format!("parse worker session {}", path.display()))?;
+        if let Some(at) = parse_time(value.get("timestamp")) {
+            latest_at = Some(latest_at.map_or(at, |old: i64| old.max(at)));
+        }
+        if text(&value, "type") == Some("custom")
+            && text(&value, "customType") == Some("dev-worker-v1")
+            && value.get("data").and_then(Value::as_object).is_some()
+        {
+            let key = (
+                parse_time(value.get("timestamp")).unwrap_or(i64::MIN),
+                sequence,
+            );
+            if metadata
+                .as_ref()
+                .is_none_or(|(at, old_sequence, _)| key > (*at, *old_sequence))
+            {
+                metadata = value.get("data").cloned().map(|data| (key.0, key.1, data));
+            }
+        }
+        parse_value(value, &mut model);
+    }
+    let data = metadata
+        .map(|(_, _, data)| data)
+        .context("worker session has no dev-worker-v1 metadata")?;
+    let id = text(&data, "id")
+        .filter(|id| !id.is_empty())
+        .context("worker metadata has no id")?;
+    let child = aggregate(&model);
+    Ok(WorkerRecord {
+        id: id.to_owned(),
+        label: text(&data, "label").unwrap_or(id).to_owned(),
+        role: text(&data, "role")
+            .filter(|role| !role.is_empty())
+            .map(str::to_owned),
+        parent_id: data
+            .get("metadata")
+            .and_then(|metadata| text(metadata, "parentId"))
+            .filter(|parent| !parent.is_empty())
+            .map(str::to_owned),
+        state: text(&data, "state").unwrap_or("unknown").to_owned(),
+        started_at: data.get("startedAt").and_then(Value::as_i64),
+        ended_at: data.get("endedAt").and_then(Value::as_i64),
+        latest_at,
+        path: path.to_owned(),
+        telemetry: AgentTelemetry {
+            turns: child.metrics.turns,
+            generations: child.metrics.generation_count,
+            tools: child.metrics.tool_call_count,
+            wall_ms: child.metrics.wall_ms,
+        },
+    })
+}
+
+fn read_legacy_workers(root: &Path) -> HashMap<PathBuf, WorkerRecord> {
+    let mut workers = HashMap::new();
+    let journal = root.join("hub-state.jsonl");
+    let Ok(file) = File::open(journal) else {
+        return workers;
+    };
+    for line in BufReader::new(file).lines().map_while(Result::ok) {
+        let Ok(value) = serde_json::from_str::<Value>(&line) else {
+            continue;
+        };
+        if text(&value, "type") != Some("custom")
+            || text(&value, "customType") != Some("dev-worker")
+        {
+            continue;
+        }
+        let Some(data) = value.get("data") else {
+            continue;
+        };
+        let (Some(id), Some(session_file)) = (text(data, "id"), text(data, "sessionFile")) else {
+            continue;
+        };
+        let Ok(path) = fs::canonicalize(session_file) else {
+            continue;
+        };
+        if path.parent() != Some(root)
+            || path.extension().and_then(|extension| extension.to_str()) != Some("jsonl")
+        {
+            continue;
+        }
+        let mut model = SessionModel::default();
+        let mut latest_at = None;
+        if let Ok(file) = File::open(&path) {
+            for child_line in BufReader::new(file).lines().map_while(Result::ok) {
+                let Ok(child) = serde_json::from_str::<Value>(&child_line) else {
+                    continue;
+                };
+                if let Some(at) = parse_time(child.get("timestamp")) {
+                    latest_at = Some(latest_at.map_or(at, |old: i64| old.max(at)));
+                }
+                parse_value(child, &mut model);
+            }
+        }
+        let dashboard = aggregate(&model);
+        workers.insert(
+            path.clone(),
+            WorkerRecord {
+                id: id.to_owned(),
+                label: text(data, "label").unwrap_or(id).to_owned(),
+                role: text(data, "role")
+                    .filter(|role| !role.is_empty())
+                    .map(str::to_owned),
+                parent_id: None,
+                state: text(data, "state").unwrap_or("unknown").to_owned(),
+                started_at: None,
+                ended_at: None,
+                latest_at,
+                path,
+                telemetry: AgentTelemetry {
+                    turns: dashboard.metrics.turns,
+                    generations: dashboard.metrics.generation_count,
+                    tools: dashboard.metrics.tool_call_count,
+                    wall_ms: dashboard.metrics.wall_ms,
+                },
+            },
+        );
+    }
+    workers
+}
+
+fn worker_roots(owner: &Path, header: &SessionHeader) -> Vec<PathBuf> {
+    let mut roots = vec![PathBuf::from(format!("{}.workers", owner.display()))];
+    if let Some(dir) = owner.parent() {
+        roots.push(dir.join(".workers").join(&header.id));
+    }
+    roots
+}
+
+fn interval_union(mut intervals: Vec<(i64, i64)>) -> Vec<(i64, i64)> {
+    intervals.retain(|(start, end)| end >= start);
+    intervals.sort_unstable();
+    let mut merged: Vec<(i64, i64)> = Vec::new();
+    for (start, end) in intervals {
+        if let Some(last) = merged.last_mut()
+            && start <= last.1
+        {
+            last.1 = last.1.max(end);
+        } else {
+            merged.push((start, end));
+        }
+    }
+    merged
+}
+
+fn interval_total(intervals: &[(i64, i64)]) -> Option<i64> {
+    intervals.iter().try_fold(0_i64, |total, (start, end)| {
+        total.checked_add(end.checked_sub(*start)?)
+    })
+}
+
+fn cross_role_overlap(role_intervals: &[Vec<(i64, i64)>]) -> Option<i64> {
+    let mut points = Vec::new();
+    for intervals in role_intervals {
+        for (start, end) in intervals {
+            if end > start {
+                points.push((*start, 1_i32));
+                points.push((*end, -1_i32));
+            }
+        }
+    }
+    points.sort_unstable_by(|left, right| left.0.cmp(&right.0).then(left.1.cmp(&right.1)));
+    let mut active = 0_i32;
+    let mut previous = None;
+    let mut overlap = 0_i64;
+    let mut index = 0;
+    while index < points.len() {
+        let at = points[index].0;
+        if let Some(previous) = previous
+            && active >= 2
+        {
+            overlap = overlap.checked_add(at.checked_sub(previous)?)?;
+        }
+        while index < points.len() && points[index].0 == at {
+            active += points[index].1;
+            index += 1;
+        }
+        previous = Some(at);
+    }
+    Some(overlap)
+}
+
+fn build_family(selected: &Path, root: &Dashboard) -> AgentFamily {
+    let mut family = AgentFamily::default();
+    let Some(selected_header) = read_header(selected) else {
+        family.diagnostics.unreadable = 1;
+        return family;
+    };
+    let selected_canonical = fs::canonicalize(selected).unwrap_or_else(|_| selected.to_owned());
+    let selected_worker = read_worker(selected).ok();
+    let (owner, owner_header, selected_worker_id) = if let (Some(worker), Some(parent)) =
+        (&selected_worker, &selected_header.parent_session)
+    {
+        let Ok(parent) = fs::canonicalize(parent) else {
+            family.diagnostics.ownership = 1;
+            return standalone_family(selected, root, selected_worker.as_ref(), family.diagnostics);
+        };
+        let Some(header) = read_header(&parent) else {
+            family.diagnostics.ownership = 1;
+            return standalone_family(selected, root, selected_worker.as_ref(), family.diagnostics);
+        };
+        if !same_path(&header.cwd, &selected_header.cwd) {
+            family.diagnostics.ownership = 1;
+            return standalone_family(selected, root, selected_worker.as_ref(), family.diagnostics);
+        }
+        let accepted = worker_roots(&parent, &header)
+            .into_iter()
+            .filter_map(|root| fs::canonicalize(root).ok())
+            .any(|root| selected_canonical.parent() == Some(root.as_path()));
+        if !accepted {
+            family.diagnostics.ownership = 1;
+            return standalone_family(selected, root, selected_worker.as_ref(), family.diagnostics);
+        }
+        (parent, header, Some(worker.id.clone()))
+    } else {
+        (selected_canonical.clone(), selected_header.clone(), None)
+    };
+
+    let mut workers = Vec::new();
+    let mut seen_paths = HashSet::new();
+    for candidate_root in worker_roots(&owner, &owner_header) {
+        let Ok(canonical_root) = fs::canonicalize(&candidate_root) else {
+            continue;
+        };
+        let legacy = read_legacy_workers(&canonical_root);
+        let Ok(entries) = fs::read_dir(&canonical_root) else {
+            family.diagnostics.unreadable = family.diagnostics.unreadable.saturating_add(1);
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|extension| extension.to_str()) != Some("jsonl")
+                || path.file_name().and_then(|name| name.to_str()) == Some("hub-state.jsonl")
+            {
+                continue;
+            }
+            let Ok(canonical) = fs::canonicalize(&path) else {
+                family.diagnostics.unreadable = family.diagnostics.unreadable.saturating_add(1);
+                continue;
+            };
+            if canonical.parent() != Some(canonical_root.as_path())
+                || !seen_paths.insert(canonical.clone())
+            {
+                family.diagnostics.ownership = family.diagnostics.ownership.saturating_add(1);
+                continue;
+            }
+            if canonical == selected_canonical {
+                continue;
+            }
+            let Some(header) = read_header(&canonical) else {
+                family.diagnostics.unreadable = family.diagnostics.unreadable.saturating_add(1);
+                continue;
+            };
+            if !same_path(&header.cwd, &selected_header.cwd)
+                || header
+                    .parent_session
+                    .as_deref()
+                    .is_some_and(|parent| !same_path(parent, &owner))
+            {
+                family.diagnostics.ownership = family.diagnostics.ownership.saturating_add(1);
+                continue;
+            }
+            match read_worker(&canonical)
+                .or_else(|error| legacy.get(&canonical).cloned().ok_or(error))
+            {
+                Ok(worker) => workers.push(worker),
+                Err(_) => {
+                    family.diagnostics.unreadable = family.diagnostics.unreadable.saturating_add(1)
+                }
+            }
+        }
+    }
+
+    if let Some(selected_id) = selected_worker_id.as_ref()
+        && workers.iter().any(|worker| &worker.id == selected_id)
+    {
+        family.diagnostics.relationship = family.diagnostics.relationship.saturating_add(1);
+        return standalone_family(selected, root, selected_worker.as_ref(), family.diagnostics);
+    }
+    let root_role = selected_worker.as_ref().map_or_else(
+        || "Main".into(),
+        |worker| worker.role.clone().unwrap_or_else(|| "Unknown".into()),
+    );
+    if selected_worker
+        .as_ref()
+        .is_some_and(|worker| worker.role.is_none())
+    {
+        family.diagnostics.missing_role = family.diagnostics.missing_role.saturating_add(1);
+    }
+    let root_id = selected_worker_id
+        .clone()
+        .unwrap_or_else(|| selected_header.id.clone());
+    family.agents.push(AgentNode {
+        id: root_id.clone(),
+        role: root_role,
+        label: selected_worker
+            .as_ref()
+            .map_or_else(|| "Main".into(), |worker| worker.label.clone()),
+        state: selected_worker.as_ref().map_or_else(
+            || {
+                if root.provisional {
+                    "provisional".into()
+                } else {
+                    "observed".into()
+                }
+            },
+            |worker| worker.state.clone(),
+        ),
+        path: selected.to_owned(),
+        start: root.start,
+        end: root.end,
+        provisional: root.provisional,
+        telemetry: AgentTelemetry {
+            turns: root.metrics.turns,
+            generations: root.metrics.generation_count,
+            tools: root.metrics.tool_call_count,
+            wall_ms: root.metrics.wall_ms,
+        },
+        ..AgentNode::default()
+    });
+
+    let mut counts = HashMap::new();
+    for worker in &workers {
+        *counts.entry(worker.id.clone()).or_insert(0_usize) += 1;
+    }
+    let unique: HashMap<String, usize> = workers
+        .iter()
+        .enumerate()
+        .filter(|(_, worker)| counts.get(&worker.id) == Some(&1))
+        .map(|(index, worker)| (worker.id.clone(), index))
+        .collect();
+
+    let reaches_selected = |worker: &WorkerRecord| -> bool {
+        let Some(selected_id) = selected_worker_id.as_ref() else {
+            return true;
+        };
+        let mut parent = worker.parent_id.as_deref();
+        let mut visited = HashSet::new();
+        while let Some(id) = parent {
+            if id == selected_id {
+                return true;
+            }
+            if !visited.insert(id.to_owned()) {
+                return false;
+            }
+            parent = unique
+                .get(id)
+                .and_then(|index| workers[*index].parent_id.as_deref());
+        }
+        false
+    };
+    let included: HashSet<usize> = workers
+        .iter()
+        .enumerate()
+        .filter(|(_, worker)| reaches_selected(worker))
+        .map(|(index, _)| index)
+        .collect();
+
+    let mut linked = HashSet::new();
+    let mut unlinked = HashMap::new();
+    for index in included.iter().copied() {
+        let worker = &workers[index];
+        if counts.get(&worker.id).copied().unwrap_or(0) > 1 {
+            unlinked.insert(index, "duplicate worker id".to_owned());
+            continue;
+        }
+        let mut parent = worker.parent_id.as_deref();
+        let mut visited = HashSet::from([worker.id.clone()]);
+        let mut reason = None;
+        while let Some(id) = parent {
+            if selected_worker_id.as_deref() == Some(id) {
+                break;
+            }
+            let Some(parent_index) = unique.get(id).copied() else {
+                reason = Some("missing parent".to_owned());
+                break;
+            };
+            if !included.contains(&parent_index) || !visited.insert(id.to_owned()) {
+                reason = Some("relationship cycle".to_owned());
+                break;
+            }
+            parent = workers[parent_index].parent_id.as_deref();
+        }
+        if selected_worker_id.is_none() && parent.is_none()
+            || selected_worker_id.is_some() && reason.is_none()
+        {
+            linked.insert(index);
+        } else if let Some(reason) = reason {
+            unlinked.insert(index, reason);
+        }
+    }
+    family.diagnostics.relationship = unlinked.len() as u64;
+
+    let parent_key =
+        |worker: &WorkerRecord| worker.parent_id.clone().unwrap_or_else(|| root_id.clone());
+    let mut children: HashMap<String, Vec<usize>> = HashMap::new();
+    for index in linked.iter().copied() {
+        children
+            .entry(parent_key(&workers[index]))
+            .or_default()
+            .push(index);
+    }
+    for values in children.values_mut() {
+        values.sort_by_key(|index| {
+            (
+                workers[*index].started_at.unwrap_or(i64::MAX),
+                workers[*index].id.clone(),
+            )
+        });
+    }
+    append_children(&root_id, 1, &children, &workers, &mut family);
+    let mut loose: Vec<_> = unlinked.into_iter().collect();
+    loose.sort_by_key(|(index, _)| {
+        (
+            workers[*index].started_at.unwrap_or(i64::MAX),
+            workers[*index].id.clone(),
+        )
+    });
+    for (index, reason) in loose {
+        push_worker_agent(&workers[index], 1, Some(reason), &mut family);
+    }
+    finalize_family(&mut family);
+    family
+}
+
+fn standalone_family(
+    selected: &Path,
+    root: &Dashboard,
+    worker: Option<&WorkerRecord>,
+    diagnostics: FamilyDiagnostics,
+) -> AgentFamily {
+    let mut family = AgentFamily {
+        diagnostics,
+        ..AgentFamily::default()
+    };
+    if worker.is_some_and(|worker| worker.role.is_none()) {
+        family.diagnostics.missing_role = family.diagnostics.missing_role.saturating_add(1);
+    }
+    let role = worker.map_or_else(
+        || "Main".into(),
+        |worker| worker.role.clone().unwrap_or_else(|| "Unknown".into()),
+    );
+    family.agents.push(AgentNode {
+        id: worker.map_or_else(|| root.session_id.clone(), |worker| worker.id.clone()),
+        role,
+        label: worker.map_or_else(|| "Main".into(), |worker| worker.label.clone()),
+        state: worker.map_or_else(|| "observed".into(), |worker| worker.state.clone()),
+        path: selected.to_owned(),
+        start: root.start,
+        end: root.end,
+        provisional: root.provisional,
+        telemetry: AgentTelemetry {
+            turns: root.metrics.turns,
+            generations: root.metrics.generation_count,
+            tools: root.metrics.tool_call_count,
+            wall_ms: root.metrics.wall_ms,
+        },
+        ..AgentNode::default()
+    });
+    finalize_family(&mut family);
+    family
+}
+
+fn append_children(
+    parent: &str,
+    depth: usize,
+    children: &HashMap<String, Vec<usize>>,
+    workers: &[WorkerRecord],
+    family: &mut AgentFamily,
+) {
+    if let Some(indices) = children.get(parent) {
+        for index in indices {
+            let worker = &workers[*index];
+            push_worker_agent(worker, depth, None, family);
+            append_children(&worker.id, depth + 1, children, workers, family);
+        }
+    }
+}
+
+fn push_worker_agent(
+    worker: &WorkerRecord,
+    depth: usize,
+    reason: Option<String>,
+    family: &mut AgentFamily,
+) {
+    let role = worker.role.clone().unwrap_or_else(|| {
+        family.diagnostics.missing_role = family.diagnostics.missing_role.saturating_add(1);
+        "Unknown".into()
+    });
+    let provisional = worker.ended_at.is_none();
+    let end = worker.ended_at.or(worker.latest_at).or(worker.started_at);
+    if worker
+        .started_at
+        .zip(end)
+        .is_none_or(|(start, end)| end < start)
+    {
+        family.diagnostics.invalid_timing = family.diagnostics.invalid_timing.saturating_add(1);
+    }
+    family.agents.push(AgentNode {
+        id: worker.id.clone(),
+        role,
+        label: worker.label.clone(),
+        parent: worker.parent_id.clone(),
+        unlinked_reason: reason,
+        state: worker.state.clone(),
+        path: worker.path.clone(),
+        start: worker.started_at,
+        end,
+        provisional,
+        depth,
+        telemetry: worker.telemetry.clone(),
+    });
+}
+
+fn finalize_family(family: &mut AgentFamily) {
+    let valid_intervals: Vec<_> = family
+        .agents
+        .iter()
+        .filter_map(|agent| agent.start.zip(agent.end))
+        .filter(|(start, end)| end >= start)
+        .collect();
+    family.start = valid_intervals.iter().map(|(start, _)| *start).min();
+    family.end = valid_intervals.iter().map(|(_, end)| *end).max();
+    let mut by_role: BTreeMap<String, Vec<(i64, i64)>> = BTreeMap::new();
+    let mut counts: BTreeMap<String, (usize, usize, bool)> = BTreeMap::new();
+    for agent in &family.agents {
+        let entry = counts.entry(agent.role.clone()).or_default();
+        entry.0 += 1;
+        entry.2 |= agent.provisional;
+        if let Some((start, end)) = agent
+            .start
+            .zip(agent.end)
+            .filter(|(start, end)| end >= start)
+        {
+            entry.1 += 1;
+            by_role
+                .entry(agent.role.clone())
+                .or_default()
+                .push((start, end));
+        }
+    }
+    for (role, (agent_count, timed_count, provisional)) in counts {
+        let merged = interval_union(by_role.remove(&role).unwrap_or_default());
+        family.roles.push(RoleWall {
+            role,
+            agent_count,
+            timed_count,
+            wall_ms: (timed_count == agent_count)
+                .then(|| interval_total(&merged))
+                .flatten(),
+            provisional,
+        });
+    }
+    family.roles.sort_by(|left, right| {
+        (left.role != "Main")
+            .cmp(&(right.role != "Main"))
+            .then_with(|| right.wall_ms.cmp(&left.wall_ms))
+            .then_with(|| left.role.cmp(&right.role))
+    });
+    let role_intervals: Vec<_> = family
+        .roles
+        .iter()
+        .filter(|role| role.timed_count == role.agent_count)
+        .map(|role| {
+            interval_union(
+                family
+                    .agents
+                    .iter()
+                    .filter(|agent| agent.role == role.role)
+                    .filter_map(|agent| agent.start.zip(agent.end))
+                    .collect(),
+            )
+        })
+        .collect();
+    family.cross_role_overlap_ms = cross_role_overlap(&role_intervals);
 }
 
 #[derive(Default)]
@@ -1331,16 +2009,10 @@ pub fn run(session: Option<String>) -> Result<()> {
     }
     let cwd = fs::canonicalize(std::env::current_dir()?)?;
     let path = find_session(&session_root()?, &cwd, session.as_deref())?;
-    let mut source = LiveSource::open(path)?;
+    let mut source = LiveSource::open(path.clone())?;
     let mut dashboard = aggregate(&source.model);
-    let mut state = UiState {
-        row: dashboard
-            .lanes
-            .iter()
-            .position(|lane| !lane.events.is_empty())
-            .unwrap_or(0),
-        ..UiState::default()
-    };
+    dashboard.family = build_family(&path, &dashboard);
+    let mut state = UiState::default();
     let _guard = TerminalGuard::enter()?;
     let mut terminal = Terminal::new(CrosstermBackend::new(io::stdout()))?;
     terminal.clear()?;
@@ -1350,8 +2022,9 @@ pub fn run(session: Option<String>) -> Result<()> {
         if refreshed.elapsed() >= Duration::from_secs(1) {
             if source.read_updates()? {
                 dashboard = aggregate(&source.model);
-                clamp_selection(&dashboard, &mut state);
             }
+            dashboard.family = build_family(&path, &dashboard);
+            clamp_selection(&dashboard, &mut state);
             refreshed = Instant::now();
         }
         if !event::poll(Duration::from_millis(100))? {
@@ -1377,18 +2050,18 @@ pub fn run(session: Option<String>) -> Result<()> {
                 state.event = 0;
             }
             KeyCode::Down => {
-                state.row = (state.row + 1).min(dashboard.lanes.len().saturating_sub(1));
+                state.row = (state.row + 1).min(selectable_count(&dashboard).saturating_sub(1));
                 state.event = 0;
             }
             KeyCode::Left => state.event = state.event.saturating_sub(1),
             KeyCode::Right => {
-                let count = dashboard
-                    .lanes
-                    .get(state.row)
-                    .map_or(0, |lane| lane.events.len());
+                let count = selected_lane(&dashboard, &state).map_or(0, |lane| lane.events.len());
                 state.event = (state.event + 1).min(count.saturating_sub(1));
             }
-            KeyCode::Enter if selected_activity(&dashboard, &state).is_some() => {
+            KeyCode::Enter
+                if selected_activity(&dashboard, &state).is_some()
+                    || selected_agent(&dashboard, &state).is_some() =>
+            {
                 state.inspect = true;
             }
             _ => {}
@@ -1396,21 +2069,30 @@ pub fn run(session: Option<String>) -> Result<()> {
     }
     Ok(())
 }
+fn selectable_count(dashboard: &Dashboard) -> usize {
+    dashboard
+        .family
+        .agents
+        .len()
+        .saturating_add(dashboard.lanes.len())
+}
+fn selected_lane<'a>(dashboard: &'a Dashboard, state: &UiState) -> Option<&'a Lane> {
+    let index = state.row.checked_sub(dashboard.family.agents.len())?;
+    dashboard.lanes.get(index)
+}
 fn clamp_selection(dashboard: &Dashboard, state: &mut UiState) {
-    state.row = state.row.min(dashboard.lanes.len().saturating_sub(1));
-    let count = dashboard
-        .lanes
-        .get(state.row)
-        .map_or(0, |lane| lane.events.len());
+    state.row = state.row.min(selectable_count(dashboard).saturating_sub(1));
+    let count = selected_lane(dashboard, state).map_or(0, |lane| lane.events.len());
     state.event = state.event.min(count.saturating_sub(1));
 }
 fn selected_activity<'a>(dashboard: &'a Dashboard, state: &UiState) -> Option<&'a Activity> {
-    dashboard
-        .lanes
-        .get(state.row)?
+    selected_lane(dashboard, state)?
         .events
         .get(state.event)
         .and_then(|index| dashboard.activities.get(*index))
+}
+fn selected_agent<'a>(dashboard: &'a Dashboard, state: &UiState) -> Option<&'a AgentNode> {
+    dashboard.family.agents.get(state.row)
 }
 
 const MAX_DASHBOARD_WIDTH: u16 = 200;
@@ -1420,6 +2102,7 @@ const SUMMARY_WIDTH: usize = 22;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum ActivityRow {
     Group { name: &'static str },
+    Agent { agent_index: usize },
     Lane { lane_index: usize, depth: usize },
 }
 
@@ -1446,6 +2129,40 @@ impl TimelineGeometry {
     }
 }
 
+fn timeline_rows(dashboard: &Dashboard) -> Vec<ActivityRow> {
+    let mut rows = Vec::with_capacity(dashboard.lanes.len() + dashboard.family.agents.len() + 6);
+    if !dashboard.family.agents.is_empty() {
+        rows.push(ActivityRow::Group { name: "AGENTS" });
+        let mut unlinked = false;
+        for (agent_index, agent) in dashboard.family.agents.iter().enumerate() {
+            if agent.unlinked_reason.is_some() && !unlinked {
+                rows.push(ActivityRow::Group { name: "UNLINKED" });
+                unlinked = true;
+            }
+            rows.push(ActivityRow::Agent { agent_index });
+        }
+    }
+    let mut previous_group = None;
+    for (lane_index, lane) in dashboard.lanes.iter().enumerate() {
+        let group = match lane.kind {
+            LaneKind::Turns | LaneKind::User => "RUN",
+            LaneKind::Generation => "MODEL",
+            LaneKind::Tool => "TOOLS",
+            LaneKind::Compaction | LaneKind::Auxiliary | LaneKind::UnmatchedResult => "SYSTEM",
+        };
+        if previous_group != Some(group) {
+            rows.push(ActivityRow::Group { name: group });
+        }
+        rows.push(ActivityRow::Lane {
+            lane_index,
+            depth: 1,
+        });
+        previous_group = Some(group);
+    }
+    rows
+}
+
+#[cfg(test)]
 fn activity_rows(lanes: &[Lane]) -> Vec<ActivityRow> {
     let mut rows = Vec::with_capacity(lanes.len() + 4);
     let mut previous_group = None;
@@ -1497,11 +2214,17 @@ fn render(frame: &mut ratatui::Frame<'_>, dashboard: &Dashboard, state: &UiState
         sections[2],
     );
     render_timeline(frame, sections[3], dashboard, state);
-    let diagnostics = if dashboard.diagnostics.issue_count() > 0 {
-        format!(
-            "  · telemetry incomplete ({})",
-            diagnostic_summary(&dashboard.diagnostics)
-        )
+    let diagnostics = if dashboard.diagnostics.issue_count() > 0
+        || dashboard.family.diagnostics.issue_count() > 0
+    {
+        let mut summaries = Vec::new();
+        if dashboard.diagnostics.issue_count() > 0 {
+            summaries.push(diagnostic_summary(&dashboard.diagnostics));
+        }
+        if dashboard.family.diagnostics.issue_count() > 0 {
+            summaries.push(family_diagnostic_summary(&dashboard.family.diagnostics));
+        }
+        format!("  · telemetry incomplete ({})", summaries.join(" · "))
     } else if dashboard.provisional {
         "  · provisional".into()
     } else {
@@ -1521,10 +2244,12 @@ fn render(frame: &mut ratatui::Frame<'_>, dashboard: &Dashboard, state: &UiState
         ])),
         sections[4],
     );
-    if state.inspect
-        && let Some(activity) = selected_activity(dashboard, state)
-    {
-        render_inspector(frame, area, dashboard, activity);
+    if state.inspect {
+        if let Some(agent) = selected_agent(dashboard, state) {
+            render_agent_inspector(frame, area, agent);
+        } else if let Some(activity) = selected_activity(dashboard, state) {
+            render_inspector(frame, area, dashboard, activity);
+        }
     }
 }
 
@@ -1583,9 +2308,11 @@ fn render_stats(frame: &mut ratatui::Frame<'_>, area: Rect, dashboard: &Dashboar
     let cols = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([
-            Constraint::Percentage(46),
-            Constraint::Percentage(8),
-            Constraint::Percentage(46),
+            Constraint::Percentage(32),
+            Constraint::Percentage(2),
+            Constraint::Percentage(32),
+            Constraint::Percentage(2),
+            Constraint::Percentage(32),
         ])
         .split(body);
     let m = &dashboard.metrics;
@@ -1664,8 +2391,52 @@ fn render_stats(frame: &mut ratatui::Frame<'_>, area: Rect, dashboard: &Dashboar
     );
     push_duration(&mut right, "  avg", m.tool_avg_ms, ORANGE, rw);
     push_duration(&mut right, "  p95", m.tool_p95_ms, ORANGE, rw);
+    let role_width = cols[4].width as usize;
+    let family_wall = dashboard
+        .family
+        .start
+        .zip(dashboard.family.end)
+        .and_then(|(start, end)| end.checked_sub(start))
+        .unwrap_or(0);
+    let mut roles = vec![heading("ROLE WALL")];
+    for role in &dashboard.family.roles {
+        let value = role.wall_ms.map_or_else(
+            || format!("timed {}/{}", role.timed_count, role.agent_count),
+            |wall| {
+                let bar_width = if family_wall > 0 {
+                    ((wall as i128 * 5) / family_wall as i128).clamp(1, 5) as usize
+                } else {
+                    0
+                };
+                format!(
+                    "{} {}{}",
+                    "█".repeat(bar_width),
+                    format_duration(wall),
+                    if role.provisional { "+" } else { "" }
+                )
+            },
+        );
+        roles.push(stat_owned(
+            format!("  {} ×{}", truncate_right(&role.role, 10), role.agent_count),
+            value,
+            role_color(&role.role),
+            role_width,
+        ));
+    }
+    roles.push(Line::raw(""));
+    roles.push(stat_owned(
+        "  overlap allowed".into(),
+        dashboard
+            .family
+            .cross_role_overlap_ms
+            .map(format_duration)
+            .unwrap_or_else(|| "—".into()),
+        MINT,
+        role_width,
+    ));
     frame.render_widget(Paragraph::new(left), cols[0]);
     frame.render_widget(Paragraph::new(right), cols[2]);
+    frame.render_widget(Paragraph::new(roles), cols[4]);
     frame.render_widget(
         Paragraph::new(vec![
             Line::styled(
@@ -1730,8 +2501,14 @@ fn push_time_share(
 }
 
 fn stat(label: &'static str, value: String, color: Color, width: usize) -> Line<'static> {
+    stat_owned(label.to_owned(), value, color, width)
+}
+
+fn stat_owned(label: String, value: String, color: Color, width: usize) -> Line<'static> {
     let value_width = value.chars().count();
-    let label_width = width.saturating_sub(value_width).max(label.len() + 1);
+    let label_width = width
+        .saturating_sub(value_width)
+        .max(label.chars().count() + 1);
     let value_style = if value == "—" {
         Style::default().fg(TRACK)
     } else {
@@ -1750,24 +2527,27 @@ fn render_timeline(
     state: &UiState,
 ) {
     let geometry = TimelineGeometry::new(area.width);
-    let rows = activity_rows(&dashboard.lanes);
+    let rows = timeline_rows(dashboard);
     let row_capacity = area.height.saturating_sub(4) as usize;
     let selected_row = rows
         .iter()
-        .position(
-            |row| matches!(row, ActivityRow::Lane { lane_index, .. } if *lane_index == state.row),
-        )
+        .enumerate()
+        .filter(|(_, row)| matches!(row, ActivityRow::Agent { .. } | ActivityRow::Lane { .. }))
+        .nth(state.row)
+        .map(|(index, _)| index)
         .unwrap_or(0);
     let scroll = selected_row.saturating_sub(row_capacity.saturating_sub(2));
-    let elapsed = dashboard
-        .metrics
-        .wall_ms
+    let (timeline_start, timeline_end) = timeline_bounds(dashboard);
+    let timeline_wall = timeline_start
+        .zip(timeline_end)
+        .map(|(start, end)| end.saturating_sub(start));
+    let elapsed = timeline_wall
         .map(format_duration)
         .unwrap_or_else(|| "unavailable".into());
     let range = format!(
         "{} → {} · {elapsed}",
-        clock(dashboard.start),
-        clock(dashboard.end)
+        clock(timeline_start),
+        clock(timeline_end)
     );
     let mut lines = vec![
         Line::from(vec![
@@ -1779,24 +2559,28 @@ fn render_timeline(
             Span::styled(range, Style::default().fg(MUTED)),
         ]),
         timeline_color_legend(),
-        timeline_axis(geometry, dashboard.metrics.wall_ms),
-        timeline_guides(geometry, dashboard.metrics.wall_ms),
+        timeline_axis(geometry, timeline_wall),
+        timeline_guides(geometry, timeline_wall),
     ];
-    for row in rows.iter().skip(scroll).take(row_capacity) {
+    for (row_index, row) in rows.iter().enumerate().skip(scroll).take(row_capacity) {
+        let selected = row_index == selected_row;
         let line = match *row {
             ActivityRow::Group { name } => group_line(name, geometry),
-            ActivityRow::Lane { lane_index, depth } => {
-                let selected = lane_index == state.row;
-                render_lane(
-                    &dashboard.lanes[lane_index],
-                    dashboard,
-                    geometry,
-                    depth,
-                    lane_index % 2 == 1,
-                    selected,
-                    selected.then_some(state.event),
-                )
-            }
+            ActivityRow::Agent { agent_index } => render_agent_row(
+                &dashboard.family.agents[agent_index],
+                dashboard,
+                geometry,
+                selected,
+            ),
+            ActivityRow::Lane { lane_index, depth } => render_lane(
+                &dashboard.lanes[lane_index],
+                dashboard,
+                geometry,
+                depth,
+                lane_index % 2 == 1,
+                selected,
+                selected.then_some(state.event),
+            ),
         };
         lines.push(line);
     }
@@ -1923,6 +2707,99 @@ fn timeline_axis(geometry: TimelineGeometry, wall_ms: Option<i64>) -> Line<'stat
     ])
 }
 
+fn timeline_bounds(dashboard: &Dashboard) -> (Option<i64>, Option<i64>) {
+    (
+        dashboard.family.start.or(dashboard.start),
+        dashboard.family.end.or(dashboard.end),
+    )
+}
+
+fn render_agent_row(
+    agent: &AgentNode,
+    dashboard: &Dashboard,
+    geometry: TimelineGeometry,
+    selected: bool,
+) -> Line<'static> {
+    let mut cells = vec!['·'; geometry.plot_width];
+    let mut colors = vec![TRACK; geometry.plot_width];
+    let (timeline_start, timeline_end) = timeline_bounds(dashboard);
+    let timeline_wall = timeline_start
+        .zip(timeline_end)
+        .map(|(start, end)| end.saturating_sub(start));
+    for (position, _) in time_ticks(geometry.plot_width, timeline_wall) {
+        cells[position] = '┊';
+        colors[position] = GRID;
+    }
+    if let Some((start, end)) = agent
+        .start
+        .zip(agent.end)
+        .filter(|(start, end)| end >= start)
+    {
+        let (first, last) = scale_interval(
+            start,
+            end,
+            timeline_start,
+            timeline_end,
+            geometry.plot_width,
+        );
+        for index in first..=last {
+            cells[index] = if agent.provisional { '▒' } else { '█' };
+            colors[index] = role_color(&agent.role);
+        }
+    }
+    let background = selected.then_some(Color::Rgb(51, 65, 85));
+    let prefix = if selected { "› " } else { "  " };
+    let connector = if agent.depth == 0 {
+        String::new()
+    } else {
+        format!("{}└─", "  ".repeat(agent.depth.saturating_sub(1)))
+    };
+    let available = geometry
+        .label_width
+        .saturating_sub(prefix.chars().count() + connector.chars().count() + 1);
+    let label = truncate_right(&format!("{} · {}", agent.role, agent.label), available);
+    let mut style = Style::default().fg(if selected { Color::White } else { MUTED });
+    if selected {
+        style = style.add_modifier(Modifier::BOLD);
+    }
+    if let Some(background) = background {
+        style = style.bg(background);
+    }
+    let mut spans = vec![Span::styled(
+        format!("{prefix}{connector}{label:<available$}│"),
+        style,
+    )];
+    for index in 0..geometry.plot_width {
+        let mut cell_style = Style::default().fg(colors[index]);
+        if let Some(background) = background {
+            cell_style = cell_style.bg(background);
+        }
+        spans.push(Span::styled(cells[index].to_string(), cell_style));
+    }
+    let state = truncate_left(&agent.state, 5);
+    let duration = agent
+        .start
+        .zip(agent.end)
+        .filter(|(start, end)| end >= start)
+        .map(|(start, end)| {
+            format!(
+                "{}{}",
+                format_duration(end - start),
+                if agent.provisional { "+" } else { "" }
+            )
+        })
+        .unwrap_or_else(|| "unknown".into());
+    let mut summary_style = Style::default().fg(if selected { Color::White } else { MUTED });
+    if let Some(background) = background {
+        summary_style = summary_style.bg(background);
+    }
+    spans.push(Span::styled(
+        format!("│  {state:>5} {:>13}", truncate_left(&duration, 13)),
+        summary_style,
+    ));
+    Line::from(spans)
+}
+
 fn render_lane(
     lane: &Lane,
     dashboard: &Dashboard,
@@ -1937,7 +2814,11 @@ fn render_lane(
     let mut colors = vec![TRACK; bucket_count];
     let mut highlights = vec![false; bucket_count];
     let mut density = vec![0.0; bucket_count];
-    for (position, _) in time_ticks(bucket_count, dashboard.metrics.wall_ms) {
+    let (timeline_start, timeline_end) = timeline_bounds(dashboard);
+    let timeline_wall = timeline_start
+        .zip(timeline_end)
+        .map(|(start, end)| end.saturating_sub(start));
+    for (position, _) in time_ticks(bucket_count, timeline_wall) {
         cells[position] = '┊';
         colors[position] = GRID;
     }
@@ -1946,11 +2827,11 @@ fn render_lane(
         cells.fill('─');
         colors.fill(MUTED);
         for (number, at) in dashboard.turn_starts.iter().enumerate() {
-            let start = scale_point(*at, dashboard.start, dashboard.end, bucket_count);
+            let start = scale_point(*at, timeline_start, timeline_end, bucket_count);
             let end = dashboard
                 .turn_starts
                 .get(number + 1)
-                .map(|at| scale_point(*at, dashboard.start, dashboard.end, bucket_count))
+                .map(|at| scale_point(*at, timeline_start, timeline_end, bucket_count))
                 .unwrap_or(bucket_count - 1);
             cells[start] = '├';
             let label = format!(" {} ", number + 1);
@@ -1981,8 +2862,8 @@ fn render_lane(
             let (start, end) = scale_interval(
                 event.start,
                 event.end,
-                dashboard.start,
-                dashboard.end,
+                timeline_start,
+                timeline_end,
                 bucket_count,
             );
             for value in &mut highlights[start..=end] {
@@ -2068,7 +2949,7 @@ fn render_lane(
 
 fn activity_density(lane: &Lane, dashboard: &Dashboard, width: usize) -> Vec<f64> {
     let mut density = vec![0.0; width];
-    let (Some(session_start), Some(session_end)) = (dashboard.start, dashboard.end) else {
+    let (Some(session_start), Some(session_end)) = timeline_bounds(dashboard) else {
         return density;
     };
     let session_duration = session_end.saturating_sub(session_start);
@@ -2126,6 +3007,21 @@ fn activity_glyph(load: f64) -> char {
     } else {
         let eighths = (load * 8.0).round().clamp(1.0, 7.0) as usize;
         PARTIAL_BLOCKS[eighths - 1]
+    }
+}
+
+fn role_color(role: &str) -> Color {
+    match role {
+        "Main" => Color::White,
+        "Explore" => BLUE,
+        "Plan" | "Review" => PURPLE,
+        "Implement" | "Test" => GREEN,
+        _ => {
+            let hash = role
+                .bytes()
+                .fold(0_u8, |hash, byte| hash.wrapping_mul(31).wrapping_add(byte));
+            [BLUE, GREEN, ORANGE, PURPLE, MINT][hash as usize % 5]
+        }
     }
 }
 
@@ -2351,6 +3247,84 @@ fn render_inspector(
     );
 }
 
+fn render_agent_inspector(frame: &mut ratatui::Frame<'_>, area: Rect, agent: &AgentNode) {
+    let width = area.width.min(82);
+    let height = area.height.min(24);
+    let popup = Rect::new(
+        area.x + (area.width - width) / 2,
+        area.y + (area.height - height) / 2,
+        width,
+        height,
+    );
+    let relationship = agent.unlinked_reason.as_deref().map_or_else(
+        || {
+            agent.parent.as_deref().map_or_else(
+                || "family root".into(),
+                |parent| format!("child of {}", short_id(parent)),
+            )
+        },
+        |reason| format!("Unlinked: {reason}"),
+    );
+    let lines = vec![
+        heading("AGENT"),
+        inspection_line("hub id", &agent.id),
+        inspection_line("role / label", &format!("{} / {}", agent.role, agent.label)),
+        inspection_line("relationship", &relationship),
+        inspection_line("state", &agent.state),
+        inspection_line(
+            "start",
+            &agent
+                .start
+                .map(timestamp_text)
+                .unwrap_or_else(|| "unavailable".into()),
+        ),
+        inspection_line(
+            "end",
+            &agent
+                .end
+                .map(timestamp_text)
+                .unwrap_or_else(|| "unavailable".into()),
+        ),
+        inspection_line(
+            "lifecycle",
+            &agent
+                .start
+                .zip(agent.end)
+                .map(|(start, end)| {
+                    format!(
+                        "{}{}",
+                        format_duration(end.saturating_sub(start)),
+                        if agent.provisional {
+                            " lower bound"
+                        } else {
+                            ""
+                        }
+                    )
+                })
+                .unwrap_or_else(|| "unavailable".into()),
+        ),
+        inspection_line("session", &agent.path.display().to_string()),
+        Line::raw(""),
+        heading("CHILD SESSION"),
+        inspection_line("elapsed", &optional_duration(agent.telemetry.wall_ms)),
+        inspection_line("turns", &agent.telemetry.turns.to_string()),
+        inspection_line("model calls", &agent.telemetry.generations.to_string()),
+        inspection_line("tool calls", &agent.telemetry.tools.to_string()),
+        Line::raw(""),
+        Line::styled("Esc close", Style::default().fg(MUTED)),
+    ];
+    frame.render_widget(Clear, popup);
+    frame.render_widget(
+        Paragraph::new(lines).block(
+            Block::default()
+                .title(" Inspect agent ")
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(MUTED)),
+        ),
+        popup,
+    );
+}
+
 fn inspection_line(label: &str, value: &str) -> Line<'static> {
     Line::from(vec![
         Span::styled(format!("{label:<14}"), Style::default().fg(MUTED)),
@@ -2366,6 +3340,21 @@ fn optional_duration(value: Option<i64>) -> String {
 
 fn optional_count(value: Option<u64>) -> String {
     value.map(compact).unwrap_or_else(|| "unavailable".into())
+}
+
+fn family_diagnostic_summary(diagnostics: &FamilyDiagnostics) -> String {
+    let mut parts = Vec::new();
+    let mut add = |label: &str, count: u64| {
+        if count > 0 {
+            parts.push(format!("{label} {count}"));
+        }
+    };
+    add("worker files", diagnostics.unreadable);
+    add("relationships", diagnostics.relationship);
+    add("worker timing", diagnostics.invalid_timing);
+    add("worker roles", diagnostics.missing_role);
+    add("ownership", diagnostics.ownership);
+    parts.join(" · ")
 }
 
 fn diagnostic_summary(diagnostics: &Diagnostics) -> String {
@@ -3955,6 +4944,268 @@ mod tests {
         ] {
             assert!(text.contains(expected), "missing {expected:?}");
         }
+    }
+
+    #[test]
+    fn agent_rows_render_hierarchy_and_provisional_lifecycle_on_family_axis() {
+        let mut dashboard = Dashboard {
+            start: Some(0),
+            end: Some(100),
+            metrics: Metrics {
+                wall_ms: Some(100),
+                ..Metrics::default()
+            },
+            family: AgentFamily {
+                agents: vec![
+                    AgentNode {
+                        id: "main".into(),
+                        role: "Main".into(),
+                        label: "Main".into(),
+                        start: Some(0),
+                        end: Some(100),
+                        ..AgentNode::default()
+                    },
+                    AgentNode {
+                        id: "child".into(),
+                        role: "Explore".into(),
+                        label: "search".into(),
+                        start: Some(20),
+                        end: Some(120),
+                        provisional: true,
+                        depth: 1,
+                        ..AgentNode::default()
+                    },
+                    AgentNode {
+                        id: "orphan".into(),
+                        role: "Review".into(),
+                        label: "orphan".into(),
+                        unlinked_reason: Some("missing parent".into()),
+                        start: Some(30),
+                        end: Some(40),
+                        depth: 1,
+                        ..AgentNode::default()
+                    },
+                ],
+                ..AgentFamily::default()
+            },
+            ..Dashboard::default()
+        };
+        finalize_family(&mut dashboard.family);
+        let rows = timeline_rows(&dashboard);
+        assert!(matches!(rows[0], ActivityRow::Group { name: "AGENTS" }));
+        assert!(matches!(rows[3], ActivityRow::Group { name: "UNLINKED" }));
+        let line = render_agent_row(
+            &dashboard.family.agents[1],
+            &dashboard,
+            TimelineGeometry::new(100),
+            true,
+        );
+        let text = line
+            .spans
+            .iter()
+            .map(|span| span.content.as_ref())
+            .collect::<String>();
+        assert_eq!(text.chars().count(), 100);
+        assert!(text.contains("└─"));
+        assert!(text.contains('▒'));
+        assert!(text.contains('+'));
+    }
+
+    #[test]
+    fn role_wall_uses_interval_unions_and_reports_cross_role_overlap() {
+        let agent = |role: &str, start, end, provisional| AgentNode {
+            role: role.into(),
+            start,
+            end,
+            provisional,
+            ..AgentNode::default()
+        };
+        let mut family = AgentFamily {
+            agents: vec![
+                agent("Main", Some(0), Some(100), false),
+                agent("Explore", Some(20), Some(80), false),
+                agent("Explore", Some(50), Some(120), true),
+                agent("Review", None, None, false),
+                agent("Invalid", Some(-100), Some(-200), false),
+            ],
+            ..AgentFamily::default()
+        };
+        finalize_family(&mut family);
+        let role = |name: &str| family.roles.iter().find(|role| role.role == name).unwrap();
+        assert_eq!(role("Main").wall_ms, Some(100));
+        assert_eq!(role("Explore").wall_ms, Some(100));
+        assert!(role("Explore").provisional);
+        assert_eq!(role("Review").wall_ms, None);
+        assert_eq!(family.cross_role_overlap_ms, Some(80));
+        assert_eq!((family.start, family.end), (Some(0), Some(120)));
+
+        let mut one_role = AgentFamily {
+            agents: vec![
+                agent("Explore", Some(0), Some(100), false),
+                agent("Explore", Some(20), Some(80), false),
+            ],
+            ..AgentFamily::default()
+        };
+        finalize_family(&mut one_role);
+        assert_eq!(one_role.cross_role_overlap_ms, Some(0));
+    }
+
+    #[test]
+    fn worker_family_preserves_hierarchy_unlinked_nodes_and_selected_subtrees() {
+        let nonce = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root =
+            std::env::temp_dir().join(format!("dev-agent-family-{}-{nonce}", std::process::id()));
+        fs::create_dir_all(&root).unwrap();
+        let main = root.join("main.jsonl");
+        let cwd = fs::canonicalize(&root).unwrap();
+        let write_lines = |path: &Path, values: Vec<Value>| {
+            let mut file = File::create(path).unwrap();
+            for value in values {
+                writeln!(file, "{value}").unwrap();
+            }
+        };
+        write_lines(
+            &main,
+            vec![
+                serde_json::json!({"type":"session","version":3,"id":"main","timestamp":"1970-01-01T00:00:00Z","cwd":cwd}),
+                serde_json::json!({"type":"message","id":"u","parentId":null,"timestamp":"1970-01-01T00:00:10Z","message":{"role":"user"}}),
+            ],
+        );
+        let workers = PathBuf::from(format!("{}.workers", main.display()));
+        fs::create_dir_all(&workers).unwrap();
+        let worker = |name: &str,
+                      id: &str,
+                      role: &str,
+                      parent: Option<&str>,
+                      started: i64,
+                      ended: Option<i64>,
+                      timestamp: &str| {
+            let path = workers.join(format!("{name}.jsonl"));
+            write_lines(
+                &path,
+                vec![
+                    serde_json::json!({"type":"session","version":3,"id":format!("session-{id}"),"timestamp":"1970-01-01T00:00:01Z","cwd":cwd,"parentSession":main}),
+                    serde_json::json!({"type":"custom","customType":"dev-worker-v1","id":format!("meta-{id}"),"parentId":null,"timestamp":timestamp,"data":{"id":id,"label":name,"role":role,"metadata":{"parentId":parent},"startedAt":started,"endedAt":ended,"state":if ended.is_some() { "completed" } else { "running" }}}),
+                ],
+            );
+            path
+        };
+        let explore = worker(
+            "explore",
+            "w1",
+            "Explore",
+            None,
+            1_000,
+            Some(5_000),
+            "1970-01-01T00:00:05Z",
+        );
+        worker(
+            "implement",
+            "w2",
+            "Implement",
+            Some("w1"),
+            2_000,
+            None,
+            "1970-01-01T00:00:06Z",
+        );
+        worker(
+            "orphan",
+            "w3",
+            "Review",
+            Some("missing"),
+            3_000,
+            Some(4_000),
+            "1970-01-01T00:00:04Z",
+        );
+        worker(
+            "cycle-a",
+            "c1",
+            "Review",
+            Some("c2"),
+            7_000,
+            Some(8_000),
+            "1970-01-01T00:00:08Z",
+        );
+        worker(
+            "cycle-b",
+            "c2",
+            "Review",
+            Some("c1"),
+            8_000,
+            Some(9_000),
+            "1970-01-01T00:00:09Z",
+        );
+        worker(
+            "duplicate-a",
+            "dup",
+            "Test",
+            None,
+            9_000,
+            Some(10_000),
+            "1970-01-01T00:00:10Z",
+        );
+        worker(
+            "duplicate-b",
+            "dup",
+            "Test",
+            None,
+            10_000,
+            Some(11_000),
+            "1970-01-01T00:00:11Z",
+        );
+
+        let source = LiveSource::open(main.clone()).unwrap();
+        let dashboard = aggregate(&source.model);
+        let family = build_family(&main, &dashboard);
+        assert_eq!(
+            family
+                .agents
+                .iter()
+                .take(3)
+                .map(|agent| agent.id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["main", "w1", "w2"]
+        );
+        assert_eq!(family.agents[1].depth, 1);
+        assert_eq!(family.agents[2].depth, 2);
+        assert!(
+            family.agents.iter().any(|agent| agent.id == "w3"
+                && agent.unlinked_reason.as_deref() == Some("missing parent"))
+        );
+        assert_eq!(
+            family
+                .agents
+                .iter()
+                .filter(|agent| agent.unlinked_reason.as_deref() == Some("relationship cycle"))
+                .count(),
+            2
+        );
+        assert_eq!(
+            family
+                .agents
+                .iter()
+                .filter(|agent| agent.unlinked_reason.as_deref() == Some("duplicate worker id"))
+                .count(),
+            2
+        );
+        assert!(family.agents[2].provisional);
+        assert_eq!(family.diagnostics.relationship, 5);
+
+        let child_source = LiveSource::open(explore.clone()).unwrap();
+        let child_dashboard = aggregate(&child_source.model);
+        let subtree = build_family(&explore, &child_dashboard);
+        assert_eq!(
+            subtree
+                .agents
+                .iter()
+                .map(|agent| agent.id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["w1", "w2"]
+        );
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
