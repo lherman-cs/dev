@@ -339,8 +339,9 @@ export async function shipping(h: WorkflowHost, project: Project, phase: Workflo
       if (state.phase === "build") { await build(h, project); state.phase = "prepare"; persist(); }
       if (state.phase === "prepare") {
         try { await prepare(h, project, ship); }
-        catch (error) {
-          if (!error.gate) throw error;
+        catch (error: unknown) {
+          const gateError = error as GateError;
+          if (!gateError.gate) throw error;
           const signature = digest([gateError.gate, gateError.evidence]);
           if (state.last_failure === signature) throw blocked(`Final gate failure recurred: ${gateError.gate}`);
           const head = await git(h, "rev-parse", "HEAD");
