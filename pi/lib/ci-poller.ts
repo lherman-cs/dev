@@ -2,7 +2,9 @@ import type { CandidateIdentity, CiCheck, WaitOutcome } from "./ship-contracts.t
 
 export interface Clock { now(): number; sleep(ms: number, signal?: AbortSignal): Promise<void>; }
 export const systemClock: Clock = { now: () => Date.now(), sleep: (ms, signal) => new Promise((resolve, reject) => {
-  const timer = setTimeout(resolve, ms); const abort = () => { clearTimeout(timer); reject(new DOMException("Aborted", "AbortError")); };
+  if (signal?.aborted) { reject(new DOMException("Aborted", "AbortError")); return; }
+  const timer = setTimeout(() => { signal?.removeEventListener("abort", abort); resolve(); }, ms);
+  const abort = () => { clearTimeout(timer); reject(new DOMException("Aborted", "AbortError")); };
   signal?.addEventListener("abort", abort, { once: true });
 }) };
 export interface CiPollConfig { initialDelayMs: number; maxDelayMs: number; timeoutMs: number; }
@@ -21,15 +23,16 @@ export async function waitForCi(candidate: CandidateIdentity, requiredIds: reado
       await deps.persistObservation(candidate, latest, observedSignals);
       if (latest.some(check => check.head !== candidate.branch.head)) return finish("interrupted", "candidate_head_changed");
       const required = latest.filter(check => requiredIds.includes(check.id));
-      if (required.length !== requiredIds.length || new Set(required.map(check => check.id)).size !== requiredIds.length) return finish("interrupted", "required_check_identity_changed");
-      const checksDone = required.every(complete), signalsDone = expectedSignals.every(item => observedSignals.includes(item));
+      if (required.length !== new Set(required.map(check => check.id)).size || new Set(requiredIds).size !== requiredIds.length) return finish("interrupted", "required_check_identity_ambiguous");
+      const checksPresent = required.length === requiredIds.length;
+      const checksDone = checksPresent && required.every(complete), signalsDone = expectedSignals.every(item => observedSignals.includes(item));
       if (checksDone && required.some(check => !successful(check))) return finish("failed", "required_check_failed");
       if (checksDone && signalsDone) return finish("passed");
-      if (clock.now() - started >= config.timeoutMs) return finish("stale_timeout", signalsDone ? "checks_timeout" : "expected_review_signal_timeout");
+      if (clock.now() - started >= config.timeoutMs) return finish("stale_timeout", !checksPresent ? "required_checks_missing" : !checksDone ? "checks_timeout" : "expected_review_signal_timeout");
       await clock.sleep(delay, signal); delay = Math.min(config.maxDelayMs, Math.max(delay + 1, delay * 2));
     }
   } catch (error) {
     if (signal?.aborted || (error instanceof DOMException && error.name === "AbortError")) return finish("cancelled");
-    return finish("interrupted");
+    return finish("interrupted", error instanceof Error ? `observation_error:${error.message.slice(0, 300)}` : "observation_error");
   }
 }

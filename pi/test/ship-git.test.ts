@@ -22,6 +22,19 @@ test("ordinary push verifies publication and rewritten push uses an exact lease"
   assert.equal(pushCandidate(candidate, true, lease).mode, "lease"); assert.ok(calls.some(args => args[0]?.startsWith("--force-with-lease=") || args[1]?.startsWith("--force-with-lease=")));
 });
 
+test("a lost push response is reconciled from the remote without repeating the mutation", () => {
+  let remoteHead = remote, pushes = 0;
+  const git: GitRun = (_cwd, args) => {
+    if (args[0] === "rev-parse") return head;
+    if (args[0] === "status") return "";
+    if (args[0] === "ls-remote") return `${remoteHead}\trefs/heads/feature`;
+    if (args[0] === "push") { pushes++; remoteHead = head; throw new Error("connection reset after push"); }
+    throw new Error("unexpected command");
+  };
+  assert.equal(pushCandidate(candidate, false, git).mode, "ordinary");
+  assert.equal(pushCandidate(candidate, false, git).mode, "already_published");
+  assert.equal(pushes, 1);
+});
 test("rewritten push stops on a lease race", () => {
   const changed = "d".repeat(40), git = fake({ "rev-parse HEAD": head, "status --porcelain=v1 --untracked-files=all": "", "ls-remote --heads origin refs/heads/feature": `${changed}\trefs/heads/feature` }, []);
   assert.throws(() => pushCandidate(candidate, true, git), /lease changed/);

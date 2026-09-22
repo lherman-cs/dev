@@ -25,7 +25,7 @@ function call(run: GraphqlRun, query: string, variables: Record<string, string |
   for (const [name, value] of Object.entries(variables)) if (value !== null) args.push("-F", `${name}=${value}`);
   try { return JSON.parse(run(args)) as Node; } catch (error) { throw new Error(`GitHub GraphQL evidence failed: ${error instanceof Error ? error.message : String(error)}`); }
 }
-const prQuery = `query($owner:String!,$name:String!,$head:String!,$cursor:String){repository(owner:$owner,name:$name){pullRequests(first:100,after:$cursor,headRefName:$head,states:[OPEN]){nodes{number url state isDraft headRefName headRefOid baseRefName baseRefOid}pageInfo{hasNextPage endCursor}}}}`;
+const prQuery = `query($owner:String!,$name:String!,$head:String!,$cursor:String){repository(owner:$owner,name:$name){pullRequests(first:100,after:$cursor,headRefName:$head,states:[OPEN]){nodes{number url state isDraft headRefName headRefOid headRepository{nameWithOwner} baseRefName baseRefOid}pageInfo{hasNextPage endCursor}}}}`;
 const checkQuery = `query($owner:String!,$name:String!,$number:Int!,$cursor:String){repository(owner:$owner,name:$name){pullRequest(number:$number){commits(last:1){nodes{commit{oid statusCheckRollup{contexts(first:100,after:$cursor){nodes{__typename ... on CheckRun{id name status conclusion detailsUrl checkSuite{app{databaseId} commit{oid}}} ... on StatusContext{id context state targetUrl commit{oid}}}pageInfo{hasNextPage endCursor}}}}}}}}}`;
 const threadCommentsQuery = `query($id:ID!,$cursor:String){node(id:$id){... on PullRequestReviewThread{comments(first:100,after:$cursor){nodes{id body url createdAt author{login} commit{oid}}pageInfo{hasNextPage endCursor}}}}}`;
 const pageQuery = (field: string, selection: string) => `query($owner:String!,$name:String!,$number:Int!,$cursor:String){repository(owner:$owner,name:$name){pullRequest(number:$number){${field}(first:100,after:$cursor){nodes{${selection}}pageInfo{hasNextPage endCursor}}}}}`;
@@ -72,11 +72,23 @@ function checkPages(run: GraphqlRun, owner: string, name: string, number: number
 type Node = { data?: Node; node?: Node; repository?: Node; pullRequest?: Node; pullRequests?: Node; pageInfo?: Node; hasNextPage?: unknown; commits?: Node; commit?: Node; statusCheckRollup?: Node; contexts?: Node; comments?: Node; nodes?: Node[]; number?: unknown; isResolved?: unknown; isOutdated?: unknown; isDraft?: unknown; [key: string]: unknown };
 const nodes = (value: unknown): Node[] => Array.isArray((value as Node | undefined)?.nodes) ? (value as Node).nodes! : [];
 const string = (node: Node | undefined, key: string): string => typeof (node as Record<string, unknown> | undefined)?.[key] === "string" ? (node as Record<string, string>)[key]! : "";
+/** Lists matching repository-owned open PRs even when their head has not yet been pushed. */
+export function listBranchPullRequests(candidate: CandidateIdentity, run: GraphqlRun = ghGraphql): PullRequestIdentity[] {
+  const { owner, name } = parseRepository(candidate.remote.url);
+  return pullRequestPages(run, owner, name, candidate.branch.name).filter(pr =>
+    string(pr, "headRefName") === candidate.branch.name &&
+    string(pr["headRepository"] as Node, "nameWithOwner").toLowerCase() === `${owner}/${name}`.toLowerCase()
+  ).map(pr => {
+    const number = Number(pr.number);
+    if (!Number.isSafeInteger(number) || number < 1 || !string(pr, "headRefOid") || !string(pr, "baseRefOid") || !string(pr, "baseRefName")) throw new Error("GitHub returned an incomplete pull request identity.");
+    return { number, url: string(pr, "url"), state: "OPEN" as const, draft: Boolean(pr.isDraft), head: { name: candidate.branch.name, head: string(pr, "headRefOid") }, base: { ref: string(pr, "baseRefName"), oid: string(pr, "baseRefOid") } };
+  });
+}
 /** Fetches one immutable candidate evidence snapshot. It never mutates GitHub. */
 export function collectGitHubEvidence(candidate: CandidateIdentity, run: GraphqlRun = ghGraphql): GitHubEvidence {
   const { owner, name } = parseRepository(candidate.remote.url);
   const prs = pullRequestPages(run, owner, name, candidate.branch.name);
-  const matches = prs.filter(pr => string(pr, "headRefOid") === candidate.branch.head && string(pr, "baseRefOid") === candidate.base.oid && string(pr, "baseRefName") === candidate.base.ref);
+  const matches = prs.filter(pr => string(pr["headRepository"] as Node, "nameWithOwner").toLowerCase() === `${owner}/${name}`.toLowerCase() && string(pr, "headRefName") === candidate.branch.name && string(pr, "headRefOid") === candidate.branch.head && string(pr, "baseRefOid") === candidate.base.oid && string(pr, "baseRefName") === candidate.base.ref);
   if (matches.length !== 1) throw new Error(`Expected exactly one open pull request for ${candidate.branch.name} at ${candidate.branch.head}; found ${matches.length}.`);
   const pr = matches[0]!;
   const number = Number(pr.number); if (!Number.isSafeInteger(number) || number < 1) throw new Error("GitHub returned an invalid pull request number.");
@@ -126,34 +138,76 @@ export function ensureDraftPullRequest(candidate: CandidateIdentity, title: stri
   try { return collectGitHubEvidence(candidate, graphql); }
   catch (error) {
     if (!(error instanceof Error) || !/found 0\.$/.test(error.message)) throw error;
-    createDraftPullRequest(candidate, title, body, run);
+    const existing = listBranchPullRequests(candidate, graphql);
+    if (existing.length) throw new Error(`An open PR already exists for ${candidate.branch.name} (${existing.map(pr => `#${pr.number} at ${pr.head.head}`).join(", ")}); reconcile its base and head before creating a draft.`);
+    try { createDraftPullRequest(candidate, title, body, run); }
+    catch (createError) {
+      // The response can be lost after GitHub accepted the write. Observe before deciding
+      // whether another attempt is safe; never blindly issue a second create.
+      try { return collectGitHubEvidence(candidate, graphql); }
+      catch (observeError) {
+        throw new Error(`PR creation was not confirmed. Do not retry until the remote PR inventory is reconciled: ${observeError instanceof Error ? observeError.message : String(observeError)}`, { cause: createError });
+      }
+    }
     return collectGitHubEvidence(candidate, graphql);
   }
 }
 
 /** Changes only the exact observed draft PR to ready. This adapter exposes no merge operation. */
-export function markPullRequestReady(pr: PullRequestIdentity, candidate: CandidateIdentity, run: GhRun = ghRun): void {
+export function markPullRequestReady(pr: PullRequestIdentity, candidate: CandidateIdentity, run: GhRun = ghRun, graphql: GraphqlRun = ghGraphql): void {
   authenticateGitHub(run);
   if (!pr.draft || pr.state !== "OPEN" || pr.head.head !== candidate.branch.head || pr.base.oid !== candidate.base.oid) throw new Error("Pull request identity changed before ready-for-review.");
-  run(["pr", "ready", pr.url]);
+  const matches = listBranchPullRequests(candidate, graphql).filter(item => item.number === pr.number && item.url === pr.url);
+  if (matches.length !== 1 || matches[0]!.head.head !== candidate.branch.head || matches[0]!.base.oid !== candidate.base.oid || matches[0]!.base.ref !== candidate.base.ref || !matches[0]!.draft) throw new Error("Pull request identity changed before ready-for-review.");
+  try { run(["pr", "ready", pr.url]); }
+  catch (error) {
+    try {
+      const observed = listBranchPullRequests(candidate, graphql).filter(item => item.number === pr.number && item.url === pr.url);
+      if (observed.length === 1 && observed[0]!.head.head === candidate.branch.head && observed[0]!.base.oid === candidate.base.oid && !observed[0]!.draft) return;
+    } catch { /* An unavailable observation cannot certify readiness. */ }
+    throw new Error("Ready mutation was not confirmed; observe the exact PR before another attempt.", { cause: error });
+  }
 }
 
 export function readRequiredContexts(candidate: CandidateIdentity, run: GhRun = ghRun): RequiredContext[] {
   const { owner, name } = parseRepository(candidate.remote.url);
-  let value: unknown;
-  try { value = JSON.parse(run(["api", `repos/${owner}/${name}/branches/${encodeURIComponent(candidate.base.ref)}/protection/required_status_checks`])); }
+  const base = `repos/${owner}/${name}`, result: RequiredContext[] = [];
+  const add = (entry: unknown): void => {
+    if (!entry || typeof entry !== "object" || typeof (entry as Record<string, unknown>)["context"] !== "string" || !(entry as Record<string, string>)["context"]!.trim()) throw new Error("Branch policy returned an invalid check identity.");
+    const check = entry as Record<string, unknown>, app = check["app_id"] ?? check["integration_id"];
+    if (app !== undefined && (!Number.isInteger(app) || (app as number) < -1)) throw new Error("Branch policy returned an invalid app identity.");
+    result.push({ context: check["context"] as string, ...(typeof app === "number" && app >= 0 ? { appId: app } : {}) });
+  };
+  let protection: unknown;
+  try { protection = JSON.parse(run(["api", `${base}/branches/${encodeURIComponent(candidate.base.ref)}/protection/required_status_checks`])); }
   catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    if (/404|Branch not protected/i.test(message)) return [];
-    throw new Error(`Branch protection lookup failed: ${message}`);
+    if (!/404|Branch not protected/i.test(message)) throw new Error(`Branch protection lookup failed: ${message}`);
+    // A 404 alone is not evidence of no required checks: permissions and rulesets can hide them.
+    protection = null;
   }
-  if (!value || typeof value !== "object") throw new Error("Branch protection returned an invalid required-check configuration.");
-  const record = value as Record<string, unknown>, result: RequiredContext[] = [];
-  if (Array.isArray(record["contexts"])) for (const context of record["contexts"]) if (typeof context === "string") result.push({ context });
-  if (Array.isArray(record["checks"])) for (const check of record["checks"]) {
-    if (!check || typeof check !== "object" || typeof (check as Record<string, unknown>)["context"] !== "string") throw new Error("Branch protection returned an invalid check identity.");
-    const app = (check as Record<string, unknown>)["app_id"];
-    result.push({ context: (check as Record<string, string>)["context"]!, ...(typeof app === "number" ? { appId: app } : {}) });
+  if (protection !== null) {
+    if (!protection || typeof protection !== "object") throw new Error("Branch protection returned an invalid required-check configuration.");
+    const record = protection as Record<string, unknown>;
+    if (!Array.isArray(record["contexts"]) && !Array.isArray(record["checks"])) throw new Error("Branch protection omitted required-check configuration.");
+    if (Array.isArray(record["contexts"])) for (const context of record["contexts"]) add({ context });
+    if (Array.isArray(record["checks"])) for (const check of record["checks"]) add(check);
+  }
+  let rules: unknown;
+  try { rules = JSON.parse(run(["api", `${base}/rules/branches/${encodeURIComponent(candidate.base.ref)}`])); }
+  catch (error) { throw new Error(`Effective branch rules could not be verified: ${error instanceof Error ? error.message : String(error)}`); }
+  if (!Array.isArray(rules)) throw new Error("Effective branch rules returned an invalid policy.");
+  for (const rule of rules) {
+    if (!rule || typeof rule !== "object") throw new Error("Effective branch rules returned an invalid entry.");
+    const entry = rule as Record<string, unknown>;
+    if (entry["type"] !== "required_status_checks") {
+      // Readiness cannot infer the meaning of unsupported branch policy rules.
+      if (typeof entry["type"] !== "string") throw new Error("Effective branch rules returned an invalid rule type.");
+      continue;
+    }
+    const parameters = entry["parameters"] as Record<string, unknown> | undefined;
+    if (!parameters || !Array.isArray(parameters["required_status_checks"])) throw new Error("Effective ruleset omitted required-check identities.");
+    for (const check of parameters["required_status_checks"]) add(check);
   }
   const unique = new Map(result.map(item => [`${item.context}:${item.appId ?? "*"}`, item]));
   return [...unique.values()];

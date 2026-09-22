@@ -20,4 +20,9 @@ test("CI poller is cancellable and refuses missing, stale, or indefinitely pendi
   const controller = new AbortController(); controller.abort(); const cancelled = deps([]); assert.equal((await waitForCi(candidate, ["required"], cancelled, { initialDelayMs: 1, maxDelayMs: 2, timeoutMs: 10 }, controller.signal)).status, "cancelled");
   const stale = deps([[check("COMPLETED", "SUCCESS", "c".repeat(40))]]); assert.equal((await waitForCi(candidate, ["required"], stale, { initialDelayMs: 1, maxDelayMs: 2, timeoutMs: 10 })).status, "interrupted");
   const timeout = deps([[check("IN_PROGRESS")], [check("IN_PROGRESS")], [check("IN_PROGRESS")], [check("IN_PROGRESS")]]); assert.equal((await waitForCi(candidate, ["required"], timeout, { initialDelayMs: 2, maxDelayMs: 4, timeoutMs: 3 })).status, "stale_timeout");
+  const missing = deps([[], [], []]); const missingResult = await waitForCi(candidate, ["required"], missing, { initialDelayMs: 2, maxDelayMs: 4, timeoutMs: 3 });
+  assert.equal(missingResult.status, "stale_timeout"); assert.equal(missingResult.reason, "required_checks_missing");
+  assert.equal(missing.observationsSaved.length, 3);
+  const duplicate = deps([[check("COMPLETED", "SUCCESS"), check("COMPLETED", "SUCCESS")]]);
+  assert.equal((await waitForCi(candidate, ["required"], duplicate, { initialDelayMs: 1, maxDelayMs: 2, timeoutMs: 3 })).reason, "required_check_identity_ambiguous");
 });

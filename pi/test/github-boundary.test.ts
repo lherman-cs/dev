@@ -8,15 +8,29 @@ const pr: PullRequestIdentity = { number: 1, url: "https://github.com/o/r/pull/1
 
 test("GitHub mutations authenticate, create only a draft, and expose no merge path", () => {
   const calls: string[][] = []; const run: GhRun = args => { calls.push([...args]); return args[1] === "user" ? "octo" : "url"; };
-  assert.equal(authenticateGitHub(run), "octo"); createDraftPullRequest(candidate, "Title", "Body", run); markPullRequestReady(pr, candidate, run);
+  const graphql: GraphqlRun = () => JSON.stringify({ data: { repository: { pullRequests: { nodes: [{ number: 1, url: pr.url, headRefName: "f", headRefOid: oid, headRepository: { nameWithOwner: "o/r" }, baseRefName: "main", baseRefOid: base, isDraft: true }] } } } });
+  assert.equal(authenticateGitHub(run), "octo"); createDraftPullRequest(candidate, "Title", "Body", run); markPullRequestReady(pr, candidate, run, graphql);
   assert.ok(calls.some(args => args.includes("--draft"))); assert.ok(calls.some(args => args[0] === "pr" && args[1] === "ready")); assert.ok(!calls.flat().includes("merge"));
   assert.throws(() => markPullRequestReady({ ...pr, draft: false }, candidate, run), /identity changed/);
 });
 
+test("lost ready response is accepted only when the same exact PR is observed ready", () => {
+  let draft = true, calls = 0;
+  const run: GhRun = args => {
+    if (args[1] === "user") return "octo";
+    calls++; draft = false; throw new Error("connection lost");
+  };
+  const graphql: GraphqlRun = () => JSON.stringify({ data: { repository: { pullRequests: { nodes: [{ number: 1, url: pr.url, headRefName: "f", headRefOid: oid, headRepository: { nameWithOwner: "o/r" }, baseRefName: "main", baseRefOid: base, isDraft: draft }] } } } });
+  markPullRequestReady(pr, candidate, run, graphql);
+  assert.equal(calls, 1);
+});
 test("authentication and branch-protection variants fail closed without mistaking an unprotected branch", () => {
   assert.throws(() => authenticateGitHub(() => { throw new Error("not logged in"); }), /authentication failed/);
-  assert.deepEqual(readRequiredContexts(candidate, () => JSON.stringify({ contexts: ["legacy"], checks: [{ context: "test", app_id: 7 }] })), [{ context: "legacy" }, { context: "test", appId: 7 }]);
-  assert.deepEqual(readRequiredContexts(candidate, () => { throw new Error("HTTP 404 Branch not protected"); }), []);
+  const protectedRun: GhRun = args => JSON.stringify(args[1]?.includes("/rules/branches/") ? [{ type: "required_status_checks", parameters: { required_status_checks: [{ context: "build", app_id: 9 }] } }] : { contexts: ["legacy"], checks: [{ context: "test", app_id: 7 }] });
+  assert.deepEqual(readRequiredContexts(candidate, protectedRun), [{ context: "legacy" }, { context: "test", appId: 7 }, { context: "build", appId: 9 }]);
+  const unprotected: GhRun = args => { if (args[1]?.includes("/rules/branches/")) return "[]"; throw new Error("HTTP 404 Branch not protected"); };
+  assert.deepEqual(readRequiredContexts(candidate, unprotected), []);
+  assert.throws(() => readRequiredContexts(candidate, () => { throw new Error("HTTP 404 Branch not protected"); }), /Effective branch rules could not be verified/);
   assert.throws(() => readRequiredContexts(candidate, () => { throw new Error("HTTP 401"); }), /lookup failed/);
 });
 test("required contexts stop on ambiguity and preserve app identity", () => {

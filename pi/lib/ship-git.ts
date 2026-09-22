@@ -35,10 +35,16 @@ export function pushCandidate(candidate: CandidateIdentity, rewritten: boolean, 
     if (!remoteBefore || !/^[0-9a-f]{40,64}$/.test(remoteBefore)) throw new Error("Remote returned an invalid branch identity.");
   }
   if (remoteBefore === head) return { head, remoteBefore, mode: "already_published" };
-  if (!rewritten) run(git, cwd, ["push", candidate.remote.name, `${ref}:${remoteRef}`]);
-  else {
-    if (!candidate.remote.oid || remoteBefore !== candidate.remote.oid) throw new Error("Remote lease changed before rewritten push.");
-    run(git, cwd, ["push", `--force-with-lease=${remoteRef}:${candidate.remote.oid}`, candidate.remote.name, `${ref}:${remoteRef}`]);
+  if (rewritten && (!candidate.remote.oid || remoteBefore !== candidate.remote.oid)) throw new Error("Remote lease changed before rewritten push.");
+  try {
+    if (!rewritten) run(git, cwd, ["push", candidate.remote.name, `${ref}:${remoteRef}`]);
+    else run(git, cwd, ["push", `--force-with-lease=${remoteRef}:${candidate.remote.oid}`, candidate.remote.name, `${ref}:${remoteRef}`]);
+  } catch (error) {
+    let observed: string;
+    try { observed = run(git, cwd, ["ls-remote", "--heads", candidate.remote.name, remoteRef]).split(/\s+/)[0] ?? ""; }
+    catch { throw new Error("Push outcome is indeterminate: remote branch could not be observed after failure.", { cause: error }); }
+    if (observed !== head) throw new Error(`Push did not confirm the candidate; observed ${observed || "no remote branch"}. Do not retry without refreshing remote identity.`, { cause: error });
+    return { head, ...(remoteBefore ? { remoteBefore } : {}), mode: rewritten ? "lease" : "ordinary" };
   }
   const after = run(git, cwd, ["ls-remote", "--heads", candidate.remote.name, remoteRef]).split(/\s+/)[0];
   if (after !== head) throw new Error("Remote branch does not match the pushed candidate.");
