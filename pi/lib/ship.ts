@@ -29,7 +29,15 @@ type ShipState = {
   pending_repairs?: PendingRepairs | null;
 };
 type ShipCheckpoint = { state: ShipState; persist: () => void };
-type RawSignalData = {\n};\ntype SignalData = RawSignalData & {
+type RawSignalData = {
+  headRefOid: string;
+  baseRefOid: string;
+  statusCheckRollup: any[];
+  comments?: any[];
+  reviews?: Array<{ state?: string }>;
+  updatedAt?: string;
+};
+type SignalData = RawSignalData & {
   headRefOid: string;
   baseRefOid: string;
   statusCheckRollup: any[];
@@ -46,7 +54,8 @@ const digest = (value: unknown): string => createHash("sha256").update(JSON.stri
 const blocked = (message: string): GateError => Object.assign(new Error(message), { blocked: true });
 const nonempty = (value: unknown): value is string => typeof value === "string" && value.trim().length > 0;
 const readTools = ["read", "grep", "find", "ls"];
-const findingKey = (task: ExecutionTask): string | undefined => typeof task.source === "string" ? task.source : task.source?.finding_key;\nconst sourceCandidate = (task: ExecutionTask): string | undefined => typeof task.source === "object" && task.source ? task.source.candidate : undefined;
+const findingKey = (task: ExecutionTask): string | undefined => typeof task.source === "string" ? task.source : task.source?.finding_key;
+const sourceCandidate = (task: ExecutionTask): string | undefined => typeof task.source === "object" && task.source ? task.source.candidate : undefined;
 const specPath = (project: Project): string => path.join(project.dir, "spec.md");
 const finalChecks = (project: Project): string[] => {
   const declared = contracts(project).meta.final_checks;
@@ -314,7 +323,9 @@ export async function shipping(h: WorkflowHost, project: Project, phase: Workflo
   if (phase === "prepare") {
     requireComplete(project);
     state.phase = "prepare"; state.approved_head = null; persist();
-    await prepare(h, project, ship);\n    if (!state.candidate) throw new Error("Preparation did not produce a candidate.");\n    h.report(`Prepared ${state.candidate.url}`); return;
+    await prepare(h, project, ship);
+    if (!state.candidate) throw new Error("Preparation did not produce a candidate.");
+    h.report(`Prepared ${state.candidate.url}`); return;
   }
   if (state.phase === "blocked") {
     if (!await h.confirm("Resume blocked workflow?", `${state.blocked?.reason || "Shipping is blocked."}\nResume only after reconciling this with the approved spec/plans.`)) return;
