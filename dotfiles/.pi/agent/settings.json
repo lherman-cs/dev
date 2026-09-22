@@ -1,6 +1,6 @@
 {
   "defaultProvider": "openai",
-  "defaultModel": "gpt-5.6-luna",
+  "defaultModel": "gpt-6-luna",
   "defaultThinkingLevel": "medium",
   "tuiMode": "fullscreen",
   "fullscreenScrollbar": "auto",
@@ -12,7 +12,7 @@
   },
   "compaction": {
     "enabled": true,
-    "reserveTokens": 208000,
+    "reserveTokens": 16384,
     "keepRecentTokens": 20000
   },
   "packages": [
