@@ -71,7 +71,7 @@ test('help is navigable on 40x12 without truncating the only explanation of adva
 
 test('a tiny terminal cannot silently accept input into an invisible editor', t => { const hub = new WorkerHub(); register(hub, session(), 'a'); const f = viewFixture(t, { rows: 6, hub }); f.view.handleInput(keys.enter); screen(f.view, 40); f.view.handleInput('invisible'); assert.equal(worker(hub, 'a').draft, ''); f.setSize(24); screen(f.view, 40); f.view.handleInput('visible'); assert.equal(worker(hub, 'a').draft, 'visible'); });
 
-test('clipboard failures are awaited and stay attached to the original thread', async t => { const hub = new WorkerHub(), a = session(), b = session(); register(hub, a, 'a'); register(hub, b, 'b'); a.append(assistant('copy me')); let reject!: (reason?: unknown) => void; const f = viewFixture(t, { hub, options: { copy: () => new Promise<void>((_resolve, rejectPromise) => { reject = rejectPromise; }) } }), v = f.view; v.handleInput(keys.enter); v.handleInput(keys.f2); screen(v); v.handleInput(keys.down); screen(v); v.handleInput(keys.enter); await tick(); v.handleInput(keys.altDown); reject(new Error('Clipboard unavailable')); await tick(); assert.match(f.state.notices.get('a') ?? '', /Clipboard unavailable/); assert.equal(f.state.notices.get('b'), undefined); });
+test('clipboard failures are awaited and stay attached to the original thread', async t => { const hub = new WorkerHub(), a = session(), b = session(); register(hub, a, 'a'); register(hub, b, 'b'); a.append(assistant('copy me')); let reject!: (reason?: unknown) => void; const f = viewFixture(t, { hub, options: { copy: () => new Promise<void>((_resolve, rejectPromise) => { reject = rejectPromise; }) } }), v = f.view; v.handleInput(keys.enter); v.handleInput(keys.f2); screen(v); v.handleInput(keys.down); v.handleInput(keys.down); screen(v); v.handleInput(keys.enter); await tick(); v.handleInput(keys.altDown); reject(new Error('Clipboard unavailable')); await tick(); assert.match(f.state.notices.get('a') ?? '', /Clipboard unavailable/); assert.equal(f.state.notices.get('b'), undefined); });
 
 test('an already-open empty roster selects the first arriving child without retargeting an existing selection', t => { const f = viewFixture(t); screen(f.view); register(f.hub, session(), 'first'); assert.equal(f.state.selectedId, 'first'); register(f.hub, session(), 'second'); assert.equal(f.state.selectedId, 'first'); });
 
@@ -129,6 +129,26 @@ test('search and reading state stay bound to a recipient across switches', t => 
   v.handleInput(keys.altDown); v.handleInput(keys.altDown); v.handleInput(keys.altUp); v.handleInput(keys.altUp); v.handleInput(keys.altUp);
   assert.equal(state.selectedId, 'a'); assert.equal(state.viewports.get('a')?.searchQuery, 'needle');
   assert.match(screen(v), /Find needle 1\/1/);
+});
+
+test('delivery panel selects a specific failed receipt without overwriting a draft', async t => {
+  const hub = new WorkerHub(), s = session(); register(hub, s, 'a', { actions: { send: async () => { throw new Error('offline'); } } });
+  await assert.rejects(hub.steer('a', 'first')); await assert.rejects(hub.followUp('a', 'second'));
+  const { view: v, state } = viewFixture(t, { hub }); v.handleInput(keys.enter); v.handleInput('\x1b[18~');
+  assert.match(screen(v), /DELIVERIES/); assert.match(screen(v), /offline/);
+  v.handleInput(keys.up); v.handleInput(keys.enter);
+  assert.equal(worker(hub, 'a').draft, 'first'); assert.equal(state.mode, 'thread');
+  v.handleInput('\x1b[18~'); v.handleInput(keys.down); v.handleInput(keys.enter);
+  assert.equal(worker(hub, 'a').draft, 'first'); assert.match(state.notices.get('a') || '', /not empty/);
+});
+
+test('queue cancellation warns about all queued and starts on Cancel', async t => {
+  const hub = new WorkerHub(), s = session(); let cancelled = 0;
+  register(hub, s, 'a', { actions: { send: async () => {}, cancelQueued: async () => { cancelled++; return { steering: ['one'], followUp: [] }; } } });
+  await hub.steer('a', 'one'); const { view: v } = viewFixture(t, { hub }); v.handleInput(keys.enter); v.handleInput('\x1b[18~');
+  v.handleInput('c'); assert.match(screen(v), /Cancel ALL still-queued/); v.handleInput(keys.enter); await tick(); assert.equal(cancelled, 0);
+  v.handleInput('\x1b[18~'); v.handleInput('c'); screen(v); v.handleInput(keys.down); screen(v); v.handleInput(keys.enter); await tick(); assert.equal(cancelled, 1);
+  assert.equal(worker(hub, 'a').deliveries[0]?.status, 'cancelled');
 });
 
 test('stop cannot execute until the selected action is visible in a rendered confirmation', async t => { const hub = new WorkerHub(), s = session(); register(hub, s, 'a', { label: 'Very long agent purpose '.repeat(30) }); const { view: v } = viewFixture(t, { hub, rows: 8 }); v.handleInput(keys.enter); screen(v, 30); v.handleInput('\x18'); v.handleInput(keys.down); v.handleInput(keys.enter); await tick(); assert.equal(s.calls.length, 0); const rendered = screen(v, 30); assert.match(rendered, /Cancel/); assert.match(rendered, /Stop/); v.handleInput(keys.enter); await tick(); assert.deepEqual(s.calls, [['abort']]); });

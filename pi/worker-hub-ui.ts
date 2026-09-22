@@ -53,13 +53,15 @@ export class AgentHubView {
   private timer: ReturnType<typeof setTimeout> | undefined;
   private transcripts = new Map<string, NativeTranscript>();
   private unpin?: () => void;
-  private panel: "help" | "actions" | "confirm" | "search" | undefined;
+  private panel: "help" | "actions" | "confirm" | "search" | "delivery" | undefined;
+  private receiptSelection = new Map<string, string>();
   private search = new Input({ prompt: "Find: " });
 
   private menu: Action[] = [];
   private menuIndex = 0;
   private menuReady = false;
   private confirm?: Action;
+  private confirmLabel = "Stop";
   private disposed = false;
   private narrowDetails = false;
   private helpScroll = 0;
@@ -226,6 +228,7 @@ export class AgentHubView {
   private stopAction() {
     const r = this.current(); if (!isActive(r)) return;
     const scope = r.metadata["parentId"] ? "Only this investigation stops. Its parent may continue." : "Only this agent and its children stop.";
+    this.confirmLabel = "Stop";
     this.confirm = { title: `Stop ${r.label}? ${scope} Already completed edits/commands are not undone.`, run: () => this.hub.abort(r.id) };
     this.menuReady = false; this.menuIndex = 0; this.panel = "confirm"; this.setEditorFocus(); this.repaint();
   }
@@ -233,7 +236,8 @@ export class AgentHubView {
     const r = this.current(), id = r?.id;
     this.menu = [];
     if (id && this.hub.canSend(id)) this.menu.push({ title: "Queue this draft after the agent's current work", run: () => this.send(id, "followUp") });
-    if (r?.actions?.cancelQueued && r.deliveries.some(d => d.status === "queued")) { const workerId = r.id; this.menu.push({ title: "Cancel ALL still-queued messages to this agent", run: () => this.hub.cancelQueued(workerId).then(n => this.notice(`Cancelled ${n} queued messages. Original text is retained.`, workerId)) }); }
+    if (id) this.menu.push({ title: "Inspect delivery receipts and recover a selected message", run: () => this.deliveryPanel(id) });
+    if (r?.actions?.cancelQueued && r.deliveries.some(d => d.status === "queued")) { const workerId = r.id; this.menu.push({ title: "Cancel ALL still-queued messages to this agent…", run: () => this.cancelQueueAction(workerId) }); }
     if (r?.closed && r.file && this.hub.onRelated) { const workerId = r.id; this.menu.push({ title: "Investigate this draft in a NEW read-only thread", run: async () => {
       const c = this.composer(workerId), text = c.editor.getExpandedText();
       if (!text.trim()) { this.notice("Write a follow-up question first. Original result remains unchanged.", workerId); return; }
@@ -241,12 +245,7 @@ export class AgentHubView {
       if (c.version === version) c.editor.setText("");
       this.select(newId); this.open();
     } }); }
-    const failed = r ? [...r.deliveries].reverse().find((d: WorkerDelivery) => d.status === "failed" || d.status === "cancelled") : undefined;
-    if (failed && r) { const workerId = r.id; this.menu.push({ title: "Restore undelivered message into this thread's draft", run: () => {
-      const c = this.composer(workerId);
-      if (c.editor.getExpandedText().trim()) { this.notice("Draft is not empty; copy it before restoring another message.", workerId); return; }
-      c.editor.setText(failed.text); this.open();
-    } }); }
+
     if (id) {
       this.menu.push({ title: "Copy full available transcript", run: async () => { this.hub.load(id); const text = this.transcript()?.exportText(); if (text) await (this.options.copy ? this.options.copy(text) : copyToClipboard(text)); this.notice("Transcript copied.", id); } });
       this.menu.push({ title: "Expand / collapse tool output", run: () => { const v = this.viewport(); v.expanded = !v.expanded; this.transcript()?.setExpanded(!!v.expanded); } });
@@ -257,6 +256,29 @@ export class AgentHubView {
     this.menuReady = false; this.menuIndex = 0; this.panel = "actions"; this.setEditorFocus(); this.repaint();
   }
 
+  private deliveryPanel(id: string) {
+    if (!this.hub.get(id) || id !== this.state.selectedId) return;
+    this.panel = "delivery";
+    if (!this.receiptSelection.has(id)) { const last = this.hub.get(id)?.deliveries.at(-1); if (last) this.receiptSelection.set(id, last.id); }
+    this.setEditorFocus(); this.repaint();
+  }
+  private cancelQueueAction(id: string) {
+    const r = this.hub.get(id);
+    if (!r?.actions?.cancelQueued || !isActive(r) || !r.deliveries.some(d => d.status === "queued")) return;
+    this.confirmLabel = "Cancel all queued";
+    this.confirm = { title: `Cancel ALL still-queued messages to ${safe(r.label)}? This does not stop running tools or retract delivered messages. Original text remains recoverable.`, run: () => this.hub.cancelQueued(id).then(n => this.notice(`Cancelled ${n} still-queued messages.`, id)) };
+    this.menuReady = false; this.menuIndex = 0; this.panel = "confirm"; this.setEditorFocus(); this.repaint();
+  }
+  private restoreSelected() {
+    const id = this.state.selectedId, r = this.current(); if (!id || !r) return;
+    const receipt = r.deliveries.find(d => d.id === this.receiptSelection.get(id));
+    if (!receipt || !["failed", "cancelled"].includes(receipt.status)) { this.notice("Select a failed or cancelled receipt to recover.", id); return; }
+    const c = this.composer(id);
+    if (c.editor.getExpandedText()) { this.notice("Draft is not empty; copy it before restoring another message.", id); return; }
+    c.editor.setText(receipt.text); this.panel = undefined;
+    this.notice(r.closed ? "Recovered in this closed thread. F2 can start a NEW read-only investigation; this agent cannot receive it." : "Recovered into this thread's draft. Review before sending.", id);
+    this.setEditorFocus(); this.repaint();
+  }
   handleInput(data: string) {
     if (matchesKey(data, "alt+a")) { this.done(); return; }
     if (matchesKey(data, "escape")) { this.back(); return; }
@@ -264,6 +286,15 @@ export class AgentHubView {
     if (this.panel === "help") {
       if (matchesKey(data, "pageDown") || matchesKey(data, "down")) this.helpScroll += 5;
       if (matchesKey(data, "pageUp") || matchesKey(data, "up")) this.helpScroll = Math.max(0, this.helpScroll - 5);
+      this.repaint(); return;
+    }
+    if (this.panel === "delivery") {
+      const r = this.current(), receipts = r?.deliveries || [];
+      const index = receipts.findIndex(d => d.id === this.receiptSelection.get(r?.id || ""));
+      if (matchesKey(data, "up") || data === "k") { const next = receipts[Math.max(0, index - 1)]; if (next && r) this.receiptSelection.set(r.id, next.id); }
+      else if (matchesKey(data, "down") || data === "j") { const next = receipts[Math.min(receipts.length - 1, index + 1)]; if (next && r) this.receiptSelection.set(r.id, next.id); }
+      else if (matchesKey(data, "enter")) this.restoreSelected();
+      else if (data === "c" && r) this.cancelQueueAction(r.id);
       this.repaint(); return;
     }
     if (this.panel === "search") { this.search.handleInput(data); if (this.state.mode === "roster") this.applyFilter(); this.repaint(); return; }
@@ -280,6 +311,7 @@ export class AgentHubView {
       this.repaint(); return;
     }
     if (matchesKey(data, "f2")) { this.actions(); return; }
+    if (matchesKey(data, "f7") && this.state.mode === "thread" && this.state.selectedId) { this.deliveryPanel(this.state.selectedId); return; }
     if (matchesKey(data, "f3") || (this.state.mode === "roster" && data === "/")) {
       this.panel = "search"; this.search.setValue(this.state.mode === "roster" ? this.state.filter : ""); this.setEditorFocus(); this.repaint(); return;
     }
@@ -397,15 +429,32 @@ export class AgentHubView {
       "Alt+↑/↓ switches threads. Each thread keeps its own draft and reading position.",
       "PgUp/PgDn browse history. F4 returns to live. F3 searches; F5/F6 previous/next match. Ctrl+O expands tool output.",
       "When an agent asks a question, the composer answers it directly; ↑/↓ recalls sent answers and messages.",
-      "F2 actions: queue after current work, copy transcript, related investigation, or stop with confirmation.",
+      "F2 actions: queue after current work, copy transcript, related investigation, or stop with confirmation. F7 shows per-thread delivery receipts; select and Enter to recover failed/cancelled text.",
       "Queued is not delivered, and sending does not interrupt executing tools. Failed delivery remains recoverable.",
       "Completed results are read-only. A new investigation never restarts an accepted Builder or changes an old verdict.",
     ].join("\n"), 1, 0).render(width);
       this.helpScroll = Math.min(this.helpScroll, Math.max(0, lines.length - height));
       return lines.slice(this.helpScroll, this.helpScroll + height);
     }
+    if (this.panel === "delivery") {
+      const r = this.current(); if (!r) return ["Thread unavailable. Esc returns."];
+      const rows = r.deliveries;
+      const intro = [`DELIVERIES · ${safe(r.label)} · ${rows.length} receipts`, "↑↓ select · Enter recover failed/cancelled · c confirm ALL queued · Esc back"];
+      if (!rows.length) return [...intro, "No messages sent to this thread."];
+      const selected = Math.max(0, rows.findIndex(d => d.id === this.receiptSelection.get(r.id)));
+      const count = Math.max(1, Math.floor((height - intro.length) / 2));
+      const start = Math.max(0, Math.min(selected - Math.floor(count / 2), rows.length - count));
+      const visible = rows.slice(start, start + count);
+      const lines = visible.flatMap((d, i) => {
+        const y = 1 + intro.length + i * 2;
+        this.hits.push({ y, x0: 0, x1: width, run: () => { this.receiptSelection.set(r.id, d.id); this.repaint(); } });
+        return [`${d.id === this.receiptSelection.get(r.id) ? "›" : " "} ${safe(d.id)} · ${safe(r.label)} · ${d.mode} · ${d.status} · ${new Date(d.at).toISOString()}`,
+          `  ${safe(d.error || d.text)}`];
+      });
+      return [...intro, ...lines];
+    }
     if (this.panel === "search") return [...this.search.render(width), ...new Text("Enter finds next / applies filter. Esc returns to the saved draft.", 0, 0).render(width)];
-    const items = this.panel === "confirm" ? [{ title: "Cancel", run: () => {} }, { title: "Stop", run: () => {} }] : this.menu;
+    const items = this.panel === "confirm" ? [{ title: "Cancel", run: () => {} }, { title: this.confirmLabel, run: () => {} }] : this.menu;
     const intro = this.panel === "confirm" ? new Text(safe(this.confirm?.title), 1, 0).render(width) : ["Actions · Nothing runs until selected"];
     const head = intro.slice(0, Math.max(0, height - (this.panel === "confirm" ? 3 : 2)));
     const gap = head.length ? [""] : [];
@@ -447,7 +496,7 @@ export class AgentHubView {
     const r = this.current();
     const header = [this.theme.fg("accent", this.theme.bold(`Agent Hub · ${this.state.mode === "thread" ? safe(r?.label || "Unavailable thread") : safe(title)}`))];
     const hints = this.panel ? ["Esc back", "F1 help", ...(this.panel === "help" ? ["PgUp/Dn more"] : []), ...(this.panel === "actions" || this.panel === "confirm" ? ["↑↓/click choose", "Enter/double-click select"] : [])]
-      : this.state.mode === "thread" ? ["Esc back", "F1 help", `${sendKey()} send`, "Alt+↑↓ switch", "F2 actions", "PgUp/Dn history", "F4 live"]
+      : this.state.mode === "thread" ? ["Esc back", "F1 help", `${sendKey()} send`, "Alt+↑↓ switch", "F2 actions", "F7 delivery", "PgUp/Dn history", "F4 live"]
       : ["Esc Main", "F1 help", "↑↓ choose", "Enter/double-click open", "F2 actions", "F3 find", "Tab details", ...(this.narrowDetails ? ["PgUp/Dn more"] : [])];
     const footer = height < 8 || width < 20
       ? hintLines(["Esc", "F1 help"], width).slice(0, Math.max(1, height - 1))
@@ -466,7 +515,7 @@ export class AgentHubView {
     body = body.slice(0, bodyHeight); while (body.length < bodyHeight) body.push("");
     const footerStart = header.length + body.length + noticeRows;
     for (const [i, line] of footer.entries()) for (const [label, action] of [
-      ["F1 help", () => this.handleInput("\x1bOP")], ["F2 actions", () => this.actions()],
+      ["F1 help", () => this.handleInput("\x1bOP")], ["F2 actions", () => this.actions()], ["F7 delivery", () => { if (this.state.selectedId) this.deliveryPanel(this.state.selectedId); }],
       ["F3 find", () => this.handleInput("\x1bOR")], ["F4 live", () => this.handleInput("\x1bOS")],
       ["Esc back", () => this.back()], ["Esc Main", () => this.back()],
     ] as const) {
