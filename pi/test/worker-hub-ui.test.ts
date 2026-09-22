@@ -66,4 +66,20 @@ test('an already-open empty roster selects the first arriving child without reta
 
 test('filtering the roster cannot open or message a hidden recipient', t => { const hub = new WorkerHub(); register(hub, session(), 'a', { label: 'Alpha' }); register(hub, session(), 'b', { label: 'Beta' }); const { view: v, state } = viewFixture(t, { hub }); v.handleInput(keys.f3); v.handleInput('Beta'); v.handleInput(keys.enter); screen(v); v.handleInput(keys.enter); assert.equal(state.selectedId, 'b'); assert.equal(state.mode, 'thread'); v.handleInput(keys.escape); v.handleInput(keys.f3); v.handleInput('no match'); v.handleInput(keys.enter); v.handleInput(keys.enter); assert.equal(state.mode, 'roster'); });
 
+test('roster preserves identity during live changes and rebuilds explicit scope without hidden activation', t => {
+  const hub = new WorkerHub(); register(hub, session(), 'a', { label: 'Alpha' }); register(hub, session(), 'b', { label: 'Beta' });
+  const { view: v, state } = viewFixture(t, { hub });
+  assert.deepEqual(state.order, ['a', 'b']);
+  v.handleInput(keys.down); assert.equal(state.selectedId, 'b');
+  hub.unregister('a'); assert.deepEqual(state.order, ['a', 'b']);
+  register(hub, session(), 'c', { label: 'Gamma' }); assert.deepEqual(state.order, ['a', 'b', 'c']);
+  v.handleInput('o'); assert.equal(state.sort, 'newest'); assert.equal(state.selectedId, 'b');
+  v.handleInput(keys.f3); v.handleInput('unmatched'); v.handleInput(keys.enter);
+  assert.deepEqual(state.order, []); assert.equal(state.selectedId, undefined); v.handleInput(keys.enter); assert.equal(state.mode, 'roster');
+  assert.match(screen(v), /No matching agents/);
+  v.handleInput('0'); assert.equal(state.filter, ''); assert.equal(state.selectedId, state.order[0]);
+  v.handleInput('s'); assert.equal(state.status, 'active');
+  assert.ok(state.order.every(id => hub.get(id)?.closed === false));
+});
+
 test('stop cannot execute until the selected action is visible in a rendered confirmation', async t => { const hub = new WorkerHub(), s = session(); register(hub, s, 'a', { label: 'Very long agent purpose '.repeat(30) }); const { view: v } = viewFixture(t, { hub, rows: 8 }); v.handleInput(keys.enter); screen(v, 30); v.handleInput('\x18'); v.handleInput(keys.down); v.handleInput(keys.enter); await tick(); assert.equal(s.calls.length, 0); const rendered = screen(v, 30); assert.match(rendered, /Cancel/); assert.match(rendered, /Stop/); v.handleInput(keys.enter); await tick(); assert.deepEqual(s.calls, [['abort']]); });

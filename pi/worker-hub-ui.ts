@@ -41,8 +41,9 @@ type Composer = { editor: Editor; version: number; sending: boolean };
 export type HubViewState = {
   selectedId: string | undefined; mode: "roster" | "thread"; composers: Map<string, Composer>;
   viewports: Map<string, Viewport>; notices: Map<string, string>; repaint: () => void;
+  order: string[]; filter: string; status: string; role: string; sort: "priority" | "newest" | "oldest" | "role";
 };
-export const createHubViewState = (): HubViewState => ({ selectedId: undefined, mode: "roster", composers: new Map(), viewports: new Map(), notices: new Map(), repaint: () => {} });
+export const createHubViewState = (): HubViewState => ({ selectedId: undefined, mode: "roster", composers: new Map(), viewports: new Map(), notices: new Map(), repaint: () => {}, order: [], filter: "", status: "all", role: "all", sort: "priority" });
 
 type Action = { title: string; run: () => unknown | Promise<unknown> };
 type HubUIOptions = { copy?: (text: string) => void | Promise<void> };
@@ -54,7 +55,7 @@ export class AgentHubView {
   private unpin?: () => void;
   private panel: "help" | "actions" | "confirm" | "search" | undefined;
   private search = new Input({ prompt: "Find: " });
-  private filter = "";
+
   private menu: Action[] = [];
   private menuIndex = 0;
   private menuReady = false;
@@ -77,11 +78,11 @@ export class AgentHubView {
     this.tui=tui;this.theme=theme;this.hub=hub;this.title=title;this.done=done;this.state=state;this.options=options;
     this.state.repaint = () => this.repaint();
     this.unsubscribe = hub.subscribe(() => {
-      const first = hub.list()[0]; if (!this.state.selectedId && first) this.select(first.id);
+      this.reconcile();
       this.schedule();
     });
-    if (!state.selectedId) state.selectedId = hub.list()[0]?.id;
-    if (state.selectedId) this.unpin = hub.pin(state.selectedId);
+    this.reconcile(true);
+    if (state.selectedId && !this.unpin) this.unpin = hub.pin(state.selectedId);
     this.search.onSubmit = () => {
       if (state.mode === "thread") {
         const found = this.transcript()?.search(this.viewport(), this.search.getValue());
@@ -102,15 +103,37 @@ export class AgentHubView {
   private repaint() { if (!this.disposed) this.tui.requestRender(); }
   private current() { return this.hub.get(this.state.selectedId); }
   private question(id = this.state.selectedId) { return this.hub.questions().find(question => question.ownerId === id); }
-  private rows() {
-    const q = this.filter.toLocaleLowerCase();
-    return this.hub.list().filter(r => !q || `${r.label} ${String(r.metadata["task"] ?? "")} ${r.role}`.toLocaleLowerCase().includes(q));
+  private eligible(r: WorkerRecord) {
+    const q = this.state.filter.toLocaleLowerCase();
+    return (!q || `${r.label} ${r.activity} ${String(r.metadata["task"] ?? "")} ${r.role}`.toLocaleLowerCase().includes(q))
+      && (this.state.status === "all" || (this.state.status === "active" ? isActive(r) : this.state.status === "unread" ? r.closed && r.unread : r.state === this.state.status))
+      && (this.state.role === "all" || r.role === this.state.role);
   }
-  private applyFilter() {
-    this.filter = this.search.getValue();
-    const rows = this.rows();
-    const first = rows[0]; if (first && !rows.some(r => r.id === this.state.selectedId)) this.select(first.id);
+  private priority(r: WorkerRecord) { return this.question(r.id) || r.state === "failed" ? 0 : isActive(r) ? 1 : r.closed && r.unread ? 2 : 3; }
+  private reconcile(rebuild = false) {
+    const all = this.hub.list(), index = new Map(all.map((r, i) => [r.id, i]));
+    const eligible = all.filter(r => this.eligible(r));
+    if (rebuild) {
+      eligible.sort((a, b) => {
+        const diff = this.state.sort === "priority" ? this.priority(a) - this.priority(b)
+          : this.state.sort === "newest" ? b.startedAt - a.startedAt
+          : this.state.sort === "oldest" ? a.startedAt - b.startedAt : a.role.localeCompare(b.role);
+        return diff || index.get(a.id)! - index.get(b.id)!;
+      });
+      this.state.order = eligible.map(r => r.id);
+    } else {
+      const valid = new Set(eligible.map(r => r.id));
+      this.state.order = this.state.order.filter(id => valid.has(id));
+      for (const r of eligible) if (!this.state.order.includes(r.id)) this.state.order.push(r.id);
+    }
+    if (!this.state.order.includes(this.state.selectedId || "") && this.state.mode === "roster") {
+      const next = this.state.order[0];
+      if (next) this.select(next);
+      else { this.unpin?.(); delete this.unpin; this.state.selectedId = undefined; this.setEditorFocus(); }
+    }
   }
+  private rows() { return this.state.order.map(id => this.hub.get(id)).filter((r): r is WorkerRecord => !!r); }
+  private applyFilter() { this.state.filter = this.search.getValue(); this.reconcile(true); }
   private notice(text: string, id = this.state.selectedId || "hub") { this.state.notices.set(id, text); this.state.repaint(); }
   private viewport() {
     const id = this.state.selectedId!;
@@ -250,7 +273,7 @@ export class AgentHubView {
     }
     if (matchesKey(data, "f2")) { this.actions(); return; }
     if (matchesKey(data, "f3") || (this.state.mode === "roster" && data === "/")) {
-      this.panel = "search"; this.search.setValue(this.state.mode === "roster" ? this.filter : ""); this.setEditorFocus(); this.repaint(); return;
+      this.panel = "search"; this.search.setValue(this.state.mode === "roster" ? this.state.filter : ""); this.setEditorFocus(); this.repaint(); return;
     }
     if (this.state.mode === "thread") {
       if (matchesKey(data, "alt+up")) { this.move(-1); return; }
@@ -264,6 +287,10 @@ export class AgentHubView {
       if (id && this.current()) this.composer(id).editor.handleInput(data);
       this.repaint(); return;
     }
+    if (data === "0") { this.state.filter = ""; this.state.status = "all"; this.state.role = "all"; this.search.setValue(""); this.reconcile(true); this.repaint(); return; }
+    if (data === "s") { const statuses = ["all", "active", "unread", "failed", "completed"]; this.state.status = statuses[(statuses.indexOf(this.state.status) + 1) % statuses.length]!; this.reconcile(true); this.repaint(); return; }
+    if (data === "r") { const roles = ["all", ...new Set(this.hub.list().map(r => r.role))]; this.state.role = roles[(roles.indexOf(this.state.role) + 1) % roles.length]!; this.reconcile(true); this.repaint(); return; }
+    if (data === "o") { const sorts = ["priority", "newest", "oldest", "role"] as const; this.state.sort = sorts[(sorts.indexOf(this.state.sort) + 1) % sorts.length]!; this.reconcile(true); this.repaint(); return; }
     if (this.narrowDetails && (matchesKey(data, "pageUp") || matchesKey(data, "pageDown"))) { this.detailScroll = Math.max(0, this.detailScroll + (matchesKey(data, "pageUp") ? -5 : 5)); this.repaint(); return; }
     if (matchesKey(data, "up") || data === "k") this.move(-1);
     else if (matchesKey(data, "down") || data === "j") this.move(1);
@@ -275,21 +302,28 @@ export class AgentHubView {
 
   private roster(width: number, height: number) {
     const rows = this.rows();
-    if (!rows.length) return new Text(this.filter ? "No matching agents. F3 changes the filter." : "No child agents yet. Work in Main normally; children appear here when created. Esc returns to Main.", 1, 1).render(width);
+    if (!rows.length) return new Text(this.hub.list().length ? `No matching agents. Find: ${this.state.filter || "all"} · Status: ${this.state.status} · Role: ${this.state.role}. F3 find, s status, r role, 0 reset.` : "No child agents yet. Work in Main normally; children appear here when created. Esc returns to Main.", 1, 1).render(width);
+    const all = this.hub.list();
+    const summary = `${all.filter(isActive).length} active · ${all.filter(r => r.closed && r.unread).length} unread · ${this.hub.questions().length} questions · ${all.filter(r => r.state === "failed").length} failed`;
+    const scope = `Find: ${this.state.filter || "all"} · Status: ${this.state.status} · Role: ${this.state.role} · Sort: ${this.state.sort}  [F3 find · s status · r role · o sort · 0 reset]`;
     const selected = rows.findIndex(r => r.id === this.state.selectedId);
-    const count = Math.max(1, Math.floor(height / 3));
+    const count = Math.max(1, Math.floor(Math.max(0, height - 3) / 3));
     const start = Math.max(0, Math.min(selected - Math.floor(count / 2), rows.length - count));
-    return rows.slice(start, start + count).flatMap(r => {
+    const visible = rows.slice(start, start + count);
+    const section = (r: WorkerRecord) => isActive(r) ? "ACTIVE" : r.closed && r.unread ? "UNREAD RESULTS" : "HISTORY";
+    return [this.theme.bold(summary), this.theme.fg("muted", scope),
+      this.theme.fg("accent", `Showing ${start + 1}–${start + visible.length}/${rows.length} · active / unread results / history`),
+      ...visible.flatMap(r => {
       const chosen = r.id === this.state.selectedId;
       const parentId = typeof r.metadata["parentId"] === "string" ? r.metadata["parentId"] : undefined;
       const parent = this.hub.get(parentId);
       const lines = [
-        `${chosen ? this.theme.fg("accent", "›") : " "} ${this.theme.fg(color(r), glyph(r))} ${safe(r.label)}${r.unread && r.closed ? " · new" : ""}`,
-        `    ${safe(r.role)} · ${safe(r.model)} ${safe(r.thinking)} · ${stateText(r)}`,
+        `${chosen ? this.theme.fg("accent", "›") : " "} ${this.theme.fg(color(r), glyph(r))} ${safe(r.label)}${r.unread && r.closed ? " · new" : ""}${this.question(r.id) ? " · QUESTION" : r.state === "failed" ? " · ATTENTION" : ""}`,
+        `    ${section(r)} · ${safe(r.role)} · ${safe(r.model)} ${safe(r.thinking)} · ${stateText(r)}`,
         `    ${parent ? `↳ ${safe(parent.label)} · ` : ""}${safe(r.activity)}`,
       ].map(t => pad(t, width));
       return chosen ? lines.map(t => this.theme.bg("selectedBg", t)) : lines;
-    });
+    })];
   }
   private details(width: number, height: number) {
     const r = this.current(); if (!r) return ["Select a thread to inspect it."];
@@ -333,7 +367,7 @@ export class AgentHubView {
       const lines = new Text([
       "AGENT HUB · Navigation without changing execution", "",
       "Alt+A opens/closes the hub; agents keep running. Esc goes back and keeps drafts.",
-      "Roster: ↑↓ / j k choose; Enter opens; Tab shows details on narrow terminals; F3 filters.",
+      "Roster: ↑↓ / j k choose; Enter opens; Tab shows details on narrow terminals; F3 finds; s status, r role, o sort, 0 resets filters.",
       `Thread: type + ${sendKey()} sends to the named recipient. Left/Home/End still edit text; multiline pastes are preserved.`,
       "Alt+↑/↓ switches threads. Each thread keeps its own draft and reading position.",
       "PgUp/PgDn browse history. F4 returns to live. F3 searches; Enter finds next. Ctrl+O expands tool output.",
