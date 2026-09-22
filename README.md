@@ -10,11 +10,11 @@ dev a spec                         # select the configured model and open Pi
 dev a plan ./plans/media-signaling-core/spec.md
 dev a build ./plans/media-signaling-core/plan.md
 dev a ship ./plans/media-signaling-core/plan.md
-dev a resume                       # native Pi continuation
+dev a resume                       # interactive Pi session picker
 dev a stats                        # interactive Pi session dashboard
 ```
 
-The public phases are exactly `spec`, `plan`, `build`, and `ship`. With no prompt, `dev a <phase>` opens the configured interactive Pi session. A prompt invokes the matching current-session `/dev-<phase>` alias. Each alias explicitly loads its `dev-<phase>` skill. The active conversation owns spec, plan, and build work. The foreground Shipper observes live Git and GitHub state, coordinates asynchronous Builder and Reviewer workers, and seeks explicit approval of the final readiness packet. It never merges.
+`dev a resume` opens Pi's session picker; `dev a resume <session-id-or-path>` opens that session directly. The public phases are exactly `spec`, `plan`, `build`, and `ship`. With no prompt, `dev a <phase>` opens the configured interactive Pi session. A prompt invokes the matching current-session `/dev-<phase>` alias. Each alias explicitly loads its `dev-<phase>` skill. The active conversation owns spec, plan, and build work. The foreground Shipper observes live Git and GitHub state, coordinates asynchronous Builder and Reviewer workers, and seeks explicit approval of the final readiness packet. It never merges.
 
 `explore` starts a separate bounded Explorer child session for investigation or targeted verification. Parent agents delegate read-only evidence gathering expected to take material time or produce substantial raw output, while quick known-target reads and small checks may stay direct. Explorer may run commands but cannot edit through agent tools, make project decisions, or delegate. During an explicit `dev-ship` invocation only, `review({ task, candidate, evidence })` can start a fresh, read-only Reviewer child session. Every child-agent launch returns a job receipt immediately and delivers its bounded result separately as soon as it settles. This includes worker-owned Explorers and the fixed ship runtime's Builder and Reviewer launches. Callers never await child agents: they continue independent work and, if a result gates the next decision, resume from the asynchronous completion instead of polling or duplicating it. If Explorer fails or is unavailable, a parent may disclose an output-bounded direct read-only fallback, but gains no otherwise prohibited capability. The active Shipper must still verify current local and remote identity, evidence, and human confirmation.
 

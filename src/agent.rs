@@ -41,6 +41,14 @@ fn phase_args(config: &Roles, phase: &str, prompt: &[String]) -> Result<Vec<Stri
     Ok(args)
 }
 
+fn resume_args(session: Option<String>) -> Result<Vec<String>> {
+    match session {
+        Some(session) if !session.trim().is_empty() => Ok(vec!["--session".into(), session]),
+        Some(_) => bail!("Session ID/path must not be empty"),
+        None => Ok(vec!["--resume".into()]),
+    }
+}
+
 fn installed_pi() -> Result<PathBuf> {
     let home = dirs::home_dir().ok_or_else(|| anyhow!("Cannot determine home directory"))?;
     let agent_dir = env::var_os("PI_CODING_AGENT_DIR")
@@ -104,15 +112,7 @@ pub fn launch(
     )?;
     let mut command = Command::new(executable);
     if let Some(session) = resume {
-        match session {
-            Some(session) if !session.trim().is_empty() => {
-                command.arg("--session").arg(session);
-            }
-            Some(_) => bail!("Session ID/path must not be empty"),
-            None => {
-                command.arg("--continue");
-            }
-        }
+        command.args(resume_args(session)?);
     } else if let Some(phase) = phase {
         command.args(phase_args(&config, phase, &prompt)?);
     }
@@ -143,6 +143,15 @@ mod tests {
                 .unwrap(),
             "/dev-build ./plans/media signaling core/spec.md"
         );
+    }
+    #[test]
+    fn resume_opens_picker_unless_session_is_specified() {
+        assert_eq!(resume_args(None).unwrap(), ["--resume"]);
+        assert_eq!(
+            resume_args(Some("./session.jsonl".into())).unwrap(),
+            ["--session", "./session.jsonl"]
+        );
+        assert!(resume_args(Some("  ".into())).is_err());
     }
     #[test]
     fn all_model_and_effort_selections_are_preserved() {

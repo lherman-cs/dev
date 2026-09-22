@@ -192,9 +192,9 @@ enum AgentAction {
         #[arg(long)]
         session: Option<String>,
     },
-    /// Resume an Pi session with workflow configuration available
+    /// Choose a Pi session interactively, or open a specific session
     Resume {
-        /// Optional session id/path. Omitted continues the most recent session.
+        /// Optional session id/path. Omitted opens the session picker.
         session: Option<String>,
     },
 }
