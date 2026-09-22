@@ -22,7 +22,10 @@ test("phase-specific gates remain where they belong", () => {
   assert.match(skill("dev-build"), /A plan is optional/);
   assert.match(skill("dev-build"), /NEEDS_REPLAN/);
   assert.match(skill("dev-ship"), /Never merge/);
-  assert.match(skill("dev-ship"), /destructive history or remote recovery to the human/);
+  assert.match(skill("dev-ship"), /Human owns destructive history\/remote recovery/);
+  assert.equal((skill("dev-ship").match(/^- \[ \]/gm) ?? []).length, 5);
+  assert.match(skill("dev-ship"), /Builder resolve ordinary conflicts/);
+  assert.match(skill("dev-ship-builder"), /When delegated a rebase conflict, resolve it/);
   assert.match(skill("dev-ship-builder"), /material drift or competing ownership/);
   assert.match(skill("dev-review"), /fresh read-only agent/);
   assert.match(skill("dev-review"), /rather than PASS/);
