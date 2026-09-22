@@ -1,6 +1,6 @@
 # Pi-first development workflow
 
-Pi is the harness. The active role skill owns phase sequencing, Git and GitHub actions, verification, repairs, and human gates. Git is implementation truth, the approved spec and plan are semantic truth, and GitHub is remote-candidate truth. There is no controller, workflow harness, scheduler, checkpoint, polling loop, or automatic retry.
+Pi is the harness. Git is implementation truth, the approved spec and plan are semantic truth, and GitHub is remote-candidate truth. `/dev-ship` uses one fixed-purpose typed runtime for handoff admission, identity checks, bounded worker routing, CI waiting, and the final human gate. It is not a general scheduler, technical decision-maker, or merge authority.
 
 ## Entry points
 
@@ -15,7 +15,7 @@ Three human gates remain: approve semantics, approve architecture and contracts,
 | Spec | Challenge semantics, scope, splits, callers, ownership, failures, and acceptance evidence. Present the review and stop after explicit approval. |
 | Plan | Turn the approved spec into independently testable outcomes with architecture, dataflow, proof, risks, and deletion choices. Stop after approval. |
 | Build | Complete approved outcomes incrementally. Validate and independently commit each coherent outcome. Resolve ordinary implementation and test failures; stop only for an unresolved consequential decision. |
-| Ship | Inspect the exact candidate and remote state, run checks, obtain bounded Reviewer evidence, make necessary repairs, revalidate identities, and present readiness for explicit human confirmation. Never merge. |
+| Ship | Use the fixed ship runtime to admit the exact handoff, route Builder and Reviewer payloads unchanged, revalidate identities, and present readiness for explicit human confirmation. Never merge. |
 
 ## Isolated child sessions
 
@@ -35,7 +35,7 @@ Runtime allowlists enforce isolation, mutation denial, web-tool exclusivity, and
 
 ## Human supervision and recovery
 
-Agent Hub is a view and owner-action adapter, not a scheduler. It preserves independent drafts, anchored history navigation, contextual help, native messages, tool rendering, and completed child transcripts. A queued instruction is not delivered until accepted. The worker owner seals completed sessions and rejects stale structured results after interventions. Related questions create a fresh read-only investigation rather than reviving a completed result.
+Agent Hub is a view and owner-action adapter, not a scheduler. The fixed dev-ship runtime, rather than the Hub, owns its typed state transitions and side-effect receipts. The Hub preserves independent drafts, anchored history navigation, contextual help, native messages, tool rendering, and completed child transcripts. A queued instruction is not delivered until accepted. The worker owner seals completed sessions and rejects stale structured results after interventions. Related questions create a fresh read-only investigation rather than reviving a completed result.
 
 The active conversation is responsible for deciding whether to stop a child before changing the worktree. Git, approved artifacts, and remote state make failures visible and resumable. No hidden fallback or fabricated completion is available.
 

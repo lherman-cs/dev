@@ -29,12 +29,12 @@ assert not (root / 'pi/settings.json').exists()
 assert not (root / 'pi/pi-vcc-config.json').exists()
 assert all(not any(c in version for c in '*^~') for version in pkg['dependencies'].values())
 public_phases = ('spec', 'plan', 'build', 'ship')
-internal_roles = ('review', 'explorer')
-for skill in (*public_phases, 'review', 'explore'):
+internal_roles = ('review', 'explorer', 'escalated_builder')
+for skill in (*public_phases, 'review', 'explore', 'ship-builder'):
     assert (root / f'pi/skills/dev-{skill}/SKILL.md').is_file()
 assert set(json.loads((root / 'pi/roles.json').read_text())['roles']) == {*public_phases, *internal_roles}
 for retired in ('implement', 'prepare'):
     assert not (root / f'pi/skills/dev-{retired}').exists()
-for retired_module in ('workflow.ts', 'workflow-control.ts', 'workflow-types.ts', 'ship.ts'):
+for retired_module in ('workflow.ts', 'workflow-control.ts', 'workflow-types.ts'):
     assert not (root / f'pi/lib/{retired_module}').exists()
 print('Pi packaging: PASS')

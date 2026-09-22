@@ -13,6 +13,7 @@ Implement the approved plan to completion, one independently testable outcome at
 - Prefer the smallest durable design. Fix root causes, preserve compatibility, data safety, accessibility, and necessary observability. Do not weaken, delete, or bypass checks.
 - Validate at the user-visible boundary and lower-level proof. Keep checks fast, deterministic, and stable.
 - Independently commit each completed outcome using a Conventional Commit. Update relevant documentation and mark its `todo` complete.
+- After the final coherent commit, call `build_handoff` with the approved spec/plan paths, base ref, completed outcomes, local checks, residual risks, and unresolved human decisions. Stop if it rejects the worktree or artifacts.
 - Use `ask_user_question` only when approved semantics or architecture cannot resolve a consequential decision. State exactly what is needed from the human, why it matters, and why work cannot safely continue without it.
 - If code reality invalidates the approved plan, state `NEEDS_REPLAN` with the conflicting evidence and what must change.
 

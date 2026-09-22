@@ -6,6 +6,7 @@
     "build": "openai/gpt-5.6-terra:medium",
     "review": "openai/gpt-6-astra:low",
     "ship": "openai/gpt-5.6-luna:medium",
-    "explorer": "openai/gpt-5.6-luna:medium"
+    "explorer": "openai/gpt-5.6-luna:medium",
+    "escalated_builder": "openai/gpt-5.6-sol:medium"
   }
 }

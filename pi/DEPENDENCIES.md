@@ -14,7 +14,7 @@ Pins below were checked against the published package source and entrypoints. Th
 | `@juicesharp/rpiv-todo` | 2.10.1 | Existing requested task/progress interaction. |
 | `@juicesharp/rpiv-ask-user-question` | 2.10.1 | Existing requested structured choices and Markdown previews for interactive Spec/Plan. Code-owned final gates use Pi dialogs without another model call. |
 
-There is no `pi-subagents`, generated agent registry, fleet, scheduler, or subagent IPC dependency.
+There is no `pi-subagents`, generated agent registry, fleet, general scheduler, or subagent IPC dependency. The fixed dev-ship runtime uses only pinned native Pi and Git/GitHub process boundaries.
 
 The native loader test loads all published entrypoints. Worker sessions load only web access plus LSP/browser tools for implementation; PR/usage UI and MCP server configuration remain in the foreground. Explorer has no shell, write/edit, browser-control, or recursive delegation tool. This is a capability boundary, not an OS sandbox against malicious installed code.
 

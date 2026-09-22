@@ -49,7 +49,7 @@ test('actual Pi SDK: fresh contexts, exact role, repo instructions, lazy skill, 
   assert.notEqual(firstSession.sessionId,secondSession.sessionId);
   assert.equal(firstSession.sessionFile,undefined);
   for(const call of f.calls) {
-    assert.equal(call.model.provider,'openai-codex'); assert.equal(call.model.id,'gpt-5.6-sol');
+    assert.equal(call.model.provider,'openai-codex'); assert.equal(call.model.id,'gpt-5.6-terra');
     assert.match(JSON.stringify(call.context),/TEST_CANARY/);
     // Pi lazy-skills: the body is absent from the resident system prompt and appears only
     // in the explicit /skill invocation turn.
