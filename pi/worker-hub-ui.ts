@@ -101,6 +101,7 @@ export class AgentHubView {
   }
   private repaint() { if (!this.disposed) this.tui.requestRender(); }
   private current() { return this.hub.get(this.state.selectedId); }
+  private question(id = this.state.selectedId) { return this.hub.questions().find(question => question.ownerId === id); }
   private rows() {
     const q = this.filter.toLocaleLowerCase();
     return this.hub.list().filter(r => !q || `${r.label} ${String(r.metadata["task"] ?? "")} ${r.role}`.toLocaleLowerCase().includes(q));
@@ -164,9 +165,18 @@ export class AgentHubView {
     if (c.sending || !text.trim()) return;
     const version = c.version; c.sending = true;
     try {
-      const delivery = await this.hub.send(id, text, mode);
-      if (c.version === version) c.editor.setText("");
-      this.notice(`${delivery.status === "delivered" ? "Delivered" : "Queued"} to ${this.hub.get(id)?.label}. ${mode === "steer" ? "Current tools are not cancelled." : "Runs after current work."}`, id);
+      const question = this.question(id);
+      if (question) {
+        await question.answer({ answer: text });
+        c.editor.addToHistory(text);
+        if (c.version === version) c.editor.setText("");
+        this.notice(`Answered ${this.hub.get(id)?.label}.`, id);
+      } else {
+        const delivery = await this.hub.send(id, text, mode);
+        c.editor.addToHistory(text);
+        if (c.version === version) c.editor.setText("");
+        this.notice(`${delivery.status === "delivered" ? "Delivered" : "Queued"} to ${this.hub.get(id)?.label}. ${mode === "steer" ? "Current tools are not cancelled." : "Runs after current work."}`, id);
+      }
     } catch (error: unknown) { this.notice(`Not sent: ${error instanceof Error ? error.message : String(error)}`, id); }
     finally { c.sending = false; this.hub.flushDraft(id); this.state.repaint(); }
   }
@@ -302,9 +312,9 @@ export class AgentHubView {
     const c = this.composer(r.id); this.setEditorFocus();
     const editorLines = c.editor.render(Math.max(1, width));
     const editorHeight = Math.min(Math.max(3, Math.floor(height / 3)), editorLines.length);
-    const delivery = r.deliveries?.at(-1);
-    const recipient = `To: ${safe(r.label)}${this.hub.canSend(r.id) ? "" : " · read-only result"}`;
-    const status = delivery ? `${delivery.status === "failed" ? "NOT DELIVERED" : delivery.status}: ${safe(delivery.error || (delivery.mode === "followUp" ? "after current work" : "next turn boundary"))}` : r.closed ? "F2 → New investigation uses this draft; it does not restart this agent." : `${sendKey()} sends; it does not cancel a running tool.`;
+    const delivery = r.deliveries?.at(-1), question = this.question(r.id);
+    const recipient = question ? `Question from ${safe(r.label)}: ${safe(question.title)}` : `To: ${safe(r.label)}${this.hub.canSend(r.id) ? "" : " · read-only result"}`;
+    const status = question ? `${sendKey()} answers this question directly.` : delivery ? `${delivery.status === "failed" ? "NOT DELIVERED" : delivery.status}: ${safe(delivery.error || (delivery.mode === "followUp" ? "after current work" : "next turn boundary"))}` : r.closed ? "F2 → New investigation uses this draft; it does not restart this agent." : `${sendKey()} sends; it does not cancel a running tool.`;
     const transcriptHeight = Math.max(0, height - editorHeight - 3);
     const window = this.transcript()?.window(this.viewport(), width, transcriptHeight);
     const lines = window?.lines || [];
@@ -327,6 +337,7 @@ export class AgentHubView {
       `Thread: type + ${sendKey()} sends to the named recipient. Left/Home/End still edit text; multiline pastes are preserved.`,
       "Alt+↑/↓ switches threads. Each thread keeps its own draft and reading position.",
       "PgUp/PgDn browse history. F4 returns to live. F3 searches; Enter finds next. Ctrl+O expands tool output.",
+      "When an agent asks a question, the composer answers it directly; ↑/↓ recalls sent answers and messages.",
       "F2 actions: queue after current work, copy transcript, related investigation, or stop with confirmation.",
       "Queued is not delivered, and sending does not interrupt executing tools. Failed delivery remains recoverable.",
       "Completed results are read-only. A new investigation never restarts an accepted Builder or changes an old verdict.",

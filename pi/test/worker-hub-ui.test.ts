@@ -17,6 +17,16 @@ test('native editing preserves cursor keys, Unicode, question marks and multilin
   const value = composer(state, 'a').editor.getExpandedText(); assert.match(value, /abc\?你好\nfn main\(\) \{\n  println!/); assert.equal(worker(hub, 'a').draft, value); v.handleInput(keys.enter); await tick(); assert.deepEqual(s.calls, [['steer', value]]);
 });
 
+test('agent questions are answered in-place and submitted text is recallable', async t => {
+  const hub = new WorkerHub(), s = session(); register(hub, s, 'a');
+  const answer = hub.request<string, { answer: string }>({ ownerId: 'a', title: 'Which target?', run: async response => response.answer });
+  const { view: v, state } = viewFixture(t, { hub }); v.handleInput(keys.enter);
+  assert.match(screen(v), /Question from Explorer · a: Which target/);
+  v.handleInput('production'); v.handleInput(keys.enter);
+  assert.equal(await answer, 'production'); await tick(); assert.deepEqual(s.calls, []); assert.equal(worker(hub, 'a').draft, '');
+  v.handleInput(keys.up); assert.equal(composer(state, 'a').editor.getExpandedText(), 'production');
+});
+
 test('closing and reopening keeps draft, editor cursor, and a pending send safely bound', async t => {
   const hub = new WorkerHub(), a = session(), b = session(); let accept!: () => void; register(hub, a, 'a', { actions: { send: text => new Promise<void>(resolve => { a.calls.push(['steer', text]); accept = resolve; }) } }); register(hub, b, 'b');
   const f = viewFixture(t, { hub }), v = f.view; v.handleInput(keys.enter); v.handleInput('abcd'); v.handleInput(keys.left); v.handleInput(keys.enter); v.dispose(); const again = new AgentHubView(f.tui, theme, hub, 'Main', () => {}, f.state); t.after(() => again.dispose()); again.handleInput(keys.altDown); again.handleInput('draft B'); accept(); await tick(); assert.equal(worker(hub, 'b').draft, 'draft B'); assert.equal(worker(hub, 'a').draft, ''); again.handleInput(keys.altUp); again.handleInput('abcd'); again.handleInput(keys.left); again.dispose(); const third = new AgentHubView(f.tui, theme, hub, 'Main', () => {}, f.state); t.after(() => third.dispose()); third.handleInput('X'); assert.equal(worker(hub, 'a').draft, 'abcXd');

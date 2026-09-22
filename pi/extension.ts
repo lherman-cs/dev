@@ -45,7 +45,15 @@ export default function extension(pi: ExtensionAPI, dependencies: ExtensionDepen
   const lifetime = new AbortController();
   const warn = (error: unknown): void => { if (!closing) ctx?.ui.notify(`Agent Hub: ${error instanceof Error ? error.message : String(error)}`, "warning"); };
   const hub = dependencies.hub || new WorkerHub({ onError: warn });
-  const run: WorkerRunner = (dependencies.createWorkerRunner || createWorkerRunner)({ hub, getHistory: () => history });
+  const askHuman = ({ ownerId, question, choices }: { ownerId: string; question: string; choices?: string[] }, signal?: AbortSignal) => hub.request({
+    ownerId,
+    title: choices?.length ? `${question}\nChoices: ${choices.join(" · ")}` : question,
+    run: async (response: unknown) => {
+      if (!response || typeof response !== "object" || typeof (response as { answer?: unknown }).answer !== "string") throw new Error("Human response must contain an answer.");
+      return (response as { answer: string }).answer;
+    },
+  }, signal);
+  const run: WorkerRunner = (dependencies.createWorkerRunner || createWorkerRunner)({ hub, getHistory: () => history, askHuman });
   hub.onRelated = (record, text) => run.related(record, text);
   const writesOwned = (): boolean => hub.list().some(r => isActive(r) && !r.metadata["readOnly"]);
   const ownershipMessage = "Main is read-only while a writing child owns this worktree. Alt+A opens that agent. Wait for it to finish or stop it before editing.";
