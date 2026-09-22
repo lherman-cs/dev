@@ -7,7 +7,7 @@ import { WorkerHub } from "../lib/worker-hub.ts";
 
 type ExtensionModule = Pick<typeof import("../extension.ts"), "default" | "explorerOnlyTools">;
 type RegisteredTool = Pick<ToolDefinition, "name" | "promptGuidelines" | "execute">;
-type EventHandler = (event: { toolName?: string }) => { reason?: string } | undefined;
+type EventHandler = (event: { toolName?: string; text?: string }) => { reason?: string; action?: string } | undefined;
 const { default: extension, explorerOnlyTools } = await createJiti(import.meta.url).import("../extension.ts") as ExtensionModule;
 
 interface ExtensionMock {
@@ -17,6 +17,8 @@ interface ExtensionMock {
   on: ExtensionAPI["on"];
   sendMessage: ExtensionAPI["sendMessage"];
   sendUserMessage: ExtensionAPI["sendUserMessage"];
+  getActiveTools: ExtensionAPI["getActiveTools"];
+  setActiveTools: ExtensionAPI["setActiveTools"];
 }
 function load(mock: ExtensionMock, dependencies?: Parameters<typeof extension>[1]): void { extension(mock as ExtensionAPI, dependencies); }
 
@@ -32,6 +34,8 @@ test("four current-session aliases, Agent Hub and isolated tools register withou
     on: (name, handler) => { handlers.set(name, handler as unknown as EventHandler); return () => undefined; },
     sendMessage: (...args) => { messages.push(args); },
     sendUserMessage: (...args) => { messages.push(args); },
+    getActiveTools: () => ["read"],
+    setActiveTools: () => undefined,
   });
   assert.deepEqual([...commands.keys()].sort(), ["dev-build", "dev-plan", "dev-ship", "dev-spec"]);
   assert.ok(shortcuts.has("alt+a"));
@@ -40,7 +44,36 @@ test("four current-session aliases, Agent Hub and isolated tools register withou
   const explore = tools[0]; assert.ok(explore?.promptGuidelines?.join("\n").includes("one self-contained scope"));
   const toolCall = handlers.get("tool_call"); assert.ok(toolCall);
   for (const toolName of explorerOnlyTools) assert.match(toolCall({ toolName })?.reason ?? "", /narrowly scoped explore calls/);
-  assert.equal(toolCall({ toolName: "review" }), undefined);
+  assert.match(toolCall({ toolName: "review" })?.reason ?? "", /reserved.*dev-ship/);
+});
+
+test("review is active only for an explicit dev-ship phase", async () => {
+  const commands = new Map<string, Omit<RegisteredCommand, "name" | "sourceInfo">>();
+  const handlers = new Map<string, EventHandler>();
+  let active = ["read"];
+  const noop = () => undefined;
+  load({
+    registerCommand: (name, command) => { commands.set(name, command); },
+    registerShortcut: noop as ExtensionAPI["registerShortcut"],
+    registerTool: noop as ExtensionAPI["registerTool"],
+    on: (name, handler) => { handlers.set(name, handler as unknown as EventHandler); return noop; },
+    sendMessage: noop as ExtensionAPI["sendMessage"],
+    sendUserMessage: noop as ExtensionAPI["sendUserMessage"],
+    getActiveTools: () => [...active],
+    setActiveTools: tools => { active = [...tools]; },
+  }, {
+    hub: new WorkerHub(),
+    registerWorkerHubUI: (() => ({ setContext: noop, dispose: noop })) as never,
+  });
+  const context = { ui: { notify: noop } } as never;
+  await commands.get("dev-ship")?.handler("", context);
+  assert.ok(active.includes("review"));
+  assert.equal(handlers.get("tool_call")?.({ toolName: "review" }), undefined);
+  await commands.get("dev-build")?.handler("", context);
+  assert.ok(!active.includes("review"));
+  assert.match(handlers.get("tool_call")?.({ toolName: "review" })?.reason ?? "", /reserved.*dev-ship/);
+  handlers.get("input")?.({ text: "/skill:dev-ship plan.md" });
+  assert.ok(active.includes("review"));
 });
 
 test("a completed asynchronous Explorer steers Main and triggers progress", async () => {
@@ -58,6 +91,8 @@ test("a completed asynchronous Explorer steers Main and triggers progress", asyn
     on: (() => noop) as ExtensionAPI["on"],
     sendMessage: (...args) => { messages.push(args); },
     sendUserMessage: noop as ExtensionAPI["sendUserMessage"],
+    getActiveTools: () => ["read"],
+    setActiveTools: noop as ExtensionAPI["setActiveTools"],
   }, {
     hub: new WorkerHub(),
     createWorkerRunner: (() => run) as never,

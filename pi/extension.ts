@@ -7,6 +7,7 @@ import { WorkerHistory } from "./lib/worker-history.ts";
 import { registerWorkerHubUI } from "./worker-hub-ui.ts";
 import type { WorkerHistory as WorkerHistoryStore } from "./lib/worker-history.ts";
 import type { RegisterWorker, WorkerPatch, WorkerState } from "./lib/worker-types.ts";
+import type { PublicPhase } from "./lib/roles.ts";
 
 export const explorerOnlyTools = new Set(["web_search", "source_check", "fetch_content", "get_search_content"]);
 const mainReaders = new Set(["read", "grep", "find", "ls", "explore", "review", "vcc_recall", "ask_user_question"]);
@@ -30,7 +31,14 @@ const isExternalWorkerRequest = (value: unknown): value is ExternalWorkerRequest
 /** Current-conversation role aliases and isolated read-only child tools. */
 export default function extension(pi: ExtensionAPI, dependencies: ExtensionDependencies = {}): void {
   let ctx: ExtensionContext | undefined, history: WorkerHistoryStore | undefined;
-  let closing = false;
+  let closing = false, phase: PublicPhase | undefined;
+  const setPhase = (next: PublicPhase | undefined): void => {
+    phase = next;
+    const active = pi.getActiveTools();
+    const tools = active.filter(name => name !== "review");
+    if (next === "ship") tools.push("review");
+    if (tools.length !== active.length || tools.some((name, index) => name !== active[index])) pi.setActiveTools(tools);
+  };
   const lifetime = new AbortController();
   const warn = (error: unknown): void => { if (!closing) ctx?.ui.notify(`Agent Hub: ${error instanceof Error ? error.message : String(error)}`, "warning"); };
   const hub = dependencies.hub || new WorkerHub({ onError: warn });
@@ -42,6 +50,7 @@ export default function extension(pi: ExtensionAPI, dependencies: ExtensionDepen
 
   pi.on("session_start", async (_event, nextCtx) => {
     ctx = nextCtx;
+    setPhase(undefined);
     history = new WorkerHistory(ctx.sessionManager as unknown as ConstructorParameters<typeof WorkerHistory>[0], warn);
     hub.setHistory(history); hubUI.setContext(ctx);
     await history.restore(hub, lifetime.signal);
@@ -80,6 +89,7 @@ export default function extension(pi: ExtensionAPI, dependencies: ExtensionDepen
   pi.registerTool(buildHandoffTool());
   pi.registerTool(shipActionTool());
   pi.on("tool_call", event => {
+    if (event.toolName === "review" && phase !== "ship") return { block: true, reason: "The review tool is reserved for an explicit dev-ship invocation." };
     if (explorerOnlyTools.has(event.toolName)) return { block: true, reason: `Delegate ${event.toolName} to one or more narrowly scoped explore calls.` };
     if (writesOwned() && !mainReaders.has(event.toolName)) return { block: true, reason: ownershipMessage };
     return undefined;
@@ -94,14 +104,20 @@ export default function extension(pi: ExtensionAPI, dependencies: ExtensionDepen
   };
   pi.on("session_before_switch", preventSessionChange);
   pi.on("session_before_fork", preventSessionChange);
+  pi.on("input", event => {
+    const match = /^\/skill:dev-(spec|plan|build|ship)(?:\s|$)/.exec(event.text);
+    if (match?.[1]) setPhase(match[1] as PublicPhase);
+    return { action: "continue" };
+  });
 
-  for (const phase of ["spec", "plan", "build", "ship"] as const) pi.registerCommand(`dev-${phase}`, {
-    description: `Invoke dev-${phase} in the current conversation`,
+  for (const commandPhase of ["spec", "plan", "build", "ship"] as const) pi.registerCommand(`dev-${commandPhase}`, {
+    description: `Invoke dev-${commandPhase} in the current conversation`,
     handler: async (args, nextCtx) => {
       ctx = nextCtx;
       if (writesOwned()) { nextCtx.ui.notify(ownershipMessage, "warning"); return; }
+      setPhase(commandPhase);
       hubUI.setContext(nextCtx);
-      pi.sendUserMessage(`/skill:dev-${phase}${args ? ` ${args}` : ""}`, { expandPromptTemplates: true });
+      pi.sendUserMessage(`/skill:dev-${commandPhase}${args ? ` ${args}` : ""}`, { expandPromptTemplates: true });
     },
   });
   pi.on("session_shutdown", async () => {

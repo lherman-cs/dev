@@ -21,13 +21,13 @@ Three human gates remain: approve semantics, approve architecture and contracts,
 
 `explore` is the general read-only investigation primitive. Each Main call creates a fresh asynchronous Explorer with a narrowly scoped factual question, explicit boundaries, and compact schema-checked evidence. Explorer has no shell, mutation, browser-control, or recursive delegation capability.
 
-`review` is an asynchronous read-only primitive for the active agent:
+`review` is an asynchronous read-only primitive available only to the active Shipper after an explicit `dev-ship` invocation:
 
 ```text
 review({ task, candidate, evidence })
 ```
 
-It creates a fresh Reviewer that explicitly loads `dev-review`. Main receives a job receipt immediately, so independent Explorers and Reviewers can run concurrently while Main continues useful work. Each completion is injected as soon as it settles and triggers Main again if idle; Main should stop only when the pending result truly gates further progress. Worker-owned nested Explorer calls remain awaited by their owning worker.
+It creates a fresh Reviewer that explicitly loads `dev-review`. The Shipper receives a job receipt immediately, so independent Explorers and Reviewers can run concurrently while it continues useful work. Each completion is injected as soon as it settles and triggers Main again if idle; Main should stop only when the pending result truly gates further progress. Worker-owned nested Explorer calls remain awaited by their owning worker.
 
 Reviewer has repository read tools, VCC recall, bounded Explorer access, and `submit_result`, but no mutation, shell, Git, PR, direct-human, or recursive-review capability. Its response is bounded, uses `PASS`, `REPAIRS`, or `BLOCKED`, and exactly echoes the supplied candidate and evidence. Transport validation does not prove evidence completeness or prevent candidate drift: the active Shipper rechecks both before any repair or human confirmation.
 

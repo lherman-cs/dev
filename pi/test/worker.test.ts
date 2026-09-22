@@ -7,6 +7,7 @@ import { ModelRuntime, createAgentSession, type AgentSession } from "@earendil-w
 import { createAssistantMessageEventStream, type AssistantMessage } from "@earendil-works/pi-ai";
 import { asyncExploreTool, asyncReviewTool, createWorkerRunner, exploreTool, reviewTool, type AsyncWorkerCompletion, type RunWorker } from "../lib/worker.ts";
 import { WorkerHub } from "../lib/worker-hub.ts";
+import { role } from "../lib/roles.ts";
 
 type StreamModel = Parameters<ModelRuntime['streamSimple']>[0];
 type StreamContext = Parameters<ModelRuntime['streamSimple']>[1];
@@ -50,7 +51,8 @@ test('actual Pi SDK: fresh contexts, exact role, repo instructions, lazy skill, 
   assert.notEqual(firstSession.sessionId,secondSession.sessionId);
   assert.equal(firstSession.sessionFile,undefined);
   for(const call of f.calls) {
-    assert.equal(call.model.provider,'openai-codex'); assert.equal(call.model.id,'gpt-5.6-terra');
+    const expected = role('build');
+    assert.equal(call.model.provider,expected.provider); assert.equal(call.model.id,expected.model);
     assert.match(JSON.stringify(call.context),/TEST_CANARY/);
     // Pi lazy-skills: the body is absent from the resident system prompt and appears only
     // in the explicit /skill invocation turn.
