@@ -1,4 +1,4 @@
-import { Editor, Input, matchesKey, Text, truncateToWidth, visibleWidth, wrapTextWithAnsi, getKeybindings, type TUI } from "@earendil-works/pi-tui";
+import { Editor, Input, matchesKey, Text, truncateToWidth, visibleWidth, wrapTextWithAnsi, getKeybindings, type TuiMouseEvent, type TuiMouseEventResult, type TUI } from "@earendil-works/pi-tui";
 import { copyToClipboard, type ExtensionAPI, type ExtensionContext, type Theme } from "@earendil-works/pi-coding-agent";
 import { isActive, WorkerHub } from "./lib/worker-hub.ts";
 import type { WorkerDelivery, WorkerRecord } from "./lib/worker-types.ts";
@@ -66,6 +66,8 @@ export class AgentHubView {
   private detailScroll = 0;
   private _focused = true;
   private canCompose = true;
+  private hits: Array<{ y: number; x0: number; x1: number; run: () => void }> = [];
+  private editorBounds?: { y: number; height: number; width: number; from: number };
   private tui: TUI;
   private theme: Theme;
   private hub: WorkerHub;
@@ -300,7 +302,7 @@ export class AgentHubView {
     this.repaint();
   }
 
-  private roster(width: number, height: number) {
+  private roster(width: number, height: number, originY = 1, originX = 0) {
     const rows = this.rows();
     if (!rows.length) return new Text(this.hub.list().length ? `No matching agents. Find: ${this.state.filter || "all"} · Status: ${this.state.status} · Role: ${this.state.role}. F3 find, s status, r role, 0 reset.` : "No child agents yet. Work in Main normally; children appear here when created. Esc returns to Main.", 1, 1).render(width);
     const all = this.hub.list();
@@ -311,6 +313,13 @@ export class AgentHubView {
     const start = Math.max(0, Math.min(selected - Math.floor(count / 2), rows.length - count));
     const visible = rows.slice(start, start + count);
     const section = (r: WorkerRecord) => isActive(r) ? "ACTIVE" : r.closed && r.unread ? "UNREAD RESULTS" : "HISTORY";
+    for (const [label, key] of [["F3 find", "\x1bOR"], ["s status", "s"], ["r role", "r"], ["o sort", "o"], ["0 reset", "0"]] as const) {
+      const x = scope.indexOf(label);
+      if (x >= 0 && x + label.length <= width) this.hits.push({ y: originY + 1, x0: originX + x, x1: originX + x + label.length, run: () => this.handleInput(key) });
+    }
+    visible.forEach((r, i) => this.hits.push({ y: originY + 3 + i * 3, x0: originX, x1: originX + width, run: () => this.select(r.id) },
+      { y: originY + 4 + i * 3, x0: originX, x1: originX + width, run: () => this.select(r.id) },
+      { y: originY + 5 + i * 3, x0: originX, x1: originX + width, run: () => this.select(r.id) }));
     return [this.theme.bold(summary), this.theme.fg("muted", scope),
       this.theme.fg("accent", `Showing ${start + 1}–${start + visible.length}/${rows.length} · active / unread results / history`),
       ...visible.flatMap(r => {
@@ -342,14 +351,20 @@ export class AgentHubView {
   private thread(width: number, height: number) {
     const r = this.current(); if (!r) return ["This thread is unavailable. Your draft was not retargeted. Esc returns to agents."];
     this.canCompose = height >= 7 && width >= 20;
-    if (!this.canCompose) { this.setEditorFocus(); return new Text("Resize to inspect and edit this thread. Input is paused; drafts are preserved. Esc returns to agents.", 0, 0).render(width); }
+    if (!this.canCompose) {
+      this.setEditorFocus();
+      const notice = `Input paused (resize to edit) · ${safe(r.label)} · ${stateText(r)}`;
+      const space = Math.max(0, height - 2);
+      const window = this.transcript()?.window(this.viewport(), width, space);
+      return [notice, ...(window?.lines || []), "PgUp/Dn history · F4 live · Esc back · F1 help"].slice(0, height);
+    }
     const c = this.composer(r.id); this.setEditorFocus();
     const editorLines = c.editor.render(Math.max(1, width));
     const editorHeight = Math.min(Math.max(3, Math.floor(height / 3)), editorLines.length);
     const delivery = r.deliveries?.at(-1), question = this.question(r.id);
     const recipient = question ? `Question from ${safe(r.label)}: ${safe(question.title)}` : `To: ${safe(r.label)}${this.hub.canSend(r.id) ? "" : " · read-only result"}`;
     const status = question ? `${sendKey()} answers this question directly.` : delivery ? `${delivery.status === "failed" ? "NOT DELIVERED" : delivery.status}: ${safe(delivery.error || (delivery.mode === "followUp" ? "after current work" : "next turn boundary"))}` : r.closed ? "F2 → New investigation uses this draft; it does not restart this agent." : `${sendKey()} sends; it does not cancel a running tool.`;
-    const transcriptHeight = Math.max(0, height - editorHeight - 3);
+    const transcriptHeight = Math.max(0, height - editorHeight - 4);
     const window = this.transcript()?.window(this.viewport(), width, transcriptHeight);
     const lines = window?.lines || [];
     while (lines.length < transcriptHeight) lines.push("");
@@ -357,7 +372,9 @@ export class AgentHubView {
     // around its cursor, not an arbitrary prefix of a multiline paste.
     const marker = editorLines.findIndex(l => l.includes("\x1b_pi:c\x07"));
     const from = Math.max(0, Math.min(marker - editorHeight + 2, editorLines.length - editorHeight));
+    this.editorBounds = { y: 1 + transcriptHeight + 3, height: editorHeight, width, from };
     return [
+      this.theme.bold(`${safe(r.role)} · ${stateText(r)} · ${safe(r.outcome || r.activity)}`),
       this.theme.fg("muted", `${contextText(r)} · ${this.viewport().follow ? "Live" : "Reading history · F4 live"} · ${window ? `${window.start + 1}–${window.end}/${window.total}` : ""}`),
       ...lines, this.theme.fg("accent", recipient), ...editorLines.slice(from, from + editorHeight), this.theme.fg(delivery?.status === "failed" ? "error" : "muted", status),
     ].slice(0, height);
@@ -386,20 +403,44 @@ export class AgentHubView {
     const gap = head.length ? [""] : [];
     const available = Math.max(0, height - head.length - gap.length), start = Math.max(0, this.menuIndex - available + 1);
     this.menuReady = available > 0 && this.menuIndex >= start && this.menuIndex < Math.min(items.length, start + available);
+    const origin = 1 + head.length + gap.length;
+    items.slice(start, start + available).forEach((_a, i) => this.hits.push({ y: origin + i, x0: 0, x1: width, run: () => { this.menuIndex = start + i; this.menuReady = true; this.repaint(); } }));
     return [...head, ...gap, ...items.slice(start, start + available).map((a, i) => {
       const t = pad(`${i + start === this.menuIndex ? "›" : " "} ${a.title}`, width);
       return i + start === this.menuIndex ? this.theme.bg("selectedBg", t) : t;
     })];
   }
+  handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
+    if (event.type === "wheel") {
+      if (this.state.mode === "thread" && !this.panel) this.transcript()?.scroll(this.viewport(), (event.wheelDelta || 0) * 3);
+      else if (this.state.mode === "roster" && !this.panel) this.move(event.wheelDelta && event.wheelDelta < 0 ? -1 : 1);
+      else return;
+      this.repaint(); return { handled: true };
+    }
+    if (event.type !== "click" || event.button !== "left") return;
+    if (this.editorBounds && !this.panel && this.state.mode === "thread" && this.canCompose && event.y >= this.editorBounds.y && event.y < this.editorBounds.y + this.editorBounds.height) {
+      const result = this.composer(this.state.selectedId!).editor.handleMouse?.({ ...event, y: event.y - this.editorBounds.y + this.editorBounds.from, width: this.editorBounds.width, height: this.editorBounds.height });
+      return result?.handled ? result : { handled: true };
+    }
+    const hit = this.hits.find(h => h.y === event.y && event.x >= h.x0 && event.x < h.x1);
+    if (!hit) return;
+    hit.run();
+    if (event.clickCount && event.clickCount >= 2) {
+      if (this.panel === "actions" || this.panel === "confirm") this.handleInput("\r");
+      else if (this.state.mode === "roster") this.open();
+    }
+    return { handled: true, focus: true };
+  }
   render(width: number): string[] {
     width = Math.max(1, width);
+    this.hits = []; delete this.editorBounds;
     const height = Math.max(1, this.tui.terminal?.rows || process.stdout.rows || 24);
     const title = typeof this.title === "function" ? this.title() : this.title;
     const r = this.current();
     const header = [this.theme.fg("accent", this.theme.bold(`Agent Hub · ${this.state.mode === "thread" ? safe(r?.label || "Unavailable thread") : safe(title)}`))];
-    const hints = this.panel ? ["Esc back", "F1 help", ...(this.panel === "help" ? ["PgUp/Dn more"] : []), ...(this.panel === "actions" || this.panel === "confirm" ? ["↑↓ choose", "Enter select"] : [])]
+    const hints = this.panel ? ["Esc back", "F1 help", ...(this.panel === "help" ? ["PgUp/Dn more"] : []), ...(this.panel === "actions" || this.panel === "confirm" ? ["↑↓/click choose", "Enter/double-click select"] : [])]
       : this.state.mode === "thread" ? ["Esc back", "F1 help", `${sendKey()} send`, "Alt+↑↓ switch", "F2 actions", "PgUp/Dn history", "F4 live"]
-      : ["Esc Main", "F1 help", "↑↓ choose", "Enter open", "F2 actions", "F3 find", "Tab details", ...(this.narrowDetails ? ["PgUp/Dn more"] : [])];
+      : ["Esc Main", "F1 help", "↑↓ choose", "Enter/double-click open", "F2 actions", "F3 find", "Tab details", ...(this.narrowDetails ? ["PgUp/Dn more"] : [])];
     const footer = height < 8 || width < 20
       ? hintLines(["Esc", "F1 help"], width).slice(0, Math.max(1, height - 1))
       : hintLines(hints, width).slice(0, Math.max(2, Math.min(3, Math.floor(height / 4))));
@@ -411,10 +452,19 @@ export class AgentHubView {
     else if (this.state.mode === "thread") body = this.thread(width, bodyHeight);
     else if (width >= 100) {
       const leftWidth = Math.floor((width - 3) * .45), rightWidth = width - 3 - leftWidth;
-      const left = this.roster(leftWidth, bodyHeight), right = this.details(rightWidth, bodyHeight);
+      const left = this.roster(leftWidth, bodyHeight, 1, 0), right = this.details(rightWidth, bodyHeight);
       body = Array.from({ length: bodyHeight }, (_, i) => `${pad(left[i] || "", leftWidth)} ${this.theme.fg("borderMuted", "│")} ${pad(right[i] || "", rightWidth)}`);
-    } else body = this.narrowDetails ? this.details(width, bodyHeight) : this.roster(width, bodyHeight);
+    } else body = this.narrowDetails ? this.details(width, bodyHeight) : this.roster(width, bodyHeight, 1, 0);
     body = body.slice(0, bodyHeight); while (body.length < bodyHeight) body.push("");
+    const footerStart = header.length + body.length + noticeRows;
+    for (const [i, line] of footer.entries()) for (const [label, action] of [
+      ["F1 help", () => this.handleInput("\x1bOP")], ["F2 actions", () => this.actions()],
+      ["F3 find", () => this.handleInput("\x1bOR")], ["F4 live", () => this.handleInput("\x1bOS")],
+      ["Esc back", () => this.back()], ["Esc Main", () => this.back()],
+    ] as const) {
+      const x = line.indexOf(label);
+      if (x >= 0 && x + label.length <= width) this.hits.push({ y: footerStart + i, x0: x, x1: x + label.length, run: action });
+    }
     const lines = [...header, ...body, ...(noticeRows ? [this.theme.fg("warning", safe(notice))] : []), ...footer.map(t => this.theme.fg("muted", t))];
     return lines.slice(0, height).map(t => truncateToWidth(t, width));
   }

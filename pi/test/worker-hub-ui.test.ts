@@ -82,4 +82,31 @@ test('roster preserves identity during live changes and rebuilds explicit scope 
   assert.ok(state.order.every(id => hub.get(id)?.closed === false));
 });
 
+test('mouse roster selection does not open or send, and wheel retains keyboard navigation', t => {
+  const hub = new WorkerHub(), a = session(), b = session(); register(hub, a, 'a'); register(hub, b, 'b');
+  const { view: v, state } = viewFixture(t, { hub }); v.render(80);
+  const event = { type: 'click', button: 'left', x: 5, y: 7, screenX: 5, screenY: 7, width: 80, height: 24, shift: false, alt: false, ctrl: false } as const;
+  v.handleMouse(event); assert.equal(state.selectedId, 'b'); assert.equal(state.mode, 'roster');
+  assert.deepEqual(a.calls, []); assert.deepEqual(b.calls, []);
+  v.handleMouse({ ...event, type: 'wheel', button: 'none', wheelDelta: -1 }); assert.equal(state.selectedId, 'a');
+});
+
+test('mouse double-click opens without sending and short viewport keeps transcript navigation', t => {
+  const hub = new WorkerHub(), s = session(); register(hub, s, 'a'); s.append(assistant('visible evidence'));
+  const { view: v, state, setSize } = viewFixture(t, { hub }); v.render(80);
+  const event = { type: 'click', button: 'left', x: 4, y: 4, screenX: 4, screenY: 4, width: 80, height: 24, shift: false, alt: false, ctrl: false, clickCount: 2 } as const;
+  v.handleMouse(event); assert.equal(state.mode, 'thread'); assert.deepEqual(s.calls, []);
+  setSize(8); assert.match(screen(v, 40), /Input paused/); assert.match(screen(v, 40), /visible evidence/);
+  v.handleInput('not typed'); assert.equal(hub.get('a')?.draft, '');
+});
+
+test('fullscreen mouse footer opens actions without sending and confirmation defaults to Cancel', t => {
+  const hub = new WorkerHub(), s = session(); register(hub, s, 'a'); const { view: v } = viewFixture(t, { hub });
+  const lines = v.render(100).map(line => line.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, ''));
+  const y = lines.findIndex(line => line.includes('F2 actions')); const x = lines[y]!.indexOf('F2 actions');
+  assert.ok(y >= 0 && x >= 0);
+  v.handleMouse({ type: 'click', button: 'left', x, y, screenX: x, screenY: y, width: 100, height: 24, shift: false, alt: false, ctrl: false });
+  assert.match(screen(v, 100), /Actions/); assert.deepEqual(s.calls, []);
+});
+
 test('stop cannot execute until the selected action is visible in a rendered confirmation', async t => { const hub = new WorkerHub(), s = session(); register(hub, s, 'a', { label: 'Very long agent purpose '.repeat(30) }); const { view: v } = viewFixture(t, { hub, rows: 8 }); v.handleInput(keys.enter); screen(v, 30); v.handleInput('\x18'); v.handleInput(keys.down); v.handleInput(keys.enter); await tick(); assert.equal(s.calls.length, 0); const rendered = screen(v, 30); assert.match(rendered, /Cancel/); assert.match(rendered, /Stop/); v.handleInput(keys.enter); await tick(); assert.deepEqual(s.calls, [['abort']]); });
