@@ -1,35 +1,63 @@
 import { safeText } from "./lib/worker-transcript.ts";
 import { humanEditor } from "./lib/human-editor.ts";
 import { Text } from "@earendil-works/pi-tui";
-import { createWorkerRunner, exploreTool } from "./lib/worker.ts";
-import { WorkerHub, isActive } from "./lib/worker-hub.ts";
+import { createWorkerRunner, exploreTool, type WorkerRunner } from "./lib/worker.ts";
+import { WorkerHub, isActive, type WorkerRecord, type WorkerState } from "./lib/worker-hub.ts";
 import { WorkerHistory } from "./lib/worker-history.ts";
 import { WorkflowControl, WorkflowPaused } from "./lib/workflow-control.ts";
 import { registerWorkerHubUI } from "./worker-hub-ui.ts";
-import { runWorkflow, excludeState } from "./lib/workflow.ts";
+import { runWorkflow, excludeState, type WorkflowHost, type WorkflowPhase, type DelegateOptions, type ReviewRepair } from "./lib/workflow.ts";
+
+type AppContext = {
+  cwd: string;
+  hasUI: boolean;
+  ui: any;
+  sessionManager: any;
+  isIdle(): boolean;
+  hasPendingMessages?(): boolean;
+};
+type PiAPI = {
+  registerCommand(name: string, command: { description: string; handler: (...args: any[]) => any }): void;
+  registerTool(tool: unknown): void;
+  registerEntryRenderer?(name: string, renderer: (...args: any[]) => any): void;
+  registerShortcut?(key: string, shortcut: unknown): void;
+  on(name: string, handler: (...args: any[]) => any): void;
+  events?: { on(name: string, handler: (...args: any[]) => any): (() => void) | undefined };
+  appendEntry?(name: string, data: Record<string, unknown>): void;
+  exec(program: string, args: string[], options?: Record<string, unknown>): Promise<{ code: number; stdout: string; stderr: string }>;
+  sendUserMessage(message: string, options?: Record<string, unknown>): void;
+  sendMessage(message: Record<string, unknown>, options?: Record<string, unknown>): void;
+};
+type ExtensionDependencies = {
+  hub?: WorkerHub;
+  createWorkerRunner?: typeof createWorkerRunner;
+  registerWorkerHubUI?: typeof registerWorkerHubUI;
+  runWorkflow?: typeof runWorkflow;
+};
+const errorMessage = (error: unknown): string => error instanceof Error ? error.message : String(error);
 
 export const explorerOnlyTools = new Set(["web_search", "source_check", "fetch_content", "get_search_content"]);
 const mainReaders = new Set(["read", "grep", "find", "ls", "explore", "vcc_recall", "ask_user_question"]);
-export const workflowError = (error, phase, target = "") => `${error.message}\n\nProgress is preserved. After resolving the issue, resume with /dev-${phase}${target ? ` ${target}` : ""}.`;
+export const workflowError = (error: unknown, phase: string, target = "") => `${errorMessage(error)}\n\nProgress is preserved. After resolving the issue, resume with /dev-${phase}${target ? ` ${target}` : ""}.`;
 
 // Optional constructors keep integration tests on the same registration path.
-export default function (pi, dependencies = {}) {
-  let ctx, history, active, lastControl, foregroundPrompts = 0, closing = false;
+export default function (pi: PiAPI, dependencies: ExtensionDependencies = {}) {
+  let ctx: AppContext | undefined, history: WorkerHistory | undefined, active: WorkflowControl | undefined, lastControl: WorkflowControl | undefined, foregroundPrompts = 0, closing = false;
   const lifetime = new AbortController();
-  const warn = error => { if (!closing) ctx?.ui.notify(`Agent Hub: ${error.message || error}`, "warning"); };
+  const warn = (error: unknown) => { if (!closing) ctx?.ui.notify(`Agent Hub: ${errorMessage(error)}`, "warning"); };
   const hub = dependencies.hub || new WorkerHub({ onError: warn });
-  const run = (dependencies.createWorkerRunner || createWorkerRunner)({ hub, getHistory: () => history,
-    askHuman: ({ ownerId, question, choices }, signal) => hub.request({ ownerId, title: question, run: async context => {
+  const run: WorkerRunner = (dependencies.createWorkerRunner || createWorkerRunner)({ hub, getHistory: () => history,
+    askHuman: ({ ownerId, question, choices }, signal) => hub.request({ ownerId, title: question, run: async rawContext => {\n      const context = rawContext as AppContext;
       if (!context.hasUI) throw new Error("Human response requires interactive Pi.");
       return choices?.length ? context.ui.select(question, ["Cancel", ...choices], { signal }).then(value => value === "Cancel" ? undefined : value) : humanEditor(context, question, "", signal);
     } }, signal),
   });
-  hub.onRelated = (record, text) => run.related(record, text);
+  hub.onRelated = (record: WorkerRecord, text: string) => run.related(record, text);
   const control = () => active || lastControl;
   const writesOwned = () => !!active || hub.list().some(r => isActive(r) && !r.metadata.readOnly);
   const ownershipMessage = "Main is read-only while a controller or writing child owns this worktree. Alt+A opens that agent. /dev-pause stops before the next safe step; /dev-stop cancels running work. Wait for Paused/Stopped before editing in Main.";
-  let hubUI;
-  const respond = async (questionId) => {
+  let hubUI: any;
+  const respond = async (questionId?: string) => {
     if (!active?.pending && !hub.questions().length) return;
     await hubUI.beforePrompt();
     if (!ctx || foregroundPrompts > 0) {
@@ -49,7 +77,7 @@ export default function (pi, dependencies = {}) {
     control, respond,
     resume: () => continueWorkflow(),
   });
-  const audit = (kind, data) => {
+  const audit = (kind: string, data: Record<string, unknown>) => {
     if (!closing) try { pi.appendEntry?.("dev-controller-event", { kind, at: Date.now(), ...data }); } catch (error) { warn(error); }
   };
   pi.registerEntryRenderer?.("dev-controller-event", (entry, _opts, theme) => new Text(
@@ -68,14 +96,14 @@ export default function (pi, dependencies = {}) {
     if (closing || !parentId || request?.sessionId !== parentId || typeof request.receive !== "function") return;
     const valid = () => { if (closing || ctx?.sessionManager.getSessionId() !== parentId) throw new Error("Parent session changed."); };
     request.receive({
-      createSessionManager(cwd, metadata) { valid(); return history.create(cwd, metadata); },
-      register(record) {
+      createSessionManager(cwd: string, metadata: Record<string, unknown>) { valid(); if (!history) throw new Error("Worker history is unavailable."); return history.create(cwd, metadata); },
+      register(record: { id: string; session: any; metadata?: Record<string, any>; label?: string; role?: string; model?: string; thinking?: string }) {
         valid();
         if (!record.id || !record.session) throw new Error("Register an id and an externally-owned AgentSession.");
         hub.register({ ...record, metadata: { ...record.metadata, external: true } });
         return {
-          update(patch) { valid(); hub.update(record.id, patch); },
-          finish(state = "completed") { valid(); hub.unregister(record.id, state); },
+          update(patch: Partial<Pick<WorkerRecord, "label" | "metadata" | "state" | "activity" | "accepting" | "outcome" | "context">>) { valid(); hub.update(record.id, patch); },
+          finish(state: WorkerState = "completed") { valid(); hub.unregister(record.id, state); },
         };
       },
     });
@@ -104,9 +132,9 @@ export default function (pi, dependencies = {}) {
       if (writesOwned()) { ctx.ui.notify(ownershipMessage, "warning"); return; }
       hubUI.setContext(ctx); hubUI.setWorkflow(`dev-${phase}`);
       try {
-        await excludeState({ cwd: ctx.cwd, exec: (program, argv) => pi.exec(program, argv, { cwd: ctx.cwd }) });
+        await excludeState({ exec: (program, argv) => pi.exec(program, argv, { cwd: ctx!.cwd }) });
         pi.sendUserMessage(`/skill:dev-${phase}${args ? ` ${args}` : ""}`, { expandPromptTemplates: true });
-      } catch (error) { ctx.ui.notify(error.message, "error"); }
+      } catch (error: unknown) { ctx.ui.notify(errorMessage(error), "error"); }
     },
   });
 
@@ -114,27 +142,27 @@ export default function (pi, dependencies = {}) {
     if (active || !lastControl || !ctx) return;
     try {
       await lastControl.verifyResume();
-      await start(lastControl.phase, lastControl.target, ctx);
-    } catch (error) { ctx.ui.notify(error.message, "warning"); }
+      await start(lastControl.phase as WorkflowPhase, lastControl.target, ctx);
+    } catch (error: unknown) { ctx.ui.notify(errorMessage(error), "warning"); }
   }
 
-  async function start(phase, args, nextCtx) {
+  async function start(phase: WorkflowPhase, args: string, nextCtx: AppContext) {
     ctx = nextCtx;
     if (active || !ctx.isIdle() || ctx.hasPendingMessages?.() || foregroundPrompts > 0 || hub.list().some(r => isActive(r) && !r.metadata.readOnly)) {
       ctx.ui.notify("Finish or stop active writing work and Main's turn before starting another controller.", "warning"); return;
     }
-    try { history?.ensureParent(); } catch (error) { ctx.ui.notify(`Cannot persist the parent session: ${error.message}`, "error"); return; }
+    try { history?.ensureParent(); } catch (error: unknown) { ctx.ui.notify(`Cannot persist the parent session: ${errorMessage(error)}`, "error"); return; }
     const current = new WorkflowControl(phase, args, () => hubUI.refresh());
     active = current; lastControl = current;
     hubUI.setContext(ctx); hubUI.setWorkflow(`dev-${phase}`);
-    const report = text => { current.update(text); audit("progress", { phase, text }); };
-    const ask = (title, show) => {
+    const report = (text: string) => { current.update(text); audit("progress", { phase, text }); };
+    const ask = <T>(title: string, show: () => Promise<T>): Promise<T> => {
       if (!ctx.hasUI) return Promise.reject(new Error("Human approval requires interactive Pi."));
       audit("needs human", { phase, text: title });
       return current.ask(title, show);
     };
-    const h = {
-      cwd: ctx.cwd, signal: current.signal, control: current,
+    const h: WorkflowHost = {
+      cwd: ctx.cwd, signal: current.signal, control: current, lastWorkerId: undefined,
       rawExec(program, argv) { return pi.exec(program, argv, { cwd: this.cwd }); },
       checkpoint: activity => current.checkpoint(activity),
       async exec(program, argv) {
@@ -150,20 +178,20 @@ export default function (pi, dependencies = {}) {
           throw error;
         }
       },
-      async delegate(name, task, skill, schema, options = {}) {
+      async delegate<T = string>(name: string, task: string, skill?: string, schema?: unknown, options: DelegateOptions = {}): Promise<T> {
         current.checkpoint();
         const { metadata = {}, ...rest } = options;
-        let id;
+        let id: string | undefined;
         const result = await run({ cwd: this.cwd, name, task, skill, schema, ...rest,
           signal: this.signal, metadata: { phase, owner: "workflow", ...metadata },
           onStarted: value => { id = value; }, report: text => current.update(text),
         });
-        this.lastWorkerId = id; return result;
+        this.lastWorkerId = id; return result as T;
       },
-      workerOutcome: (id, outcome) => { if (id) hub.update(id, { outcome }); },
-      select: (title, choices) => ask(title, () => ctx.ui.select(title, ["Cancel", ...choices], { signal: current.signal }).then(v => v === "Cancel" ? undefined : v)),
-      confirm: (title, message) => ask(title, async () => (await ctx.ui.select(`${title}\n${message}`, ["Cancel", "Confirm"], { signal: current.signal })) === "Confirm"),
-      review: (title, markdown, repairs) => ask(title, async () => {
+      workerOutcome: (id: string | undefined, outcome: string) => { if (id) hub.update(id, { outcome }); },
+      select: (title: string, choices: string[]) => ask(title, () => ctx!.ui.select(title, ["Cancel", ...choices], { signal: current.signal }).then((v: string | undefined) => v === "Cancel" ? undefined : v)),
+      confirm: (title: string, message: string) => ask(title, async () => (await ctx!.ui.select(`${title}\n${message}`, ["Cancel", "Confirm"], { signal: current.signal })) === "Confirm"),
+      review: (title: string, markdown: string, repairs?: ReviewRepair[]) => ask(title, async () => {
         pi.sendMessage({ customType: "dev-workflow", content: markdown, display: true }, { triggerTurn: false });
         if (repairs) {
           pi.sendMessage({ customType: "dev-workflow", content: repairs.map(r => `## ${r.title}\n${r.reason}\n\n${r.goal}\n\n${(r.evidence || []).join("\n")}\n\nChecks: ${(r.checks || []).join(", ")}`).join("\n\n"), display: true }, { triggerTurn: false });
@@ -189,13 +217,13 @@ export default function (pi, dependencies = {}) {
       }),
       report,
     };
-    let failure;
+    let failure: unknown;
     try { await (dependencies.runWorkflow || runWorkflow)(h, phase, args); }
-    catch (error) { failure = error; if (!closing) ctx.ui.notify(workflowError(error, phase, args), current.signal.aborted ? "info" : "warning"); }
+    catch (error: unknown) { failure = error; if (!closing) ctx.ui.notify(workflowError(error, phase, args), current.signal.aborted ? "info" : "warning"); }
     finally {
       if (failure instanceof WorkflowPaused) {
         try { await current.capturePause(); }
-        catch (error) { warn(`Pause state preserved but fast continuation disabled: ${error.message}`); }
+        catch (error: unknown) { warn(`Pause state preserved but fast continuation disabled: ${errorMessage(error)}`); }
       }
       current.finish(failure); audit(current.state, { phase, text: `${current.activity}\n${current.resumeCommand}` });
       if (active === current) active = undefined;
