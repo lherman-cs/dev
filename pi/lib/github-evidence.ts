@@ -26,7 +26,7 @@ function call(run: GraphqlRun, query: string, variables: Record<string, string |
   try { return JSON.parse(run(args)) as Node; } catch (error) { throw new Error(`GitHub GraphQL evidence failed: ${error instanceof Error ? error.message : String(error)}`); }
 }
 const prQuery = `query($owner:String!,$name:String!,$head:String!,$cursor:String){repository(owner:$owner,name:$name){pullRequests(first:100,after:$cursor,headRefName:$head,states:[OPEN]){nodes{number url state isDraft headRefName headRefOid baseRefName baseRefOid}pageInfo{hasNextPage endCursor}}}}`;
-const checkQuery = `query($owner:String!,$name:String!,$number:Int!,$cursor:String){repository(owner:$owner,name:$name){pullRequest(number:$number){commits(last:1){nodes{commit{oid statusCheckRollup{contexts(first:100,after:$cursor){nodes{__typename ... on CheckRun{id name status conclusion detailsUrl app{databaseId} commit{oid}} ... on StatusContext{id context state targetUrl commit{oid}}pageInfo{hasNextPage endCursor}}}}}}}}}`;
+const checkQuery = `query($owner:String!,$name:String!,$number:Int!,$cursor:String){repository(owner:$owner,name:$name){pullRequest(number:$number){commits(last:1){nodes{commit{oid statusCheckRollup{contexts(first:100,after:$cursor){nodes{__typename ... on CheckRun{id name status conclusion detailsUrl checkSuite{app{databaseId} commit{oid}}} ... on StatusContext{id context state targetUrl commit{oid}}}pageInfo{hasNextPage endCursor}}}}}}}}}`;
 const threadCommentsQuery = `query($id:ID!,$cursor:String){node(id:$id){... on PullRequestReviewThread{comments(first:100,after:$cursor){nodes{id body url createdAt author{login} commit{oid}}pageInfo{hasNextPage endCursor}}}}}`;
 const pageQuery = (field: string, selection: string) => `query($owner:String!,$name:String!,$number:Int!,$cursor:String){repository(owner:$owner,name:$name){pullRequest(number:$number){${field}(first:100,after:$cursor){nodes{${selection}}pageInfo{hasNextPage endCursor}}}}}`;
 function pullRequestPages(run: GraphqlRun, owner: string, name: string, head: string): Node[] {
@@ -81,21 +81,26 @@ export function collectGitHubEvidence(candidate: CandidateIdentity, run: Graphql
   const pr = matches[0]!;
   const number = Number(pr.number); if (!Number.isSafeInteger(number) || number < 1) throw new Error("GitHub returned an invalid pull request number.");
   const reviews = pages(run, owner, name, number, "reviews", "id state body url submittedAt author{login} commit{oid}");
-  const comments = pages(run, owner, name, number, "comments", "id body url createdAt author{login} commit{oid}");
+  const comments = pages(run, owner, name, number, "comments", "id body url createdAt author{login}");
   const threads = pages(run, owner, name, number, "reviewThreads", "id isResolved isOutdated").map(thread => threadWithAllComments(run, thread));
   const contexts = checkPages(run, owner, name, number);
   const bounded = (entry: Node): Node => Object.fromEntries(Object.entries(entry).filter(([key]) => key !== "body"));
   const raw = { reviews: reviews.map(bounded), comments: comments.map(bounded), reviewThreads: threads.map(bounded), contexts: contexts.map(bounded) };
   const checks = contexts.filter(context => ["CheckRun", "StatusContext"].includes(string(context, "__typename")))
     .map(context => {
-      const checkRun = string(context, "__typename") === "CheckRun", appId = Number((context["app"] as Node | undefined)?.["databaseId"]);
-      return { id: string(context, "id"), name: string(context, checkRun ? "name" : "context"), head: string(context.commit as Node, "oid"), state: checkRun ? string(context, "status") : "COMPLETED", conclusion: checkRun ? string(context, "conclusion") || null : string(context, "state"), ...(Number.isSafeInteger(appId) ? { appId } : {}) };
+      const checkRun = string(context, "__typename") === "CheckRun", suite = context["checkSuite"] as Node | undefined;
+      const app = (checkRun ? suite?.["app"] : context["app"]) as Node | undefined, appId = Number(app?.["databaseId"]);
+      const commit = checkRun ? suite?.commit as Node | undefined : context.commit as Node | undefined;
+      return { id: string(context, "id"), name: string(context, checkRun ? "name" : "context"), head: string(commit, "oid"), state: checkRun ? string(context, "status") : "COMPLETED", conclusion: checkRun ? string(context, "conclusion") || null : string(context, "state"), ...(Number.isSafeInteger(appId) ? { appId } : {}) };
     }).filter(check => check.id && check.name && check.head) as CiCheck[];
   const items = [
     ...checks.map(check => ({ id: check.id, kind: "check" as const, head: check.head, state: `${check.state}:${check.conclusion ?? ""}`, digest: digest(check) })),
     ...reviews.map(review => ({ id: string(review, "id"), kind: "review" as const, head: string(review.commit as Node, "oid"), state: string(review, "state"), digest: digest(review) })),
     ...threads.map(thread => ({ id: string(thread, "id"), kind: "thread" as const, head: candidate.branch.head, state: `${Boolean(thread.isResolved)}:${Boolean(thread.isOutdated)}`, digest: digest(thread) })),
-    ...comments.map(comment => ({ id: string(comment, "id"), kind: "comment" as const, head: string(comment.commit as Node, "oid"), state: "COMMENT", digest: digest(comment) })),
+    // Pull request issue comments are not commit-scoped in GitHub's schema. They
+    // are candidate-scoped here because this collection was read through the
+    // exact pull request identity validated above.
+    ...comments.map(comment => ({ id: string(comment, "id"), kind: "comment" as const, head: candidate.branch.head, state: "COMMENT", digest: digest(comment) })),
   ].filter(item => item.id && item.head).sort((a, b) => a.id.localeCompare(b.id));
   const inventory: Inventory = { candidate, items, digest: digest(items) };
   return { pullRequest: { number, url: string(pr, "url"), state: "OPEN", draft: Boolean(pr.isDraft), head: candidate.branch, base: candidate.base }, checks, inventory, raw };
@@ -176,9 +181,11 @@ export function selectExpectedReviewSignals(signals: readonly { kind: "author" |
 /** Fetches one explicitly identified object and caps returned evidence. */
 export function fetchExactGitHubObject(id: string, expectedHead: string, maxCharacters: number, run: GraphqlRun = ghGraphql): Readonly<Record<string, unknown>> {
   if (!id || maxCharacters < 1 || maxCharacters > 20_000) throw new Error("Invalid exact-object evidence request.");
-  const query = `query($id:ID!){node(id:$id){__typename ... on PullRequestReview{id body url commit{oid}} ... on IssueComment{id body url commit{oid}} ... on CheckRun{id name detailsUrl status conclusion commit{oid}}}}`;
+  const query = `query($id:ID!){node(id:$id){__typename ... on PullRequestReview{id body url commit{oid}} ... on IssueComment{id body url pullRequest{headRefOid}} ... on CheckRun{id name detailsUrl status conclusion checkSuite{commit{oid}}}}}`;
   const node = (call(run, query, { id }).data as Node | undefined)?.node;
-  if (!node || string(node, "id") !== id || string(node.commit as Node, "oid") !== expectedHead) throw new Error("GitHub object identity is stale or mismatched.");
+  const type = string(node, "__typename");
+  const observedHead = type === "IssueComment" ? string(node?.["pullRequest"] as Node, "headRefOid") : type === "CheckRun" ? string((node?.["checkSuite"] as Node | undefined)?.commit as Node, "oid") : string(node?.commit as Node, "oid");
+  if (!node || string(node, "id") !== id || observedHead !== expectedHead) throw new Error("GitHub object identity is stale or mismatched.");
   const body = string(node, "body");
   return { ...node, ...(body ? { body: body.slice(0, maxCharacters), truncated: body.length > maxCharacters } : {}) };
 }

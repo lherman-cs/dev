@@ -26,7 +26,13 @@ test("required contexts stop on ambiguity and preserve app identity", () => {
 });
 
 test("exact object evidence revalidates head and bounds body", () => {
-  const run: GraphqlRun = () => JSON.stringify({ data: { node: { __typename: "IssueComment", id: "x", body: "123456", url: "u", commit: { oid } } } });
-  assert.deepEqual(fetchExactGitHubObject("x", oid, 3, run), { __typename: "IssueComment", id: "x", body: "123", url: "u", commit: { oid }, truncated: true });
+  const run: GraphqlRun = args => {
+    const query = args.find(arg => arg.startsWith("query=")) ?? "";
+    assert.match(query, /IssueComment\{id body url pullRequest\{/);
+    assert.doesNotMatch(query, /IssueComment\{[^}]*commit/);
+    assert.match(query, /CheckRun\{[^}]*checkSuite\{commit\{oid\}/);
+    return JSON.stringify({ data: { node: { __typename: "IssueComment", id: "x", body: "123456", url: "u", pullRequest: { headRefOid: oid } } } });
+  };
+  assert.deepEqual(fetchExactGitHubObject("x", oid, 3, run), { __typename: "IssueComment", id: "x", body: "123", url: "u", pullRequest: { headRefOid: oid }, truncated: true });
   assert.throws(() => fetchExactGitHubObject("x", base, 3, run), /stale or mismatched/);
 });

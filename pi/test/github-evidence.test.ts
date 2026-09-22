@@ -12,11 +12,16 @@ test("GraphQL evidence validates the exact PR and paginates audit facts", () => 
     (calls as string[][]).push([...args]); const query = args.find(arg => arg.startsWith("query=")) ?? "";
     if (query.includes("pullRequests")) return JSON.stringify({ data: { repository: { pullRequests: { nodes: [{ number: 7, url: "https://github.com/octo/project/pull/7", state: "OPEN", isDraft: true, headRefName: "feature", headRefOid: oid, baseRefName: "main", baseRefOid: base }] } } } });
     if (query.includes("reviews(")) { reviewPage++; return JSON.stringify({ data: { repository: { pullRequest: { reviews: page([{ id: `review-${reviewPage}`, state: "APPROVED", commit: { oid } }], reviewPage === 1) } } } }); }
-    if (query.includes("comments(") && !query.includes("reviewThreads")) return JSON.stringify({ data: { repository: { pullRequest: { comments: page([{ id: "comment", commit: { oid } }]) } } } });
+    if (query.includes("pullRequest(number:") && query.includes("comments(") && !query.includes("reviewThreads")) {
+      assert.ok(!query.includes("author{login} commit{oid}"), "IssueComment has no commit field");
+      return JSON.stringify({ data: { repository: { pullRequest: { comments: page([{ id: "comment" }]) } } } });
+    }
     if (query.includes("reviewThreads")) return JSON.stringify({ data: { repository: { pullRequest: { reviewThreads: page([{ id: "thread", isResolved: false, isOutdated: false }]) } } } });
     if (query.includes("node(id:")) return JSON.stringify({ data: { node: { comments: page([{ id: "thread-comment", commit: { oid } }]) } } });
+    assert.equal([...query].filter(char => char === "{").length, [...query].filter(char => char === "}").length, "check query is balanced");
+    assert.ok(!query.includes("CheckRun{id name status conclusion detailsUrl app{databaseId} commit"), "CheckRun has no commit field");
     return JSON.stringify({ data: { repository: { pullRequest: { commits: { nodes: [{
-      commit: { oid, statusCheckRollup: { contexts: page([{ __typename: "CheckRun", id: "check", name: "test", status: "COMPLETED", conclusion: "SUCCESS", commit: { oid } }]) } },
+      commit: { oid, statusCheckRollup: { contexts: page([{ __typename: "CheckRun", id: "check", name: "test", status: "COMPLETED", conclusion: "SUCCESS", checkSuite: { commit: { oid } } }]) } },
     }] } } } } });
   };
   const evidence = collectGitHubEvidence(candidate, run);
