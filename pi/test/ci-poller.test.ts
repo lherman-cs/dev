@@ -8,13 +8,13 @@ function fakeClock(): [Clock, () => void] { let now = 0; return [{ now: () => no
 function deps(observations: CiCheck[][]) { const observationsSaved: CiCheck[][] = [], results: WaitOutcome[] = []; const [clock] = fakeClock(); return { observationsSaved, results, clock, observe: async () => observations.shift() ?? [], persistObservation: (_: CandidateIdentity, checks: CiCheck[]) => { observationsSaved.push(checks); }, persist: (result: WaitOutcome) => { results.push(result); } }; }
 test("CI poller persists observations and reaches passed or failed only for exact required checks", async () => {
   const d = deps([[check("IN_PROGRESS")], [check("COMPLETED", "SUCCESS")]]); const result = await waitForCi(candidate, ["required"], d, { initialDelayMs: 1, maxDelayMs: 4, timeoutMs: 10 });
-  assert.equal(result.status, "passed"); assert.equal(d.observationsSaved.length, 1); assert.equal(d.results.length, 1);
+  assert.equal(result.status, "passed"); assert.deepEqual(result.requiredCheckIds, ["required"]); assert.equal(d.observationsSaved.length, 2); assert.equal(d.results.length, 1);
   const failed = deps([[check("COMPLETED", "FAILURE")]]); assert.equal((await waitForCi(candidate, ["required"], failed, { initialDelayMs: 1, maxDelayMs: 2, timeoutMs: 10 })).status, "failed");
 });
 test("CI poller waits for configured review signals and persists combined observations", async () => {
   const d = deps([[check("COMPLETED", "SUCCESS")], [check("COMPLETED", "SUCCESS")]]), signalPages = [[], ["author:bot"]];
   const result = await waitForCi(candidate, ["required"], { ...d, observeSignals: async () => signalPages.shift() ?? [] }, { initialDelayMs: 1, maxDelayMs: 2, timeoutMs: 10 }, undefined, ["author:bot"]);
-  assert.equal(result.status, "passed"); assert.deepEqual(result.observedSignals, ["author:bot"]); assert.equal(d.observationsSaved.length, 1);
+  assert.equal(result.status, "passed"); assert.deepEqual(result.observedSignals, ["author:bot"]); assert.equal(d.observationsSaved.length, 2);
 });
 test("CI poller is cancellable and refuses missing, stale, or indefinitely pending evidence", async () => {
   const controller = new AbortController(); controller.abort(); const cancelled = deps([]); assert.equal((await waitForCi(candidate, ["required"], cancelled, { initialDelayMs: 1, maxDelayMs: 2, timeoutMs: 10 }, controller.signal)).status, "cancelled");

@@ -1,9 +1,9 @@
 import { role, type ResolvedRole } from "./roles.ts";
-import type { ApprovalIdentity, BuildHandoff, CandidateIdentity, FinalPacket, Inventory, ReviewerResult } from "./ship-contracts.ts";
+import type { ApprovalIdentity, BuildHandoff, CandidateIdentity, FinalPacket, Inventory, ReviewerResult, WaitOutcome } from "./ship-contracts.ts";
 
 export type ShipAction = "start" | "prepare" | "publish" | "wait" | "audit" | "repair" | "approve" | "ready";
 export type ShipPhase = "handoff" | "prepared" | "published" | "waiting" | "audited" | "repairing" | "approved" | "ready" | "stopped";
-export interface ShipState { invocationId: string; revision: number; phase: ShipPhase; candidate: CandidateIdentity; handoff: BuildHandoff; repairs: number; stableKeys: string[]; inventory?: Inventory; reviewer?: ReviewerResult; packet?: FinalPacket; approval?: ApprovalIdentity; }
+export interface ShipState { invocationId: string; revision: number; phase: ShipPhase; candidate: CandidateIdentity; handoff: BuildHandoff; repairs: number; stableKeys: string[]; wait?: WaitOutcome; inventory?: Inventory; reviewer?: ReviewerResult; packet?: FinalPacket; approval?: ApprovalIdentity; }
 export interface ShipActionRequest { invocationId: string; expectedRevision: number; expectedCandidate: CandidateIdentity; action: ShipAction; }
 export interface ShipRuntimeDependencies { persist(state: ShipState): Promise<void> | void; refresh(candidate: CandidateIdentity): Promise<CandidateIdentity>; }
 const transitions: Record<ShipPhase, readonly ShipAction[]> = { handoff: ["start", "prepare"], prepared: ["publish"], published: ["wait"], waiting: ["audit"], audited: ["repair", "approve"], repairing: ["prepare"], approved: ["ready"], ready: [], stopped: [] };
@@ -34,7 +34,7 @@ export class ShipRuntime {
     const repairs = action === "repair" ? this.state.repairs + 1 : this.state.repairs;
     const candidateChanged = patch.candidate && !sameCandidate(patch.candidate, this.state.candidate);
     const next: ShipState = { ...this.state, ...patch, repairs, phase: phase[action] };
-    if (candidateChanged) { delete next.inventory; delete next.reviewer; delete next.packet; delete next.approval; }
+    if (candidateChanged) { delete next.wait; delete next.inventory; delete next.reviewer; delete next.packet; delete next.approval; }
     return this.replace(next);
   }
   private async replace(next: ShipState): Promise<ShipState> { this.state = { ...next, revision: this.state.revision + 1 }; await this.deps.persist(this.snapshot()); return this.snapshot() as ShipState; }

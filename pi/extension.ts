@@ -3,13 +3,14 @@ import { asyncExploreTool, asyncReviewTool, createWorkerRunner, type AsyncWorker
 import path from "node:path";
 import { buildHandoffTool, handoffFile } from "./lib/ship-handoff.ts";
 import { ShipStore } from "./lib/ship-store.ts";
-import { shipActionTool } from "./lib/ship-action.ts";
+import { abortActiveShipWait, shipActionTool } from "./lib/ship-action.ts";
 import { WorkerHub, isActive } from "./lib/worker-hub.ts";
 import { WorkerHistory } from "./lib/worker-history.ts";
 import { registerWorkerHubUI } from "./worker-hub-ui.ts";
 import type { WorkerHistory as WorkerHistoryStore } from "./lib/worker-history.ts";
 import type { RegisterWorker, WorkerPatch, WorkerState } from "./lib/worker-types.ts";
 import type { PublicPhase } from "./lib/roles.ts";
+import { reconcileShipTodos } from "./lib/ship-todo.ts";
 
 export const explorerOnlyTools = new Set(["web_search", "source_check", "fetch_content", "get_search_content"]);
 const mainReaders = new Set(["read", "grep", "find", "ls", "explore", "review", "vcc_recall", "ask_user_question"]);
@@ -104,9 +105,14 @@ export default function extension(pi: ExtensionAPI, dependencies: ExtensionDepen
     }
     return undefined;
   };
+  pi.on("session_start", (_event, nextCtx) => {
+    const state = new ShipStore(path.dirname(handoffFile(nextCtx.cwd))).load()?.state;
+    if (state) reconcileShipTodos(nextCtx.sessionManager.getSessionFile() ?? `ship:${nextCtx.cwd}`, state);
+  });
   pi.on("session_before_switch", preventSessionChange);
   pi.on("session_before_fork", preventSessionChange);
   pi.on("input", event => {
+    if (event.streamingBehavior === "steer") abortActiveShipWait();
     const match = /^\/skill:dev-(spec|plan|build|ship)(?:\s|$)/.exec(event.text);
     if (match?.[1]) setPhase(match[1] as PublicPhase);
     return { action: "continue" };
@@ -125,7 +131,7 @@ export default function extension(pi: ExtensionAPI, dependencies: ExtensionDepen
     },
   });
   pi.on("session_shutdown", async () => {
-    closing = true; lifetime.abort();
+    closing = true; abortActiveShipWait(); lifetime.abort();
     await Promise.allSettled(hub.list().filter(isActive).map(r => hub.abort(r.id)));
     await run.stopAll(); hub.flush(); unlisten?.(); hubUI.dispose(); hub.dispose();
   });
