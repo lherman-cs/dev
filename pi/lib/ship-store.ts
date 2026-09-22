@@ -38,6 +38,10 @@ export function validateShipSnapshot(value: unknown): ShipSnapshot {
   if (!object(value) || value['version'] !== 2 || !object(value['state']) || !Array.isArray(value['operations'])) throw new Error("Ship state schema is invalid.");
   const state = value['state'];
   if (!text(state['invocationId']) || !Number.isInteger(state['revision']) || !text(state['phase']) || !object(state['candidate']) || !object(state['handoff']) || !Number.isInteger(state['repairs']) || !Array.isArray(state['stableKeys'])) throw new Error("Ship state schema is invalid.");
+  const pending = state['pendingWorker'];
+  if (pending !== undefined && (!object(pending) || !text(pending['operationId']) || (pending['action'] !== 'prepare' && pending['action'] !== 'audit') || (pending['role'] !== 'Builder' && pending['role'] !== 'Reviewer') || !Number.isInteger(pending['reservedRevision']) || !object(pending['candidate']))) throw new Error("Ship state schema is invalid.");
+  const failure = state['workerFailure'];
+  if (failure !== undefined && (!object(failure) || !text(failure['operationId']) || (failure['action'] !== 'prepare' && failure['action'] !== 'audit') || (failure['role'] !== 'Builder' && failure['role'] !== 'Reviewer') || !text(failure['message']) || typeof failure['recordedAt'] !== 'number')) throw new Error("Ship state schema is invalid.");
   validateBuildHandoff(state['handoff']);
   return value as unknown as ShipSnapshot;
 }

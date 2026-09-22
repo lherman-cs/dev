@@ -137,8 +137,8 @@ test('stop a Builder cancels nested Explorer; no child outlives its owner or ret
   });
   const work=f.run({cwd:f.cwd,name:'build',task:'build',skill:'dev-build'});const rejection=assert.rejects(work,/abort|cancel/i);await ready.promise;
   const parent=required(f.hub.list().find(record=>record.role==='build'),'builder'),child=required(f.hub.list().find(record=>record.role==='explorer'),'explorer');
-  assert.equal(child.metadata['parentId'],parent.id);await f.hub.abort(parent.id);await rejection;
-  assert.ok(f.hub.list().every(r=>r.state==='aborted'));assert.ok(f.sessions.every(s=>!s.isStreaming));assert.equal(builders,1);
+  assert.equal(child.metadata['parentId'],parent.id);assert.equal(builders,2,'Builder continued after the asynchronous Explorer receipt');await f.hub.abort(parent.id);await rejection;
+  assert.ok(f.hub.list().every(r=>r.state==='aborted'));assert.ok(f.sessions.every(s=>!s.isStreaming));assert.equal(builders,2);
 });
 
 test('parallel Explorers keep distinct contexts, identities and sibling failures isolated',{timeout:10000},async t=>{

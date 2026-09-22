@@ -3,7 +3,9 @@ import type { ApprovalIdentity, BuildHandoff, CandidateIdentity, FinalPacket, In
 
 export type ShipAction = "start" | "prepare" | "publish" | "wait" | "audit" | "repair" | "approve" | "ready";
 export type ShipPhase = "handoff" | "prepared" | "published" | "waiting" | "audited" | "repairing" | "approved" | "ready" | "stopped";
-export interface ShipState { invocationId: string; revision: number; phase: ShipPhase; candidate: CandidateIdentity; handoff: BuildHandoff; repairs: number; stableKeys: string[]; rewritten?: boolean; pullRequest?: PullRequestIdentity; localChecks?: LocalCheck[]; wait?: WaitOutcome; inventory?: Inventory; reviewer?: ReviewerResult; packet?: FinalPacket; approval?: ApprovalIdentity; }
+export interface PendingShipWorker { operationId: string; action: "prepare" | "audit"; role: "Builder" | "Reviewer"; reservedRevision: number; candidate: CandidateIdentity; }
+export interface ShipWorkerFailure { operationId: string; action: "prepare" | "audit"; role: "Builder" | "Reviewer"; message: string; recordedAt: number; }
+export interface ShipState { invocationId: string; revision: number; phase: ShipPhase; candidate: CandidateIdentity; handoff: BuildHandoff; repairs: number; stableKeys: string[]; rewritten?: boolean; pullRequest?: PullRequestIdentity; localChecks?: LocalCheck[]; wait?: WaitOutcome; inventory?: Inventory; reviewer?: ReviewerResult; packet?: FinalPacket; approval?: ApprovalIdentity; pendingWorker?: PendingShipWorker; workerFailure?: ShipWorkerFailure; }
 export interface ShipActionRequest { invocationId: string; expectedRevision: number; expectedCandidate: CandidateIdentity; action: ShipAction; }
 export interface ShipRuntimeDependencies { persist(state: ShipState): Promise<void> | void; refresh(candidate: CandidateIdentity): Promise<CandidateIdentity>; }
 const transitions: Record<ShipPhase, readonly ShipAction[]> = { handoff: ["start", "prepare"], prepared: ["publish"], published: ["wait"], waiting: ["audit", "repair"], audited: ["repair", "approve"], repairing: ["prepare"], approved: ["ready"], ready: [], stopped: [] };
@@ -15,6 +17,7 @@ export class ShipRuntime {
   constructor(state: ShipState, deps: ShipRuntimeDependencies) { this.state = state; this.deps = deps; }
   snapshot(): Readonly<ShipState> { return structuredClone(this.state); }
   async admit(request: ShipActionRequest): Promise<ShipState> {
+    if (this.state.pendingWorker) throw new Error(`Ship ${this.state.pendingWorker.role} ${this.state.pendingWorker.operationId} is still running.`);
     if (request.invocationId !== this.state.invocationId || request.expectedRevision !== this.state.revision) throw new Error("Stale ship action.");
     if (!sameCandidate(request.expectedCandidate, this.state.candidate)) throw new Error("Stale candidate identity.");
     if (!transitions[this.state.phase].includes(request.action)) throw new Error(`Cannot ${request.action} while ship state is ${this.state.phase}.`);
@@ -25,6 +28,25 @@ export class ShipRuntime {
     return this.snapshot() as ShipState;
   }
   builderRole(): ResolvedRole { return role(this.state.repairs === 1 ? "escalated_builder" : "build"); }
+  async reserveWorker(operationId: string, action: "prepare" | "audit", roleName: "Builder" | "Reviewer"): Promise<ShipState> {
+    if (this.state.pendingWorker) throw new Error(`Ship ${this.state.pendingWorker.role} ${this.state.pendingWorker.operationId} is still running.`);
+    if (!transitions[this.state.phase].includes(action)) throw new Error(`Cannot reserve ${action} while ship state is ${this.state.phase}.`);
+    if ((action === "prepare") !== (roleName === "Builder")) throw new Error("Ship worker role does not match its action.");
+    const pendingWorker: PendingShipWorker = { operationId, action, role: roleName, reservedRevision: this.state.revision, candidate: structuredClone(this.state.candidate) };
+    const next = { ...this.state, pendingWorker }; delete next.workerFailure;
+    return this.replace(next);
+  }
+  async completeWorker(operationId: string, patch: Partial<ShipState>): Promise<ShipState> {
+    const pending = this.requirePending(operationId);
+    const next = { ...this.state }; delete next.pendingWorker; this.state = next;
+    return this.complete(pending.action, patch);
+  }
+  async failWorker(operationId: string, error: unknown, recordedAt = Date.now()): Promise<ShipState> {
+    const pending = this.requirePending(operationId);
+    const next: ShipState = { ...this.state, phase: "stopped", workerFailure: { operationId, action: pending.action, role: pending.role, message: error instanceof Error ? error.message : String(error), recordedAt } };
+    delete next.pendingWorker; delete next.approval;
+    return this.replace(next);
+  }
   validateReview(inventory: Inventory, review: ReviewerResult): void {
     if (!sameCandidate(inventory.candidate, review.candidate) || inventory.digest !== review.inventoryDigest) throw new Error("Reviewer result does not match the live inventory.");
     const expected = new Set(inventory.items.map(item => item.id)), actual = review.dispositions.map(item => item.itemId);
@@ -46,6 +68,11 @@ export class ShipRuntime {
     const next: ShipState = { ...this.state, ...patch, repairs, stableKeys: [...new Set([...this.state.stableKeys, ...newKeys])], phase: phase[action] };
     if (candidateChanged && action !== "publish") { delete next.pullRequest; delete next.wait; delete next.inventory; delete next.reviewer; delete next.packet; delete next.approval; }
     return this.replace(next);
+  }
+  private requirePending(operationId: string): PendingShipWorker {
+    const pending = this.state.pendingWorker;
+    if (!pending || pending.operationId !== operationId || this.state.revision !== pending.reservedRevision + 1 || !sameCandidate(this.state.candidate, pending.candidate)) throw new Error("Stale ship worker completion.");
+    return pending;
   }
   private async replace(next: ShipState): Promise<ShipState> { this.state = { ...next, revision: this.state.revision + 1 }; await this.deps.persist(this.snapshot()); return this.snapshot() as ShipState; }
 }

@@ -1,0 +1,40 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { execFileSync } from "node:child_process";
+import { shipActionTool } from "../lib/ship-action.ts";
+import { handoffFile, snapshotCandidate } from "../lib/ship-handoff.ts";
+import { ShipStore } from "../lib/ship-store.ts";
+import type { BuildHandoff, WaitOutcome } from "../lib/ship-contracts.ts";
+import type { AsyncWorkerCompletion, RunWorker } from "../lib/worker.ts";
+
+const git = (cwd: string, ...args: string[]): string => execFileSync("git", args, { cwd, encoding: "utf8" }).trim();
+
+test("worker-backed ship prepare returns a receipt and persists its reservation before Builder completion", async t => {
+  const cwd=fs.mkdtempSync(path.join(os.tmpdir(),"ship-action-")); t.after(()=>fs.rmSync(cwd,{recursive:true,force:true}));
+  git(cwd,"init","-b","feature"); git(cwd,"config","user.email","test@example.com"); git(cwd,"config","user.name","Test");
+  fs.writeFileSync(path.join(cwd,"file.txt"),"one\n"); git(cwd,"add","."); git(cwd,"commit","-m","initial");
+  git(cwd,"remote","add","origin","https://github.com/o/r.git"); git(cwd,"update-ref","refs/remotes/origin/main","HEAD");
+  const candidate=snapshotCandidate(cwd,"main");
+  const handoff: BuildHandoff={ version:2,candidate,approved:{spec:{path:"spec",sha256:"c".repeat(64)},plan:{path:"plan",sha256:"d".repeat(64)}},completedOutcomes:["done"],localChecks:[],residualRisks:[],unresolvedDecisions:[],expectedReviewSignals:[],recordedAt:1 };
+  const wait: WaitOutcome={status:"failed",candidate,requiredCheckIds:["ci"],checks:[{id:"ci",name:"CI",head:candidate.branch.head,state:"COMPLETED",conclusion:"FAILURE"}]};
+  const store=new ShipStore(path.dirname(handoffFile(cwd))),invocationId=store.issueInvocation();
+  store.save({version:2,state:{invocationId,revision:3,phase:"repairing",candidate,handoff,repairs:1,stableKeys:[],pullRequest:{number:1,url:"u",state:"OPEN",draft:true,head:candidate.branch,base:candidate.base},wait},operations:[]});
+  let launches=0, finish!: (value: unknown) => void, publish!: (value: AsyncWorkerCompletion) => void;
+  const runImpl=async ()=>{launches++;return new Promise<unknown>(resolve=>{finish=resolve;});};
+  const run=runImpl as unknown as RunWorker;
+  const published=new Promise<AsyncWorkerCompletion>(resolve=>{publish=resolve;});
+  const tool=shipActionTool(run,completion=>publish(completion));
+  const response=await tool.execute("call",{invocationId,expectedRevision:3,action:"prepare",expectedHead:candidate.branch.head},undefined,undefined,{cwd,sessionManager:{getSessionFile:()=>undefined}} as any);
+  const receipt=JSON.parse((response.content[0] as {text:string}).text);
+  assert.equal(launches,1); assert.equal(receipt.status,"started"); assert.equal(receipt.role,"Builder");
+  const duplicate=await tool.execute("retry",{invocationId,expectedRevision:3,action:"prepare",expectedHead:candidate.branch.head},undefined,undefined,{cwd,sessionManager:{getSessionFile:()=>undefined}} as any);
+  assert.equal(JSON.parse((duplicate.content[0] as {text:string}).text).id,receipt.id); assert.equal(launches,1);
+  const pending=store.load()?.state.pendingWorker;
+  assert.equal(pending?.operationId,receipt.id); assert.equal(pending?.reservedRevision,3); assert.equal(store.load()?.state.revision,4);
+  finish({candidate,localChecks:[]});
+  const completion=await published;
+  assert.equal(completion.status,"completed"); assert.equal(store.load()?.state.phase,"prepared"); assert.equal(store.load()?.state.revision,5); assert.equal(store.load()?.state.pendingWorker,undefined);
+});

@@ -5,7 +5,7 @@ Treat instructions like least-privilege permissions.
 1. **No duplication or contradiction.** One requirement has one owner. Search active instruction sources before adding or changing it.
 2. **Least-privilege scope.** Put an instruction at the narrowest layer that needs it. Never promote it upward for convenience.
 3. **Do not teach defaults.** Do not prompt agents to do things a capable coding agent already normally does. Add instructions only for project/workflow-specific behavior, user preferences, or a failure mode we actually need to constrain.
-4. **Explorer-first context economy.** Main agents must use Explorer heavily by delegating every open-ended or input-heavy codebase, web, or other evidence-gathering scope. Give each Explorer one independent scope, run independent scopes in parallel when useful, and return only compact findings so raw exploration stays out of the main context.
+4. **Child-worker contract ownership.** Keep the general costly-evidence delegation trigger in the shared Explorer tool contract so every parent agent receives it. Every child-agent launch, including worker-owned and fixed dev-ship launches, must return immediately and deliver completion asynchronously. Repository and user instructions must not restate these shared contracts.
 
 Instruction ownership:
 

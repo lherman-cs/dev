@@ -41,7 +41,21 @@ test("four current-session aliases, Agent Hub and isolated tools register withou
   assert.ok(shortcuts.has("alt+a"));
   assert.deepEqual(tools.map(tool => tool.name), ["explore", "review", "build_handoff", "ship_action"]);
   assert.equal(messages.length, 0);
-  const explore = tools[0]; assert.ok(explore?.promptGuidelines?.join("\n").includes("one self-contained scope"));
+  const explore = tools[0]; assert.ok(explore);
+  const guidance = explore.promptGuidelines?.join("\n") ?? "";
+  for (const term of [
+    "material time or produce substantial raw output",
+    "broad repository or web research and slow or noisy targeted verification",
+    "quick known-target reads and small low-output checks",
+    "one self-contained scope",
+    "boundaries, sibling exclusions",
+    "All Explorer calls are asynchronous",
+    "callers never await Explorer calls",
+    "keep output bounded, state the fallback",
+    "do not bypass unavailable or prohibited tools",
+    "Continue useful work",
+    "result is required for the next decision",
+  ]) assert.ok(guidance.includes(term), term);
   const toolCall = handlers.get("tool_call"); assert.ok(toolCall);
   for (const toolName of explorerOnlyTools) assert.match(toolCall({ toolName })?.reason ?? "", /narrowly scoped explore calls/);
   assert.match(toolCall({ toolName: "review" })?.reason ?? "", /reserved.*dev-ship/);

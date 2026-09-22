@@ -37,12 +37,13 @@ const reviewResultSchema = Type.Object({
 export type ReviewResult = Static<typeof reviewResultSchema>;
 export interface AsyncWorkerCompletion {
   id: string;
-  role: "Explorer" | "Reviewer";
+  role: "Explorer" | "Reviewer" | "Builder";
   task: string;
   status: "completed" | "failed";
   result: string;
 }
-export type PublishAsyncWorkerCompletion = (completion: AsyncWorkerCompletion) => void;
+export type PublishAsyncWorkerCompletion = (completion: AsyncWorkerCompletion) => void | Promise<void>;
+export type TrackAsyncWorkerCompletion = (completion: Promise<void>) => void;
 const explorerResultSchema = Type.Object({
   status: Type.Union([Type.Literal("FOUND"), Type.Literal("INCONCLUSIVE"), Type.Literal("BLOCKED")]),
   answer: Type.String({ minLength: 1, description: "Direct answer to the assigned factual question." }),
@@ -127,7 +128,12 @@ export function createWorkerRunner(options: RunnerOptions): WorkerRunner {
     let value: unknown, valueEpoch = -1, inputEpoch = 0, feedback = false;
     let workerState: WorkerState = "completed";
     const sends = new Set<Promise<void>>();
+    const detachedCompletions = new Set<Promise<void>>();
     const quietReport = (text: string): void => { try { report(text); } catch (error) { hub.onError(error instanceof Error ? error : new Error(String(error))); } };
+    const trackDetachedCompletion: TrackAsyncWorkerCompletion = completion => {
+      detachedCompletions.add(completion);
+      void completion.finally(() => detachedCompletions.delete(completion)).catch(() => undefined);
+    };
     const abort = () => { session?.abortCompaction?.(); void session?.abort().catch(error => hub.onError(error)); };
     try {
       signal.throwIfAborted();
@@ -159,7 +165,23 @@ export function createWorkerRunner(options: RunnerOptions): WorkerRunner {
       const history = getHistory();
       const manager = history?.create(cwd, { id, label, role: name, model: selected.model, thinking: selected.thinking, metadata: workerMetadata, startedAt: Date.now() }) || SessionManager.inMemory(cwd);
       const childRun: RunWorker = <TChildShape extends TSchema | undefined = undefined>(args: RunArguments<TChildShape>) => execute({ ...args, scopedTools: args.scopedTools ?? scopedTools, signal: AbortSignal.any([signal, args.signal ?? signal]) });
-      const customTools: ToolDefinition[] = [...scopedTools, ...(explorer ? [] : [exploreTool(childRun, quietReport, { parentId: id, owner: metadata.owner, phase: metadata.phase }) as unknown as ToolDefinition])];
+      const publishNestedCompletion: PublishAsyncWorkerCompletion = async completion => {
+        if (!session || signal.aborted) return;
+        const previous = { inputEpoch, value, valueEpoch, feedback };
+        const epoch = ++inputEpoch; value = undefined; feedback = true;
+        try {
+          await session.prompt(renderAsyncWorkerCompletion(completion), { streamingBehavior: "followUp", expandPromptTemplates: false, source: "extension" });
+        } catch (error) {
+          if (inputEpoch === epoch) {
+            inputEpoch = previous.inputEpoch; feedback = previous.feedback;
+            if (value !== undefined && valueEpoch === epoch) valueEpoch = inputEpoch;
+            else { value = previous.value; valueEpoch = previous.valueEpoch; }
+          }
+          hub.onError(error instanceof Error ? error : new Error(String(error)));
+          throw error;
+        }
+      };
+      const customTools: ToolDefinition[] = [...scopedTools, ...(explorer ? [] : [asyncExploreTool(childRun, publishNestedCompletion, quietReport, trackDetachedCompletion, { parentId: id, owner: metadata.owner, phase: metadata.phase }) as unknown as ToolDefinition])];
       if (askHuman && !readonly && metadata.phase !== "ship") {
         const askSchema = Type.Object({ question: Type.String(), choices: Type.Optional(Type.Array(Type.String())) });
         customTools.push({ name: "ask_human", label: "Ask human", description: "Ask a bounded question and wait for the human to respond explicitly in Main.",
@@ -232,6 +254,10 @@ export function createWorkerRunner(options: RunnerOptions): WorkerRunner {
       quietReport(`${label}: working`);
       const request = `${task}${schema ? "\nSubmit the final result with submit_result." : ""}`;
       await childSession.prompt(assignedSkill ? `/skill:${assignedSkill} ${request}` : request);
+      // Detached Explorer calls return receipts to this worker immediately. Keep
+      // the owner session alive until each separately delivered completion turn
+      // settles; completion turns may launch further independent Explorers.
+      while (detachedCompletions.size) await Promise.allSettled([...detachedCompletions]);
       initialSettled = true; accepting = false; hub.seal(id);
       // A send accepted during the original turn can finish its native input
       // pipeline after that turn settles. Wait for it; never release a stale
@@ -302,11 +328,16 @@ export function reviewTool(run: RunWorker, report: (text: string) => void = () =
 
 export function exploreTool(run: RunWorker, report: (text: string) => void = () => undefined, parentMetadata: Record<string, unknown> = {}): ToolDefinition<typeof exploreParameters, Record<string, never>, unknown> {
   return { name: "explore", label: "Explorer",
-    description: "Delegate one independent, narrowly scoped investigation or verification. Use separate calls for separate scopes. Returns compact evidence, not raw output.",
+    description: "Delegate one independent, narrowly scoped read-only investigation or verification, especially when it may be materially slow or high-output. Returns compact evidence, not raw output.",
     promptSnippet: "Delegate a narrow codebase, web, or other evidence-heavy investigation or verification to an independent Explorer",
     promptGuidelines: [
+      "Delegate read-only evidence gathering when it is reasonably expected to take material time or produce substantial raw output, including broad repository or web research and slow or noisy targeted verification.",
+      "Keep quick known-target reads and small low-output checks in the parent when delegation would cost more than it saves.",
+      "Keep edits, installs, Git mutation, interactive or privileged work, and project decisions in the parent.",
       "Give each explore call one self-contained scope: state the factual question or command, boundaries, sibling exclusions, and expected evidence.",
       "Use separate calls for independent scopes; run dependent follow-ups only after their prerequisite result.",
+      "All Explorer calls are asynchronous, including worker-owned calls; callers never await Explorer calls and continue from separately delivered results.",
+      "If Explorer is unavailable or an invocation fails, perform only necessary permitted read-only work directly, keep output bounded, state the fallback, and do not bypass unavailable or prohibited tools.",
     ],
     parameters: exploreParameters,
     async execute(_id, { task }, signal, _onUpdate, ctx) {
@@ -320,22 +351,36 @@ const resultText = (result: Awaited<ReturnType<ToolDefinition["execute"]>>): str
   return result.content.filter(part => part.type === "text").map(part => part.text).join("\n").trim();
 };
 
+export function renderAsyncWorkerCompletion(completion: AsyncWorkerCompletion): string {
+  const outcome = completion.status === "completed" ? "completed" : "failed";
+  return [
+    `Asynchronous ${completion.role} ${completion.id} ${outcome}.`,
+    `Task: ${completion.task}`,
+    completion.status === "completed" ? "Result:" : "Failure:",
+    completion.result,
+    "Use this result now if it unblocks the current work. Other asynchronous workers may still be running.",
+  ].join("\n\n");
+}
+
 function publishDetached(
   role: AsyncWorkerCompletion["role"], task: string,
   work: Promise<Awaited<ReturnType<ToolDefinition["execute"]>>>, publish: PublishAsyncWorkerCompletion,
+  track?: TrackAsyncWorkerCompletion,
 ): string {
   const id = `${role.toLowerCase()}:${randomUUID()}`;
-  const notify = (completion: AsyncWorkerCompletion): void => { try { publish(completion); } catch { /* completion remains in Agent Hub history */ } };
-  void work.then(
+  const notify = async (completion: AsyncWorkerCompletion): Promise<void> => { try { await publish(completion); } catch { /* completion remains in Agent Hub history */ } };
+  const completion = work.then(
     result => notify({ id, role, task, status: "completed", result: resultText(result) }),
     error => notify({ id, role, task, status: "failed", result: error instanceof Error ? error.message : String(error) }),
   );
+  track?.(completion);
+  void completion.catch(() => undefined);
   return id;
 }
 
-/** Main-only detached adapter. Worker-owned nested tools remain awaited. */
-export function asyncExploreTool(run: RunWorker, publish: PublishAsyncWorkerCompletion, report: (text: string) => void = () => undefined): ReturnType<typeof exploreTool> {
-  const foreground = exploreTool(run, report);
+/** Detached Explorer adapter shared by Main and worker-owned parent sessions. */
+export function asyncExploreTool(run: RunWorker, publish: PublishAsyncWorkerCompletion, report: (text: string) => void = () => undefined, track?: TrackAsyncWorkerCompletion, parentMetadata: Record<string, unknown> = {}): ReturnType<typeof exploreTool> {
+  const foreground = exploreTool(run, report, parentMetadata);
   return { ...foreground,
     description: "Start an independent investigation or verification in the background. Returns immediately; the result is delivered asynchronously.",
     promptGuidelines: [
@@ -344,7 +389,7 @@ export function asyncExploreTool(run: RunWorker, publish: PublishAsyncWorkerComp
       "If a result is required for the next decision, stop after exhausting independent work. Do not poll or repeat the investigation.",
     ],
     async execute(callId, args, _signal, onUpdate, ctx) {
-      const id = publishDetached("Explorer", args.task, Promise.resolve(foreground.execute(callId, args, undefined, onUpdate, ctx)), publish);
+      const id = publishDetached("Explorer", args.task, Promise.resolve(foreground.execute(callId, args, undefined, onUpdate, ctx)), publish, track);
       return toolResult(`Started asynchronous Explorer ${id}. Continue independent work; its result will arrive automatically.`);
     },
   };

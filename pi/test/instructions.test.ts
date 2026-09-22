@@ -17,6 +17,7 @@ test('94d10a6 semantic contracts retain authority, outputs and stop conditions a
   for(const [name,terms] of Object.entries(requirements)) {
     const text=skill(name);for(const term of terms)assert.ok(text.includes(term),`${name}: ${term}`);
     assert.ok(!text.includes('workflow_brief'),'retired renderer');
+    assert.ok(!text.includes('material time or produce substantial raw output'),`${name}: parent delegation trigger belongs to the tool contract`);
     assert.ok(Buffer.byteLength(text)<2000,'keep semantic skills compact');
   }
 });
@@ -30,9 +31,13 @@ test('all role skills require explicit invocation',()=>{
 });
 test('instruction invariants and user-wide preferences are retained, without stale plugin authority',()=>{
   const agents=fs.readFileSync(new URL('../../AGENTS.md',import.meta.url),'utf8');
-  for(const term of ['No duplication or contradiction','Least-privilege scope','Do not teach defaults','Explorer-first context economy','Pi lazy-skills','explicit `/skill:<name>` invocation','must use Explorer heavily','independent scopes in parallel','raw exploration stays out of the main context','must not duplicate skill semantics','do not add precedence prose','only foreground coordinator is the fixed-purpose, typed `/dev-ship` runtime']) assert.ok(agents.includes(term),term);
+  for(const term of ['No duplication or contradiction','Least-privilege scope','Do not teach defaults','Child-worker contract ownership','general costly-evidence delegation trigger','shared Explorer tool contract','Every child-agent launch','fixed dev-ship launches','deliver completion asynchronously','must not restate these shared contracts','Pi lazy-skills','explicit `/skill:<name>` invocation','must not duplicate skill semantics','do not add precedence prose','only foreground coordinator is the fixed-purpose, typed `/dev-ship` runtime']) assert.ok(agents.includes(term),term);
   const preferences=fs.readFileSync(new URL('../AGENTS.md',import.meta.url),'utf8');
   for(const term of ['Do not use em dashes','consequential decision remains unresolved','Preserve user work']) assert.ok(preferences.includes(term),term);
+  for(const text of [agents,preferences]) {
+    assert.ok(!text.includes('Explorer-first context economy'),'general Explorer trigger belongs to the tool contract');
+    assert.ok(!text.includes('material time or produce substantial raw output'),'general Explorer trigger belongs to the tool contract');
+  }
   assert.ok(!agents.includes('pi-subagents'));
   const workflow=fs.readFileSync(new URL('../../WORKFLOW.md',import.meta.url),'utf8');
   for(const term of ['Runtime allowlists enforce isolation','semantic parent responsibilities','rather than misrepresented as mechanically provable','fixed-purpose typed runtime']) assert.ok(workflow.includes(term),term);

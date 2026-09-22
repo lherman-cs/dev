@@ -62,7 +62,15 @@ test('actual Pi SDK: fresh contexts, exact role, repo instructions, lazy skill, 
     assert.ok(firstSession.getActiveToolNames().includes('explore'));
     assert.ok(!firstSession.getActiveToolNames().includes('subagent'));
     for(const name of ['web_search','source_check','fetch_content','get_search_content']) assert.ok(!firstSession.getActiveToolNames().includes(name),name);
-    assert.match(JSON.stringify(call.context),/one self-contained scope/);
+    const context = JSON.stringify(call.context);
+    for (const term of [
+      'material time or produce substantial raw output',
+      'quick known-target reads and small low-output checks',
+      'one self-contained scope',
+      'All Explorer calls are asynchronous',
+      'callers never await Explorer calls',
+      'keep output bounded, state the fallback',
+    ]) assert.ok(context.includes(term),term);
   }
   assert.ok(!JSON.stringify(required(f.calls[1],'second call').context.messages).includes('task 0'));
   assert.equal(f.hub.list().filter(worker=>worker.state==='completed').length,2);
@@ -133,7 +141,7 @@ test('Main Explorers start concurrently and publish each result as soon as it se
     calls.push(args);
     return new Promise(resolve => pending.push({ resolve }));
   }) as unknown as RunWorker;
-  const tool = asyncExploreTool(run, completion => completions.push(completion));
+  const tool = asyncExploreTool(run, completion => { completions.push(completion); });
   const signal = new AbortController().signal;
   const first = await tool.execute('one',{task:'scope A'},signal,undefined,{cwd:process.cwd()} as never);
   const second = await tool.execute('two',{task:'scope B'},signal,undefined,{cwd:process.cwd()} as never);
@@ -152,7 +160,7 @@ test('Main Explorers start concurrently and publish each result as soon as it se
 test('Main Reviewer failure is delivered asynchronously instead of rejecting its receipt', async()=>{
   let reject!: (error: Error) => void;const completions: AsyncWorkerCompletion[]=[];
   const run = (() => new Promise((_resolve, decline)=>{reject=decline;})) as unknown as RunWorker;
-  const tool=asyncReviewTool(run,completion=>completions.push(completion));
+  const tool=asyncReviewTool(run,completion=>{completions.push(completion);});
   const receipt=await tool.execute('review',{task:'gate',candidate:'abc',evidence:'proof'},undefined,undefined,{cwd:process.cwd()} as never);
   assert.match(firstText(receipt) || '',/Started asynchronous Reviewer/);
   reject(new Error('review transport failed'));await new Promise(resolve=>setImmediate(resolve));
@@ -176,19 +184,27 @@ test('cancellation reaches the native Pi session and cleans it up', async t=>{
   assert.equal(worker.state,'aborted');
   assert.equal(worker.session,undefined);
 });
-test('a native Builder can call Explorer without inheriting the Builder conversation',async t=>{
-  let builderTurns=0,explorerTurns=0;
-  const f=await fixture(t,(_n,context,model)=>{
+test('a native Builder receives worker-owned Explorer completion asynchronously without inheriting context',async t=>{
+  let builderTurns=0,explorerTurns=0,finishExplorer: ((message: AssistantMessage) => void) | undefined;
+  const f=await fixture(t,(_n,context,model,_options,stream)=>{
     if(model.id==='gpt-5.6-luna') {
       assert.ok(!JSON.stringify(context.messages).includes('PRIVATE_PARENT_CONTEXT'));
-      return ++explorerTurns===1
-        ? message(model,[{type:'toolCall',id:'result',name:'submit_result',arguments:{status:'FOUND',answer:'Local evidence',evidence:[{claim:'Entry point',anchor:'src/main.ts:1'}]}}],'toolUse')
-        : message(model,[{type:'text',text:'submitted'}]);
+      if(++explorerTurns===1) { finishExplorer=done=>stream.push({type:'done',reason:'toolUse',message:done}); return; }
+      return message(model,[{type:'text',text:'submitted'}]);
     }
-    return ++builderTurns===1?message(model,[{type:'toolCall',id:'explore',name:'explore',arguments:{task:'Locate the repository entry point'}}],'toolUse'):message(model,[{type:'text',text:'done'}]);
+    builderTurns++;
+    if(builderTurns===1)return message(model,[{type:'toolCall',id:'explore',name:'explore',arguments:{task:'Locate the repository entry point'}}],'toolUse');
+    const serialized=JSON.stringify(context.messages);
+    if(builderTurns===2) { assert.match(serialized,/Started asynchronous Explorer/); return message(model,[{type:'text',text:'Independent work exhausted; awaiting delivery.'}]); }
+    assert.match(serialized,/Asynchronous Explorer .* completed/);
+    assert.match(serialized,/FOUND\\n\\nLocal evidence\\n\\nEvidence/);
+    return message(model,[{type:'text',text:'done with Local evidence'}]);
   });
-  assert.equal(await f.run({cwd:f.cwd,name:'build',task:'PRIVATE_PARENT_CONTEXT',skill:'dev-build'}),'done');
-  assert.equal(f.calls.length,4);
-  assert.equal(required(f.calls[1],'Explorer call').model.id,'gpt-5.6-luna');
-  assert.match(JSON.stringify(required(f.calls[3],'final call').context.messages),/FOUND\\n\\nLocal evidence\\n\\nEvidence/);
+  const work=f.run({cwd:f.cwd,name:'build',task:'PRIVATE_PARENT_CONTEXT',skill:'dev-build'});
+  while(!finishExplorer||builderTurns<2)await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(builderTurns,2,'Builder continued after the immediate receipt');
+  finishExplorer(message(required(f.calls[1],'Explorer call').model,[{type:'toolCall',id:'result',name:'submit_result',arguments:{status:'FOUND',answer:'Local evidence',evidence:[{claim:'Entry point',anchor:'src/main.ts:1'}]}}],'toolUse'));
+  assert.equal(await work,'done with Local evidence');
+  assert.equal(builderTurns,3);
+  assert.equal(explorerTurns,2);
 });

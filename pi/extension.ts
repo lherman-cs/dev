@@ -1,5 +1,5 @@
 import type { ExtensionAPI, ExtensionContext, SessionManager } from "@earendil-works/pi-coding-agent";
-import { asyncExploreTool, asyncReviewTool, createWorkerRunner, type AsyncWorkerCompletion } from "./lib/worker.ts";
+import { asyncExploreTool, asyncReviewTool, createWorkerRunner, renderAsyncWorkerCompletion, type AsyncWorkerCompletion } from "./lib/worker.ts";
 import path from "node:path";
 import { buildHandoffTool, handoffFile } from "./lib/ship-handoff.ts";
 import { ShipStore } from "./lib/ship-store.ts";
@@ -83,14 +83,7 @@ export default function extension(pi: ExtensionAPI, dependencies: ExtensionDepen
 
   const publishWorkerCompletion = (completion: AsyncWorkerCompletion): void => {
     if (closing) return;
-    const outcome = completion.status === "completed" ? "completed" : "failed";
-    const content = [
-      `Asynchronous ${completion.role} ${completion.id} ${outcome}.`,
-      `Task: ${completion.task}`,
-      completion.status === "completed" ? "Result:" : "Failure:",
-      completion.result,
-      "Use this result now if it unblocks the current work. Other asynchronous workers may still be running.",
-    ].join("\n\n");
+    const content = renderAsyncWorkerCompletion(completion);
     try {
       pi.sendMessage({ customType: "dev-worker-result", content, display: true, details: completion }, { triggerTurn: true, deliverAs: "steer" });
     } catch (error) { warn(error); }
@@ -98,7 +91,7 @@ export default function extension(pi: ExtensionAPI, dependencies: ExtensionDepen
   pi.registerTool(asyncExploreTool(run, publishWorkerCompletion));
   pi.registerTool(asyncReviewTool(run, publishWorkerCompletion));
   pi.registerTool(buildHandoffTool());
-  pi.registerTool(shipActionTool(run));
+  pi.registerTool(shipActionTool(run, publishWorkerCompletion));
   pi.on("tool_call", event => {
     if (event.toolName === "review" && phase !== "ship") return { block: true, reason: "The review tool is reserved for an explicit dev-ship invocation." };
     if (explorerOnlyTools.has(event.toolName)) return { block: true, reason: `Delegate ${event.toolName} to one or more narrowly scoped explore calls.` };
