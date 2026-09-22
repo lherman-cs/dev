@@ -33,7 +33,7 @@ export class WorkerHistory {
     fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
     fs.writeFileSync(file, [this.parent.getHeader(), ...this.parent.getEntries()].map(entry => JSON.stringify(entry)).join("\n") + "\n", { flag: "wx", mode: 0o600 });
     this.parent.setSessionFile(file);
-    if (leaf !== this.parent.getLeafId()) this.parent.branch(leaf);
+    if (leaf && leaf !== this.parent.getLeafId()) this.parent.branch(leaf);
   }
 
   create(cwd: string, metadata: Persisted): SessionManager {
@@ -61,7 +61,7 @@ export class WorkerHistory {
 
   read(file: string): WorkerRecord {
     const manager = this.open(file);
-    const entries = manager.getEntries();
+    const entries = manager.getEntries() as any[];
     const metadata = ([...entries].reverse().find(entry => entry.type === "custom" && entry.customType === WORKER_ENTRY)?.data || this.legacy.get(file)) as Persisted | undefined;
     if (!metadata || typeof metadata.id !== "string") throw new Error("Child session has no worker metadata.");
     const draftData = ([...entries].reverse().find(entry => entry.type === "custom" && entry.customType === DRAFT_ENTRY)?.data || { text: metadata.draft || "" }) as Persisted;
