@@ -348,7 +348,7 @@ export class AgentHubView {
     const summary = `${all.filter(isActive).length} active · ${all.filter(r => r.closed && r.unread).length} unread · ${this.hub.questions().length} questions · ${all.filter(r => r.state === "failed").length} failed`;
     const scope = `Find: ${this.state.filter || "all"} · Status: ${this.state.status} · Role: ${this.state.role} · Sort: ${this.state.sort}  [F3 find · s status · r role · o sort · 0 reset]`;
     const selected = rows.findIndex(r => r.id === this.state.selectedId);
-    const count = Math.max(1, Math.floor(Math.max(0, height - 3) / 3));
+    const count = Math.max(1, Math.floor(Math.max(0, height - 3) / 4));
     const start = Math.max(0, Math.min(selected - Math.floor(count / 2), rows.length - count));
     const visible = rows.slice(start, start + count);
     const section = (r: WorkerRecord) => isActive(r) ? "ACTIVE" : r.closed && r.unread ? "UNREAD RESULTS" : "HISTORY";
@@ -356,12 +356,14 @@ export class AgentHubView {
       const x = scope.indexOf(label);
       if (x >= 0 && x + label.length <= width) this.hits.push({ y: originY + 1, x0: originX + x, x1: originX + x + label.length, run: () => this.handleInput(key) });
     }
-    visible.forEach((r, i) => this.hits.push({ y: originY + 3 + i * 3, x0: originX, x1: originX + width, run: () => this.select(r.id) },
-      { y: originY + 4 + i * 3, x0: originX, x1: originX + width, run: () => this.select(r.id) },
-      { y: originY + 5 + i * 3, x0: originX, x1: originX + width, run: () => this.select(r.id) }));
-    return [this.theme.bold(summary), this.theme.fg("muted", scope),
-      this.theme.fg("accent", `Showing ${start + 1}–${start + visible.length}/${rows.length} · active / unread results / history`),
-      ...visible.flatMap(r => {
+    const entries: string[] = [];
+    let previous = start ? section(rows[start - 1]!) : "";
+    for (const r of visible) {
+      const group = section(r);
+      if (group !== previous) entries.push(this.theme.fg("accent", `${group}${this.priority(r) === 0 ? " · ATTENTION" : ""}`));
+      previous = group;
+      const rowY = originY + 3 + entries.length;
+      for (let i = 0; i < 3; i++) this.hits.push({ y: rowY + i, x0: originX, x1: originX + width, run: () => this.select(r.id) });
       const chosen = r.id === this.state.selectedId;
       const parentId = typeof r.metadata["parentId"] === "string" ? r.metadata["parentId"] : undefined;
       const parent = this.hub.get(parentId);
@@ -370,8 +372,10 @@ export class AgentHubView {
         `    ${section(r)} · ${safe(r.role)} · ${safe(r.model)} ${safe(r.thinking)} · ${stateText(r)}`,
         `    ${parent ? `↳ ${safe(parent.label)} · ` : ""}${safe(r.activity)}`,
       ].map(t => pad(t, width));
-      return chosen ? lines.map(t => this.theme.bg("selectedBg", t)) : lines;
-    })];
+      entries.push(...(chosen ? lines.map(t => this.theme.bg("selectedBg", t)) : lines));
+    }
+    return [this.theme.bold(summary), this.theme.fg("muted", scope),
+      this.theme.fg("accent", `Showing ${start + 1}–${start + visible.length}/${rows.length} · active / unread results / history`), ...entries];
   }
   private details(width: number, height: number) {
     const r = this.current(); if (!r) return ["Select a thread to inspect it."];
@@ -389,7 +393,7 @@ export class AgentHubView {
   }
   private thread(width: number, height: number) {
     const r = this.current(); if (!r) return ["This thread is unavailable. Your draft was not retargeted. Esc returns to agents."];
-    this.canCompose = height >= 7 && width >= 20;
+    this.canCompose = height >= 10 && width >= 30;
     if (!this.canCompose) {
       this.setEditorFocus();
       const notice = `Input paused (resize to edit) · ${safe(r.label)} · ${stateText(r)}`;
@@ -484,6 +488,7 @@ export class AgentHubView {
     hit.run();
     if (event.clickCount && event.clickCount >= 2) {
       if (this.panel === "actions" || this.panel === "confirm") this.handleInput("\r");
+      else if (this.panel === "delivery") this.restoreSelected();
       else if (this.state.mode === "roster") this.open();
     }
     return { handled: true, focus: true };

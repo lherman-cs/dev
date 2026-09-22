@@ -67,6 +67,13 @@ test('responsive layout keeps Back and Help reachable across narrow and short te
   const hub = new WorkerHub(); register(hub, session(), 'a'); const f = viewFixture(t, { hub }); for (const width of [20, 40, 80, 100, 160]) for (const height of [6, 12, 24, 48]) { f.setSize(height); let lines = f.view.render(width); assert.ok(lines.length <= height); assert.ok(lines.every(line => visibleWidth(line) <= width), `${width}x${height}`); assert.match(screen(f.view, width), /Esc/); assert.match(screen(f.view, width), /F1/); f.view.handleInput(keys.enter); lines = f.view.render(width); assert.ok(lines.length <= height); assert.ok(lines.every(line => visibleWidth(line) <= width)); assert.match(screen(f.view, width), /Esc/); f.view.handleInput(keys.escape); }
 });
 
+test('standard-small viewport prioritizes transcript over invisible editing', t => {
+  const hub = new WorkerHub(), s = session(); register(hub, s, 'a'); s.append(assistant('evidence remains readable'));
+  const { view: v } = viewFixture(t, { rows: 12, hub }); v.handleInput(keys.enter);
+  const shown = screen(v, 40); assert.match(shown, /Input paused/); assert.match(shown, /evidence remains readable/);
+  v.handleInput('not sent'); assert.equal(hub.get('a')?.draft, '');
+});
+
 test('help is navigable on 40x12 without truncating the only explanation of advanced actions', t => { const hub = new WorkerHub(); register(hub, session(), 'a'); const { view: v } = viewFixture(t, { rows: 12, hub }); v.handleInput(keys.f1); let observed = ''; for (let i = 0; i < 20; i++) { observed += screen(v, 40); v.handleInput(keys.pageDown); } assert.match(observed, /stop with/); assert.match(observed, /Queued is not delivered/); assert.match(observed, /PgUp\/Dn more/); });
 
 test('a tiny terminal cannot silently accept input into an invisible editor', t => { const hub = new WorkerHub(); register(hub, session(), 'a'); const f = viewFixture(t, { rows: 6, hub }); f.view.handleInput(keys.enter); screen(f.view, 40); f.view.handleInput('invisible'); assert.equal(worker(hub, 'a').draft, ''); f.setSize(24); screen(f.view, 40); f.view.handleInput('visible'); assert.equal(worker(hub, 'a').draft, 'visible'); });
@@ -93,10 +100,17 @@ test('roster preserves identity during live changes and rebuilds explicit scope 
   assert.ok(state.order.every(id => hub.get(id)?.closed === false));
 });
 
+test('roster labels separate active, unread results and history', t => {
+  const hub = new WorkerHub(); register(hub, session(), 'active'); register(hub, session(), 'unread'); register(hub, session(), 'history');
+  hub.unregister('unread'); hub.unregister('history'); hub.load('history');
+  const { view: v } = viewFixture(t, { hub, rows: 40 }); const shown = screen(v, 80);
+  assert.match(shown, /ACTIVE/); assert.match(shown, /UNREAD RESULTS/); assert.match(shown, /HISTORY/);
+});
+
 test('mouse roster selection does not open or send, and wheel retains keyboard navigation', t => {
   const hub = new WorkerHub(), a = session(), b = session(); register(hub, a, 'a'); register(hub, b, 'b');
   const { view: v, state } = viewFixture(t, { hub }); v.render(80);
-  const event = { type: 'click', button: 'left', x: 5, y: 7, screenX: 5, screenY: 7, width: 80, height: 24, shift: false, alt: false, ctrl: false } as const;
+  const event = { type: 'click', button: 'left', x: 5, y: 8, screenX: 5, screenY: 8, width: 80, height: 24, shift: false, alt: false, ctrl: false } as const;
   v.handleMouse(event); assert.equal(state.selectedId, 'b'); assert.equal(state.mode, 'roster');
   assert.deepEqual(a.calls, []); assert.deepEqual(b.calls, []);
   v.handleMouse({ ...event, type: 'wheel', button: 'none', wheelDelta: -1 }); assert.equal(state.selectedId, 'a');
@@ -105,7 +119,7 @@ test('mouse roster selection does not open or send, and wheel retains keyboard n
 test('mouse double-click opens without sending and short viewport keeps transcript navigation', t => {
   const hub = new WorkerHub(), s = session(); register(hub, s, 'a'); s.append(assistant('visible evidence'));
   const { view: v, state, setSize } = viewFixture(t, { hub }); v.render(80);
-  const event = { type: 'click', button: 'left', x: 4, y: 4, screenX: 4, screenY: 4, width: 80, height: 24, shift: false, alt: false, ctrl: false, clickCount: 2 } as const;
+  const event = { type: 'click', button: 'left', x: 4, y: 5, screenX: 4, screenY: 5, width: 80, height: 24, shift: false, alt: false, ctrl: false, clickCount: 2 } as const;
   v.handleMouse(event); assert.equal(state.mode, 'thread'); assert.deepEqual(s.calls, []);
   setSize(8); assert.match(screen(v, 40), /Input paused/); assert.match(screen(v, 40), /visible evidence/);
   v.handleInput('not typed'); assert.equal(hub.get('a')?.draft, '');
