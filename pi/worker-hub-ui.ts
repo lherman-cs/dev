@@ -1,17 +1,24 @@
-import { Editor, Input, matchesKey, Text, truncateToWidth, visibleWidth, wrapTextWithAnsi, getKeybindings } from "@earendil-works/pi-tui";
-import { copyToClipboard } from "@earendil-works/pi-coding-agent";
-import { isActive } from "./lib/worker-hub.mjs";
+import { Editor, Input, matchesKey, Text, truncateToWidth, visibleWidth, wrapTextWithAnsi, getKeybindings, type TUI } from "@earendil-works/pi-tui";
+import { copyToClipboard, type ExtensionAPI, type ExtensionContext, type Theme } from "@earendil-works/pi-coding-agent";
+import { isActive, WorkerHub } from "./lib/worker-hub.ts";
+import type { WorkerDelivery, WorkerRecord } from "./lib/worker-types.ts";
+import type { WorkflowControl } from "./lib/workflow-control.ts";
 import { NativeTranscript, safeText, type Viewport } from "./lib/worker-transcript.ts";
 
 const safe = (text: unknown) => safeText(String(text ?? "")).replace(/[\r\n\t]+/g, " ");
 const fmt = (n: number | null | undefined) => n == null ? "—" : n >= 1e6 ? `${(n / 1e6).toFixed(1)}m` : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
 const pad = (text: string, width: number) => { const t = truncateToWidth(text, Math.max(1, width)); return t + " ".repeat(Math.max(0, width - visibleWidth(t))); };
-const stateText = (r: any) => r.state === "completed" ? "Finished" : r.state === "working" ? "Running" : r.state;
-const duration = (r: any) => { const s = Math.max(0, Math.floor(((r.endedAt || Date.now()) - r.startedAt) / 1000)); return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${s % 60}s`; };
-const contextText = (r: any) => r.context?.percent == null ? "Context —" : `Context ${r.context.percent.toFixed(1)}% (${fmt(r.context.tokens)}/${fmt(r.context.contextWindow)})`;
-const statsText = (r: any) => `${fmt(r.stats?.totalTokens)} processed · ${fmt(r.stats?.tools)} tools · ${fmt(r.stats?.requests)} replies`;
-const glyph = (r: any) => r.state === "working" ? "●" : r.state === "completed" ? "✓" : r.state === "failed" ? "×" : r.state === "aborting" ? "◐" : "○";
-const color = (r: any) => r.state === "failed" ? "error" : r.state === "completed" ? "success" : r.state === "working" ? "accent" : "warning";
+const stateText = (r: WorkerRecord): string => r.state === "completed" ? "Finished" : r.state === "working" ? "Running" : r.state;
+const duration = (r: WorkerRecord): string => { const s = Math.max(0, Math.floor(((r.endedAt ?? Date.now()) - r.startedAt) / 1000)); return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${s % 60}s`; };
+type ContextUsage = { percent: number | null; tokens: number | null; contextWindow: number | null };
+const contextUsage = (record: WorkerRecord): ContextUsage | undefined => {
+  const value = record.context; if (!value) return undefined;
+  return { percent: value.percent, tokens: value.tokens, contextWindow: value.contextWindow };
+};
+const contextText = (r: WorkerRecord): string => { const context = contextUsage(r); return context?.percent == null ? "Context —" : `Context ${context.percent.toFixed(1)}% (${fmt(context.tokens)}/${fmt(context.contextWindow)})`; };
+const statsText = (r: WorkerRecord): string => `${fmt(r.stats.totalTokens)} processed · ${fmt(r.stats.tools)} tools · ${fmt(r.stats.requests)} replies`;
+const glyph = (r: WorkerRecord): string => r.state === "working" ? "●" : r.state === "completed" ? "✓" : r.state === "failed" ? "×" : r.state === "aborting" ? "◐" : "○";
+const color = (r: WorkerRecord): "error" | "success" | "accent" | "warning" => r.state === "failed" ? "error" : r.state === "completed" ? "success" : r.state === "working" ? "accent" : "warning";
 const sendKey = () => getKeybindings().getKeys("tui.input.submit").map(k => k === "enter" ? "Enter" : k).join("/") || "F2 actions";
 const hintLines = (hints: string[], width: number) => {
   const lines: string[] = []; let row = "";
@@ -23,7 +30,7 @@ const hintLines = (hints: string[], width: number) => {
   if (row) lines.push(row); return lines;
 };
 
-export function compactWorkerLines(records: any[], title = "Agents"): string[] {
+export function compactWorkerLines(records: WorkerRecord[], title = "Agents"): string[] {
   const running = records.filter(isActive), unread = records.filter(r => r.unread && r.closed);
   const shown = running.length ? running.slice(0, 3) : unread.slice(-1);
   return [`${title} · ${running.length} running${unread.length ? ` · ${unread.length} new results` : ""} · Alt+A inspect`,
@@ -33,19 +40,25 @@ export function compactWorkerLines(records: any[], title = "Agents"): string[] {
 
 type Composer = { editor: Editor; version: number; sending: boolean };
 export type HubViewState = {
-  selectedId?: string; mode: "roster" | "thread"; composers: Map<string, Composer>;
+  selectedId: string | undefined; mode: "roster" | "thread"; composers: Map<string, Composer>;
   viewports: Map<string, Viewport>; notices: Map<string, string>; repaint: () => void;
 };
-export const createHubViewState = (): HubViewState => ({ mode: "roster", composers: new Map(), viewports: new Map(), notices: new Map(), repaint: () => {} });
+export const createHubViewState = (): HubViewState => ({ selectedId: undefined, mode: "roster", composers: new Map(), viewports: new Map(), notices: new Map(), repaint: () => {} });
 
-type Action = { title: string; run: () => void | Promise<void> };
+type Action = { title: string; run: () => unknown | Promise<unknown> };
+type HubUIOptions = {
+  control?: () => WorkflowControl | undefined;
+  respond?: (questionId?: string) => void | Promise<void>;
+  resume?: () => void | Promise<void>;
+  copy?: (text: string) => void | Promise<void>;
+};
 /** One surface, shared by ordinary child tools and deterministic controllers. */
 export class AgentHubView {
   private unsubscribe: () => void;
-  private timer?: ReturnType<typeof setTimeout>;
+  private timer: ReturnType<typeof setTimeout> | undefined;
   private transcripts = new Map<string, NativeTranscript>();
   private unpin?: () => void;
-  private panel?: "help" | "actions" | "confirm" | "search";
+  private panel: "help" | "actions" | "confirm" | "search" | undefined;
   private search = new Input({ prompt: "Find: " });
   private filter = "";
   private menu: Action[] = [];
@@ -58,11 +71,19 @@ export class AgentHubView {
   private detailScroll = 0;
   private _focused = true;
   private canCompose = true;
-  constructor(private tui: any, private theme: any, private hub: any, private title: string | (() => string), private done: () => void,
-    private state: HubViewState = createHubViewState(), private options: any = {}) {
+  private tui: TUI;
+  private theme: Theme;
+  private hub: WorkerHub;
+  private title: string | (() => string);
+  private done: () => void;
+  private state: HubViewState;
+  private options: HubUIOptions;
+  constructor(tui: TUI, theme: Theme, hub: WorkerHub, title: string | (() => string), done: () => void,
+    state: HubViewState = createHubViewState(), options: HubUIOptions = {}) {
+    this.tui=tui;this.theme=theme;this.hub=hub;this.title=title;this.done=done;this.state=state;this.options=options;
     this.state.repaint = () => this.repaint();
     this.unsubscribe = hub.subscribe(() => {
-      if (!this.state.selectedId && hub.list().length) this.select(hub.list()[0].id);
+      const first = hub.list()[0]; if (!this.state.selectedId && first) this.select(first.id);
       this.schedule();
     });
     if (!state.selectedId) state.selectedId = hub.list()[0]?.id;
@@ -88,12 +109,12 @@ export class AgentHubView {
   private current() { return this.hub.get(this.state.selectedId); }
   private rows() {
     const q = this.filter.toLocaleLowerCase();
-    return this.hub.list().filter((r: any) => !q || `${r.label} ${r.metadata?.task || ""} ${r.role}`.toLocaleLowerCase().includes(q));
+    return this.hub.list().filter(r => !q || `${r.label} ${String(r.metadata["task"] ?? "")} ${r.role}`.toLocaleLowerCase().includes(q));
   }
   private applyFilter() {
     this.filter = this.search.getValue();
     const rows = this.rows();
-    if (rows.length && !rows.some((r: any) => r.id === this.state.selectedId)) this.select(rows[0].id);
+    const first = rows[0]; if (first && !rows.some(r => r.id === this.state.selectedId)) this.select(first.id);
   }
   private notice(text: string, id = this.state.selectedId || "hub") { this.state.notices.set(id, text); this.state.repaint(); }
   private viewport() {
@@ -115,24 +136,24 @@ export class AgentHubView {
         this.transcripts.set(id, transcript);
       }
       const transcript = this.transcripts.get(id)!; transcript.sync(record); return transcript;
-    } catch (error: any) { this.notice(error.message, id); return; }
+    } catch (error: unknown) { this.notice(error instanceof Error ? error.message : String(error), id); return; }
   }
   private select(id: string) {
     if (!this.hub.get(id)) return;
-    this.hub.flushDraft(this.state.selectedId);
+    if (this.state.selectedId) this.hub.flushDraft(this.state.selectedId);
     this.unpin?.(); this.unpin = this.hub.pin(id); this.state.selectedId = id; this.detailScroll = 0;
     this.setEditorFocus(); this.repaint();
   }
   private move(delta: number) {
     const rows = this.state.mode === "thread" ? this.hub.list() : this.rows();
-    const i = rows.findIndex((r: any) => r.id === this.state.selectedId);
+    const i = rows.findIndex(r => r.id === this.state.selectedId);
     const target = rows[Math.max(0, Math.min(rows.length - 1, i + delta))];
     if (target) this.select(target.id);
   }
   private composer(id: string): Composer {
     let c = this.state.composers.get(id); if (c) return c;
     const proxy = { terminal: this.tui.terminal || { rows: 24 }, requestRender: () => this.state.repaint() };
-    const editor = new Editor(proxy as any, {
+    const editor = new Editor(proxy as TUI, {
       borderColor: (s: string) => this.theme.fg("borderAccent", s),
       selectList: { selectedPrefix: s => s, selectedText: s => s, description: s => s, scrollInfo: s => s, noMatch: s => s },
     }, { paddingX: 1 });
@@ -152,11 +173,11 @@ export class AgentHubView {
       const delivery = await this.hub.send(id, text, mode);
       if (c.version === version) c.editor.setText("");
       this.notice(`${delivery.status === "delivered" ? "Delivered" : "Queued"} to ${this.hub.get(id)?.label}. ${mode === "steer" ? "Current tools are not cancelled." : "Runs after current work."}`, id);
-    } catch (error: any) { this.notice(`Not sent: ${error.message}`, id); }
+    } catch (error: unknown) { this.notice(`Not sent: ${error instanceof Error ? error.message : String(error)}`, id); }
     finally { c.sending = false; this.hub.flushDraft(id); this.state.repaint(); }
   }
   private open() {
-    if (!this.current() || !this.rows().some((r: any) => r.id === this.state.selectedId)) return;
+    if (!this.current() || !this.rows().some(r => r.id === this.state.selectedId)) return;
     this.state.mode = "thread"; this.panel = undefined; this.transcript(); this.composer(this.state.selectedId!);
     this.setEditorFocus(); this.repaint();
   }
@@ -169,7 +190,7 @@ export class AgentHubView {
   }
   private stopAction() {
     const r = this.current(); if (!isActive(r)) return;
-    const scope = r.metadata?.parentId ? "Only this investigation stops. Its parent may continue." : r.metadata?.owner === "workflow" ? "The owning workflow will stop with partial work preserved." : "Only this agent and its children stop.";
+    const scope = r.metadata["parentId"] ? "Only this investigation stops. Its parent may continue." : r.metadata["owner"] === "workflow" ? "The owning workflow will stop with partial work preserved." : "Only this agent and its children stop.";
     this.confirm = { title: `Stop ${r.label}? ${scope} Already completed edits/commands are not undone.`, run: () => this.hub.abort(r.id) };
     this.menuReady = false; this.menuIndex = 0; this.panel = "confirm"; this.setEditorFocus(); this.repaint();
   }
@@ -188,20 +209,20 @@ export class AgentHubView {
     } else if (control?.state === "paused") this.menu.push({ title: "Continue paused workflow (revalidate unchanged work)", run: () => { this.done(); setImmediate(() => this.options.resume?.()); } });
     else if (control && ["stopped", "failed"].includes(control.state)) this.menu.push({ title: `Recovery: ${control.resumeCommand}`, run: () => this.notice(`Reconcile partial work, then run ${control.resumeCommand} in Main.`) });
     if (id && this.hub.canSend(id)) this.menu.push({ title: "Queue this draft after the agent's current work", run: () => this.send(id, "followUp") });
-    if (r?.actions?.cancelQueued && r.deliveries.some((d: any) => d.status === "queued")) this.menu.push({ title: "Cancel ALL still-queued messages to this agent", run: () => this.hub.cancelQueued(id).then(n => this.notice(`Cancelled ${n} queued messages. Original text is retained.`, id)) });
-    if (r?.closed && r.file && this.hub.onRelated) this.menu.push({ title: "Investigate this draft in a NEW read-only thread", run: async () => {
-      const c = this.composer(id), text = c.editor.getExpandedText();
-      if (!text.trim()) { this.notice("Write a follow-up question first. Original result remains unchanged.", id); return; }
-      const version = c.version; const newId = await this.hub.related(id, text);
+    if (r?.actions?.cancelQueued && r.deliveries.some(d => d.status === "queued")) { const workerId = r.id; this.menu.push({ title: "Cancel ALL still-queued messages to this agent", run: () => this.hub.cancelQueued(workerId).then(n => this.notice(`Cancelled ${n} queued messages. Original text is retained.`, workerId)) }); }
+    if (r?.closed && r.file && this.hub.onRelated) { const workerId = r.id; this.menu.push({ title: "Investigate this draft in a NEW read-only thread", run: async () => {
+      const c = this.composer(workerId), text = c.editor.getExpandedText();
+      if (!text.trim()) { this.notice("Write a follow-up question first. Original result remains unchanged.", workerId); return; }
+      const version = c.version; const newId = await this.hub.related(workerId, text);
       if (c.version === version) c.editor.setText("");
       this.select(newId); this.open();
-    } });
-    const failed = r?.deliveries?.findLast((d: any) => d.status === "failed" || d.status === "cancelled");
-    if (failed) this.menu.push({ title: "Restore undelivered message into this thread's draft", run: () => {
-      const c = this.composer(id);
-      if (c.editor.getExpandedText().trim()) { this.notice("Draft is not empty; copy it before restoring another message.", id); return; }
+    } }); }
+    const failed = r ? [...r.deliveries].reverse().find((d: WorkerDelivery) => d.status === "failed" || d.status === "cancelled") : undefined;
+    if (failed && r) { const workerId = r.id; this.menu.push({ title: "Restore undelivered message into this thread's draft", run: () => {
+      const c = this.composer(workerId);
+      if (c.editor.getExpandedText().trim()) { this.notice("Draft is not empty; copy it before restoring another message.", workerId); return; }
       c.editor.setText(failed.text); this.open();
-    } });
+    } }); }
     if (id) {
       this.menu.push({ title: "Copy full available transcript", run: async () => { this.hub.load(id); const text = this.transcript()?.exportText(); if (text) await (this.options.copy ? this.options.copy(text) : copyToClipboard(text)); this.notice("Transcript copied.", id); } });
       this.menu.push({ title: "Expand / collapse tool output", run: () => { const v = this.viewport(); v.expanded = !v.expanded; this.transcript()?.setExpanded(!!v.expanded); } });
@@ -230,7 +251,7 @@ export class AgentHubView {
         if (!this.menuReady) return;
         this.menuReady = false;
         const action = items[this.menuIndex], actionId = this.state.selectedId; this.panel = undefined;
-        void Promise.resolve().then(() => action.run()).catch((e: Error) => this.notice(e.message, actionId)).finally(() => { this.setEditorFocus(); this.repaint(); });
+        if (action) void Promise.resolve().then(() => action.run()).catch((e: unknown) => this.notice(e instanceof Error ? e.message : String(e), actionId)).finally(() => { this.setEditorFocus(); this.repaint(); });
       }
       this.repaint(); return;
     }
@@ -262,12 +283,13 @@ export class AgentHubView {
   private roster(width: number, height: number) {
     const rows = this.rows();
     if (!rows.length) return new Text(this.filter ? "No matching agents. F3 changes the filter." : "No child agents yet. Work in Main normally; children appear here when created. Esc returns to Main.", 1, 1).render(width);
-    const selected = rows.findIndex((r: any) => r.id === this.state.selectedId);
+    const selected = rows.findIndex(r => r.id === this.state.selectedId);
     const count = Math.max(1, Math.floor(height / 3));
     const start = Math.max(0, Math.min(selected - Math.floor(count / 2), rows.length - count));
-    return rows.slice(start, start + count).flatMap((r: any) => {
+    return rows.slice(start, start + count).flatMap(r => {
       const chosen = r.id === this.state.selectedId;
-      const parent = this.hub.get(r.metadata?.parentId);
+      const parentId = typeof r.metadata["parentId"] === "string" ? r.metadata["parentId"] : undefined;
+      const parent = this.hub.get(parentId);
       const lines = [
         `${chosen ? this.theme.fg("accent", "›") : " "} ${this.theme.fg(color(r), glyph(r))} ${safe(r.label)}${r.unread && r.closed ? " · new" : ""}`,
         `    ${safe(r.role)} · ${safe(r.model)} ${safe(r.thinking)} · ${stateText(r)}`,
@@ -278,12 +300,13 @@ export class AgentHubView {
   }
   private details(width: number, height: number) {
     const r = this.current(); if (!r) return ["Select a thread to inspect it."];
-    const parent = this.hub.get(r.metadata?.parentId);
+    const parentId = typeof r.metadata["parentId"] === "string" ? r.metadata["parentId"] : undefined;
+    const parent = this.hub.get(parentId);
     const cost = r.stats?.cost == null ? "Reported cost —" : `Reported cost $${r.stats.cost.toFixed(4)} (not subscription billing)`;
     const sections = [this.theme.bold(safe(r.label)), `${stateText(r)} · ${duration(r)}`, "",
       ...(r.storageError ? [`History warning: ${safe(r.storageError)}`] : []),
-      "TASK", safe(r.metadata?.task || "No task supplied"), "", "CURRENT", safe(r.outcome || r.activity), "",
-      contextText(r), statsText(r), cost, `VCC ${r.metadata?.vcc ? "loaded" : "not reported"}`, parent ? `Parent: ${safe(parent.label)}` : "Parent: Main",
+      "TASK", safe(r.metadata["task"] || "No task supplied"), "", "CURRENT", safe(r.outcome || r.activity), "",
+      contextText(r), statsText(r), cost, `VCC ${r.metadata["vcc"] ? "loaded" : "not reported"}`, parent ? `Parent: ${safe(parent.label)}` : "Parent: Main",
       r.file ? `Saved: ${safe(r.file)}` : "History: memory-only session", r.closed ? "Read-only result. F2 starts a related investigation." : "Enter opens this agent. Your drafts stay with their recipient."];
     const lines = sections.flatMap(t => wrapTextWithAnsi(t, Math.max(1, width)));
     this.detailScroll = Math.min(this.detailScroll, Math.max(0, lines.length - height));
@@ -374,19 +397,19 @@ export class AgentHubView {
   }
   invalidate() { for (const t of this.transcripts.values()) t.invalidate(); for (const c of this.state.composers.values()) c.editor.invalidate(); }
   dispose() {
-    this.hub.flush(); this.disposed = true; clearTimeout(this.timer); this.unsubscribe(); this.unpin?.();
+    this.hub.flush(); this.disposed = true; if (this.timer) clearTimeout(this.timer); this.unsubscribe(); this.unpin?.();
     for (const t of this.transcripts.values()) t.dispose();
     this.state.repaint = () => {}; for (const c of this.state.composers.values()) c.editor.focused = false;
   }
 }
 
-export function registerWorkerHubUI(pi: any, hub: any, options: any = {}) {
-  let ctx: any, title = "Main session", open: Promise<any> | undefined, close: (() => void) | undefined, disposed = false;
+export function registerWorkerHubUI(pi: ExtensionAPI, hub: WorkerHub, options: HubUIOptions = {}) {
+  let ctx: ExtensionContext | undefined, title = "Main session", open: Promise<unknown> | undefined, close: (() => void) | undefined, disposed = false;
   let state = createHubViewState();
   const seen = new Map<string, string>();
   const widget = () => {
     if (!ctx?.hasUI || disposed) return;
-    ctx.ui.setWidget("dev-workers", (_tui: any, theme: any) => ({
+    ctx.ui.setWidget("dev-workers", (_tui: TUI, theme: Theme) => ({
       render: (width: number) => {
         const control = options.control?.();
         const status = control ? [safe(`${control.phase} · ${control.state} · ${control.pending ? `Needs you: ${control.pending.title} · /dev-respond` : control.pauseRequested ? "Pause requested" : control.activity}`)] : [];
@@ -397,7 +420,7 @@ export function registerWorkerHubUI(pi: any, hub: any, options: any = {}) {
   };
   let timer: ReturnType<typeof setTimeout> | undefined;
   const refresh = () => { if (!timer && !disposed) timer = setTimeout(() => { timer = undefined; widget(); }, 50); };
-  const unsubscribe = hub.subscribe((records: any[]) => {
+  const unsubscribe = hub.subscribe((records: WorkerRecord[]) => {
     refresh();
     for (const r of records) {
       if (seen.get(r.id) === r.state) continue;
@@ -405,24 +428,27 @@ export function registerWorkerHubUI(pi: any, hub: any, options: any = {}) {
       if (!r.closed || r.unread) pi.appendEntry?.("dev-worker-event", { id: r.id, label: r.label, state: r.state, file: r.file, outcome: r.outcome });
     }
   });
-  pi.registerEntryRenderer?.("dev-worker-event", (entry: any, _options: any, theme: any) => new Text(theme.fg("muted", `${safe(entry.data.label)} · ${safe(entry.data.state)}${entry.data.outcome ? ` · ${safe(entry.data.outcome)}` : ""}`), 0, 0));
-  const show = async (commandCtx = ctx) => {
-    if (!commandCtx?.hasUI || disposed) return;
+  pi.registerEntryRenderer?.("dev-worker-event", (entry, _renderOptions, theme) => {
+    const data = entry.data && typeof entry.data === "object" ? entry.data as Record<string, unknown> : {};
+    return new Text(theme.fg("muted", `${safe(data["label"])} · ${safe(data["state"])}${data["outcome"] ? ` · ${safe(data["outcome"])}` : ""}`), 0, 0);
+  });
+  const show = async (commandCtx: ExtensionContext | undefined = ctx): Promise<unknown> => {
+    if (!commandCtx?.hasUI || disposed) return undefined;
     if (open) { close?.(); return open; }
     ctx = commandCtx;
-    open = ctx.ui.custom((tui: any, theme: any, _keys: any, done: any) => {
+    open = ctx.ui.custom((tui, theme, _keys, done) => {
       close = () => done(undefined);
       return new AgentHubView(tui, theme, hub, () => title, close, state, options);
     }, { overlay: true, overlayOptions: { anchor: "center", width: "100%", maxHeight: "100%", margin: 0 } });
-    try { await open; } finally { open = undefined; close = undefined; widget(); }
+    try { return await open; } finally { open = undefined; close = undefined; widget(); }
   };
-  pi.registerCommand("dev-workers", { description: "Agent Hub: inspect, message, or stop child agents", handler: async (_args: string, nextCtx: any) => { ctx = nextCtx; await show(); } });
-  pi.registerShortcut("alt+a", { description: "Agent Hub: switch child threads or return to Main", handler: async (nextCtx: any) => { ctx = nextCtx; await show(); } });
+  pi.registerCommand("dev-workers", { description: "Agent Hub: inspect, message, or stop child agents", handler: async (_args, nextCtx) => { ctx = nextCtx; await show(); } });
+  pi.registerShortcut("alt+a", { description: "Agent Hub: switch child threads or return to Main", handler: async nextCtx => { ctx = nextCtx; await show(); } });
   return {
-    setContext(next: any) { ctx = next; widget(); },
+    setContext(next: ExtensionContext) { ctx = next; widget(); },
     setWorkflow(next?: string) { title = next || "Main session"; refresh(); },
     refresh,
     async beforePrompt() { close?.(); if (open) await open; await new Promise(resolve => setImmediate(resolve)); },
-    dispose() { disposed = true; close?.(); clearTimeout(timer); unsubscribe(); hub.flush(); ctx?.ui.setWidget("dev-workers", undefined); state = createHubViewState(); ctx = undefined; },
+    dispose() { disposed = true; close?.(); if (timer) clearTimeout(timer); unsubscribe(); hub.flush(); ctx?.ui.setWidget("dev-workers", undefined); state = createHubViewState(); ctx = undefined; },
   };
 }

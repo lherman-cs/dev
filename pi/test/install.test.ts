@@ -38,7 +38,7 @@ test('actual installer registers once, retires only owned plumbing and preserves
   fs.writeFileSync(path.join(agent,'auth.json'),auth);fs.writeFileSync(path.join(agent,'AGENTS.md'),'User preferences, keep me.\n');
   fs.writeFileSync(path.join(agent,'settings.json'),JSON.stringify({packages:[],testUserField:'keep'}));
   fs.mkdirSync(path.join(agent,'extensions'));fs.writeFileSync(path.join(agent,'extensions/dev-workflow.ts'),'retired');
-  const env={...process.env,PI_CODING_AGENT_DIR:agent,PATH:bin+path.delimiter+process.env.PATH};
+  const env={...process.env,PI_CODING_AGENT_DIR:agent,PATH:bin+path.delimiter+process.env["PATH"]};
   for(let i=0;i<2;i++)execFileSync('bash',[path.join(pkg,'../scripts/install-pi.sh')],{env,encoding:'utf8'});
   assert.equal(fs.readFileSync(path.join(agent,'auth.json'),'utf8'),auth);
   assert.equal(fs.readFileSync(path.join(agent,'AGENTS.md'),'utf8'),'User preferences, keep me.\n');

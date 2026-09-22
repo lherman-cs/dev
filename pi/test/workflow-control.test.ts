@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { WorkflowControl, WorkflowPaused } from '../lib/workflow-control.mjs';
+import { WorkflowControl, WorkflowPaused } from '../lib/workflow-control.ts';
 
 test('pause waits for a checkpoint, stop cancels, neither implies rollback',()=>{
   const c=new WorkflowControl('ship','project');c.pause();assert.equal(c.state,'running');assert.equal(c.signal.aborted,false);
@@ -11,23 +11,23 @@ test('pause waits for a checkpoint, stop cancels, neither implies rollback',()=>
 });
 
 test('human decisions never open until explicitly claimed; duplicate responses are inert',async()=>{
-  const c=new WorkflowControl('ship','p');let shows=0,finish;
-  const answer=c.ask('Approve HEAD abc?',()=>{shows++;return new Promise(r=>finish=r);});
-  assert.equal(shows,0);const response=c.pending.respond();assert.equal(shows,1);
-  await c.pending.respond();assert.equal(shows,1);finish({action:'approve'});await response;
+  const c=new WorkflowControl('ship','p');let shows=0;let finish!: (value: { action: 'approve' }) => void;
+  const answer=c.ask('Approve HEAD abc?',()=>{shows++;return new Promise<{ action: 'approve' }>(resolve=>{finish=resolve;});});
+  assert.equal(shows,0);assert.ok(c.pending);const response=c.pending.respond();assert.equal(shows,1);
+  assert.ok(c.pending);await c.pending.respond();assert.equal(shows,1);finish({action:'approve'});await response;
   assert.deepEqual(await answer,{action:'approve'});assert.equal(c.pending,undefined);
 });
 
 test('pause at an unclaimed human gate leaves no stranded promise or implicit approval',async()=>{
   const c=new WorkflowControl('ship','p');let shown=false;
-  const answer=c.ask('approve?',()=>{shown=true;});const rejected=assert.rejects(answer,WorkflowPaused);
+  const answer=c.ask('approve?',async()=>{shown=true;});const rejected=assert.rejects(answer,WorkflowPaused);
   c.pause();await rejected;assert.equal(shown,false);assert.equal(c.pending,undefined);
 });
 
 test('stopping while a claimed dialog remains visible cannot approve subsequent work',async()=>{
-  const c=new WorkflowControl('ship','p');let finish;
-  const answer=c.ask('approve?',()=>new Promise(r=>finish=r));const rejected=assert.rejects(answer,/abort/i);
-  const response=c.pending.respond();c.stop();await rejected;finish({action:'approve'});await response;
+  const c=new WorkflowControl('ship','p');let finish!: (value: { action: 'approve' }) => void;
+  const answer=c.ask('approve?',()=>new Promise<{ action: 'approve' }>(resolve=>{finish=resolve;}));const rejected=assert.rejects(answer,/abort/i);
+  assert.ok(c.pending);const response=c.pending.respond();c.stop();await rejected;finish({action:'approve'});await response;
   assert.equal(c.pending,undefined);assert.throws(()=>c.checkpoint());
 });
 

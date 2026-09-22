@@ -1,12 +1,13 @@
-import { test } from "node:test";
+import { test, type TestContext } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { encode, decode } from "@toon-format/toon";
-import { config, role } from "../lib/roles.mjs";
-import { resolveProject, runWorkflow } from "../lib/workflow.mjs";
+import { config, role, type RoleName } from "../lib/roles.ts";
+import type { ProgressState, WorkflowHarness } from "../lib/workflow-types.ts";
+import { resolveProject, runWorkflow } from "../lib/workflow.ts";
 
 const expected = {
   spec: "openai/gpt-5.6-sol:medium", plan: "openai/gpt-5.6-sol:high",
@@ -16,34 +17,36 @@ const expected = {
 };
 test("exact user roles; Codex is the authentication transport, not a different model", () => {
   assert.deepEqual(config.roles, expected);
-  for (const name of Object.keys(expected)) {
+  for (const name of Object.keys(expected) as RoleName[]) {
     const r = role(name); assert.equal(r.provider, "openai-codex");
     assert.equal(`openai/${r.model}:${r.thinking}`, expected[name]);
   }
 });
 
-function fixture(t, { manifest = true, taskCount = 2 } = {}) {
+interface FixtureOptions { manifest?: boolean; taskCount?: number }
+interface ChildProcessFailure extends Error { status?: number; stdout?: string; stderr?: string }
+function fixture(t: TestContext, { manifest = true, taskCount = 2 }: FixtureOptions = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "dev-pi-test-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  const git = (...args) => execFileSync("git", args, { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+  const git = (...args: string[]): string => execFileSync("git", args, { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
   git("init", "-q"); git("config", "user.email", "test@example.invalid"); git("config", "user.name", "Test");
   fs.writeFileSync(path.join(root, "seed"), "seed\n"); git("add", "seed"); git("commit", "-qm", "test: seed");
   const base = git("rev-parse", "HEAD");
   const dir = path.join(root, "plans", "media signaling core");
   fs.mkdirSync(path.join(dir, "plans"), { recursive: true });
   fs.writeFileSync(path.join(dir, "spec.md"), "Status: APPROVED\n");
-  const write = (file, data) => fs.writeFileSync(file, encode(data) + "\n");
+  const write = (file: string, data: Parameters<typeof encode>[0]): void => fs.writeFileSync(file, encode(data) + "\n");
   if (manifest) write(path.join(dir, "project.toon"), { name: "media signaling core", status: "ready", base, final_checks: [] });
   for (let i = 1; i <= taskCount; i++) {
     const id = `P00${i}`;
     write(path.join(dir, "plans", `${id}.toon`), { id, title: `task ${i}`, goal: "Create tested output", depends_on: i === 1 ? [] : ["P001"], checks: [`test "$(cat output-${i})" = good`] });
   }
-  const calls = [], reports = [];
-  const h = {
+  const calls: string[] = [], reports: string[] = [];
+  const h: WorkflowHarness = {
     cwd: root,
     async exec(program, args) {
       try { return { code: 0, stdout: execFileSync(program, args, { cwd: this.cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }), stderr: "" }; }
-      catch (e) { return { code: e.status || -1, stdout: e.stdout || "", stderr: e.stderr || e.message }; }
+      catch (error: unknown) { const e = error as ChildProcessFailure; return { code: e.status ?? -1, stdout: e.stdout ?? "", stderr: e.stderr ?? e.message }; }
     },
     async delegate(name, task) {
       calls.push(name);
@@ -56,7 +59,8 @@ function fixture(t, { manifest = true, taskCount = 2 } = {}) {
     },
     select: async () => { throw new Error("unexpected selector"); },
     confirm: async () => false,
-    report: message => reports.push(message),
+    review: async () => { throw new Error("unexpected review"); },
+    report: message => { reports.push(message); },
   };
   return { h, root, dir, base, git, calls, reports, target: "./plans/media signaling core/spec.md", write };
 }
@@ -74,7 +78,7 @@ test("real spec path with spaces, real TOON, bounded retry, two clean commits, l
   assert.equal(f.git("status", "--porcelain"), "");
   assert.equal(fs.existsSync(path.join(f.root, ".gitignore")), false);
   assert.match(fs.readFileSync(path.join(f.root, ".git/info/exclude"), "utf8"), /^\/plans\/$/m);
-  assert.deepEqual(decode(fs.readFileSync(path.join(f.dir, "progress.toon"), "utf8")).done, ["P001", "P002"]);
+  assert.deepEqual((decode(fs.readFileSync(path.join(f.dir, "progress.toon"), "utf8")) as unknown as ProgressState).done, ["P001", "P002"]);
   await runWorkflow(f.h, "build", f.target);
   assert.equal(f.calls.length, 3, "resume must not repeat completed work");
 });
@@ -97,7 +101,7 @@ test("authentication/plugin failure stops once, never falls through to build_ret
   f.h.delegate = async () => { count++; throw new Error("No Codex login; authenticate in Pi"); };
   await assert.rejects(runWorkflow(f.h, "build", f.target), /No Codex login/);
   assert.equal(count, 1); assert.equal(f.git("rev-parse", "HEAD"), f.base);
-  assert.deepEqual(decode(fs.readFileSync(path.join(f.dir, "progress.toon"), "utf8")).done, []);
+  assert.deepEqual((decode(fs.readFileSync(path.join(f.dir, "progress.toon"), "utf8")) as unknown as ProgressState).done, []);
 });
 
 test("recovery after a committed child loses its response does not duplicate that commit", async t => {
@@ -125,13 +129,13 @@ test("prepare never quietly starts an unfinished build", async t => {
 
 
 test('pause requested inside a Builder verifies and persists that contract but dispatches nothing else',async t=>{
-  const {WorkflowControl,WorkflowPaused}=await import('../lib/workflow-control.mjs');
+  const {WorkflowControl,WorkflowPaused}=await import('../lib/workflow-control.ts');
   const f=fixture(t),c=new WorkflowControl('build',f.target),delegate=f.h.delegate;
   f.h.checkpoint=activity=>c.checkpoint(activity);
   f.h.delegate=async(...args)=>{const result=await delegate(...args);c.pause();return result;};
   await assert.rejects(runWorkflow(f.h,'build',f.target),WorkflowPaused);
   assert.deepEqual(f.calls,['build']);
-  const progress=decode(fs.readFileSync(path.join(f.dir,'progress.toon'),'utf8'));
+  const progress=decode(fs.readFileSync(path.join(f.dir,'progress.toon'),'utf8')) as unknown as ProgressState;
   assert.deepEqual(progress.done,['P001']);assert.equal(progress.current,null);
   delete f.h.checkpoint;f.h.delegate=delegate;await runWorkflow(f.h,'build',f.target);
   assert.equal(f.git('rev-list','--count',`${f.base}..HEAD`),'2');
@@ -139,15 +143,15 @@ test('pause requested inside a Builder verifies and persists that contract but d
 
 test('human-readable worker metadata uses contract purpose, never the first prompt path',async t=>{
   const f=fixture(t,{taskCount:1}),delegate=f.h.delegate;
-  f.h.delegate=async(name,task,skill,schema,options)=>{
-    assert.match(options.metadata.label,/Builder · task 1/);assert.equal(options.metadata.task,'Create tested output');
-    assert.equal(options.metadata.contract,'P001');return delegate(name,task);
+  f.h.delegate=async(name,task,_skill,_schema,options)=>{
+    assert.ok(options); assert.match(String(options.metadata?.["label"]),/Builder · task 1/);assert.equal(options.metadata?.["task"],'Create tested output');
+    assert.equal(options.metadata?.["contract"],'P001');return delegate(name,task);
   };
   await runWorkflow(f.h,'build',f.target);
 });
 
 test('pause fingerprint includes tracked/untracked contents and ignored approved contracts',async t=>{
-  const f=fixture(t);const {workflowFingerprint}=await import('../lib/workflow.mjs');
+  const f=fixture(t);const {workflowFingerprint}=await import('../lib/workflow.ts');
   const project=await resolveProject(f.h,f.dir);await f.h.exec('git',['config','--local','user.name','Test']);
   await f.h.exec('git',['update-index','--refresh']);
   fs.appendFileSync(path.join(f.root,'.git/info/exclude'),'\n/plans/\n');

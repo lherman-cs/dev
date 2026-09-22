@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-const skill = name => fs.readFileSync(new URL(`../skills/dev-${name}/SKILL.md`,import.meta.url),'utf8');
+const skill = (name: string): string => fs.readFileSync(new URL(`../skills/dev-${name}/SKILL.md`,import.meta.url),'utf8');
 
 test('94d10a6 semantic contracts retain authority, outputs and stop conditions at skill scope',()=>{
   const requirements={

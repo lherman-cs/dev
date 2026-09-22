@@ -2,21 +2,31 @@ import fs from "node:fs";
 import path from "node:path";
 import { createHash } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
-import { read, save, git, clean, command, ghJSON, contracts, checks, build } from "./workflow.mjs";
+import { read, save, git, clean, command, ghJSON, contracts, build, errorMessage } from "./workflow.ts";
+import type { Contract, ProgressState, Project, PublishedCandidate, PullRequest, RepairIssue, ReviewReport, ReviewResult, ReviewThread, ShipState, ShippingPhase, SignalData, StatusCheck, WorkflowHarness } from "./workflow-types.ts";
 
-const digest = value => createHash("sha256").update(JSON.stringify(value)).digest("hex");
-const blocked = message => Object.assign(new Error(message), { blocked: true });
-const nonempty = value => typeof value === "string" && value.trim().length > 0;
-const readTools = ["read", "grep", "find", "ls"];
-const findingKey = task => typeof task.source === "string" ? task.source : task.source?.finding_key;
-const specPath = project => path.join(project.dir, "spec.md");
-const finalChecks = project => {
+type BlockedError = Error & { blocked: true };
+type GateError = Error & { gate: string; evidence: string };
+type ShipCheckpoint = { state: ShipState; persist: () => void };
+type DraftPullRequest = Pick<PullRequest, "number" | "baseRefName" | "isDraft">;
+type SignalResponse = Omit<SignalData, "pending" | "red">;
+type GraphQLThreads = { data?: { node?: { reviewThreads?: { nodes: ReviewThread[]; pageInfo: { hasNextPage: boolean; endCursor: string | null } } } }; errors?: unknown[] };
+
+const digest = (value: unknown): string => createHash("sha256").update(JSON.stringify(value)).digest("hex");
+const blocked = (message: string): BlockedError => Object.assign(new Error(message), { blocked: true as const });
+const isBlockedError = (error: unknown): error is BlockedError => error instanceof Error && "blocked" in error && error.blocked === true;
+const isGateError = (error: unknown): error is GateError => error instanceof Error && typeof (error as Partial<GateError>).gate === "string" && typeof (error as Partial<GateError>).evidence === "string";
+const nonempty = (value: unknown): value is string => typeof value === "string" && value.trim().length > 0;
+const readTools: string[] = ["read", "grep", "find", "ls"];
+const findingKey = (task: Pick<Contract, "source">): string | undefined => typeof task.source === "string" ? task.source : task.source?.finding_key;
+const specPath = (project: Project): string => path.join(project.dir, "spec.md");
+const finalChecks = (project: Project): string[] => {
   const declared = contracts(project).meta.final_checks;
   return declared?.length ? declared : ["Justfile", "justfile"].some(f => fs.existsSync(path.join(project.root, f))) ? ["just check", "just test"] : [];
 };
-const progressPath = project => path.join(project.dir, "progress.toon");
-function requireComplete(project) {
-  const state = fs.existsSync(progressPath(project)) ? read(progressPath(project)) : { done: [] };
+const progressPath = (project: Project): string => path.join(project.dir, "progress.toon");
+function requireComplete(project: Project): ProgressState {
+  const state = fs.existsSync(progressPath(project)) ? read<ProgressState>(progressPath(project)) : { version: 1, done: [], current: null, head: "" };
   if (state.current || contracts(project).tasks.some(t => !state.done?.includes(t.id))) throw new Error("Prepare does not start implementation. Run /dev-build for the unfinished contracts first.");
   return state;
 }
@@ -36,26 +46,28 @@ const reviewSchema = {
 };
 
 // All durable state remains the original small TOON checkpoint, not model history.
-function loadShip(project) {
+function loadShip(project: Project): ShipCheckpoint {
   const file = path.join(project.dir, "ship.toon");
-  const state = fs.existsSync(file) ? read(file) : { version: 1, phase: "build", repair_round: 0, verified_head: null, candidate: null, approved_head: null, last_failure: null, blocked: null };
+  const state: ShipState = fs.existsSync(file) ? read<ShipState>(file) : { version: 1, phase: "build", repair_round: 0, verified_head: null, candidate: null, approved_head: null, last_failure: null, blocked: null };
   if (!["build", "prepare", "await", "review", "human", "blocked", "done"].includes(state.phase)) throw new Error("Unknown shipping checkpoint; preserve it and reconcile explicitly.");
   return { state, persist: () => save(file, state) };
 }
-async function rebaseActive(h) {
+async function rebaseActive(h: WorkflowHarness): Promise<boolean> {
   const dir = await git(h, "rev-parse", "--path-format=absolute", "--git-dir");
   return ["rebase-merge", "rebase-apply"].some(name => fs.existsSync(path.join(dir, name)));
 }
-async function finishRebase(h, project) {
+async function finishRebase(h: WorkflowHarness, project: Project): Promise<void> {
   while (await rebaseActive(h)) {
     h.checkpoint?.("Resolving rebase conflicts");
     const files = (await git(h, "diff", "--name-only", "--diff-filter=U")).split("\n").filter(Boolean);
     if (files.length) {
-      const result = await h.delegate("build_retry", `Approved spec: ${specPath(project)}\nConflicted files:\n${files.join("\n")}`, undefined, undefined, {
+      const output = await h.delegate("build_retry", `Approved spec: ${specPath(project)}\nConflicted files:\n${files.join("\n")}`, undefined, undefined, {
         metadata: { label: "Builder · Resolve rebase conflicts", task: files.join("\n"), kind: "conflicts" },
         tools: [...readTools, "edit", "write"],
         system: "Resolve only these rebase-conflicted files, preserving the approved spec and each commit's intent. Do not sequence Git. Return NEEDS_HUMAN with evidence for a new semantic decision.",
       });
+      if (typeof output !== "string") throw new Error("Conflict worker returned a non-text result.");
+      const result = output;
       if (/\bNEEDS_HUMAN\b/.test(result)) throw blocked(result);
       const changed = (await git(h, "diff", "--name-only")).split("\n").filter(Boolean);
       if (changed.some(file => !files.includes(file)) || await git(h, "ls-files", "--others", "--exclude-standard")) throw new Error("Conflict worker changed files outside the assigned conflicts; work preserved.");
@@ -66,15 +78,15 @@ async function finishRebase(h, project) {
   }
 }
 
-async function currentPR(h) {
-  return ghJSON(h, ["pr", "view", "--json", "id,number,url,isDraft,state,headRefOid,baseRefOid,baseRefName"]);
+async function currentPR(h: WorkflowHarness): Promise<PullRequest> {
+  return ghJSON<PullRequest>(h, ["pr", "view", "--json", "id,number,url,isDraft,state,headRefOid,baseRefOid,baseRefName"]);
 }
-async function unchanged(h, expected) {
+async function unchanged(h: WorkflowHarness, expected: PublishedCandidate): Promise<PullRequest> {
   const pr = await currentPR(h);
   if (pr.state !== "OPEN" || pr.number !== expected.pr || pr.headRefOid !== expected.head || pr.baseRefOid !== expected.base || await git(h, "rev-parse", "HEAD") !== expected.head || !await clean(h)) throw new Error("Candidate or base changed; old verification/approval is not reusable.");
   return pr;
 }
-async function prepare(h, project, ship) {
+async function prepare(h: WorkflowHarness, project: Project, ship: ShipCheckpoint): Promise<void> {
   h.checkpoint?.("Preparing exact candidate");
   const { state, persist } = ship;
   const progress = requireComplete(project);
@@ -112,8 +124,11 @@ async function prepare(h, project, ship) {
     h.report(`Validating: ${line}`);
     const result = await h.exec("bash", ["-c", line]);
     if (result.code) {
-      const error = new Error(`Final gate failed: ${line}\n${(result.stderr || result.stdout).slice(-1600)}`);
-      error.gate = line; error.evidence = (result.stderr || result.stdout).slice(-1600); throw error;
+      const error = Object.assign(new Error(`Final gate failed: ${line}\n${(result.stderr || result.stdout).slice(-1600)}`), {
+        gate: line,
+        evidence: (result.stderr || result.stdout).slice(-1600),
+      });
+      throw error;
     }
   }
   if (!await clean(h) || await git(h, "rev-parse", "HEAD") !== head) throw new Error("Final gates modified the candidate; refusing to publish.");
@@ -121,12 +136,14 @@ async function prepare(h, project, ship) {
   h.checkpoint?.("Before publishing verified candidate");
   h.report(`Preparation: publishing verified candidate ${head.slice(0, 12)}.`);
   await git(h, "push", "--force-with-lease", "--set-upstream", "origin", `HEAD:refs/heads/${branch}`);
-  const prs = await ghJSON(h, ["pr", "list", "--head", branch, "--state", "open", "--json", "number,baseRefName,isDraft"]);
+  const prs = await ghJSON<DraftPullRequest[]>(h, ["pr", "list", "--head", branch, "--state", "open", "--json", "number,baseRefName,isDraft"]);
   if (prs.length > 1) throw new Error("Multiple open PRs for this branch.");
   if (!prs.length) await command(h, "gh", ["pr", "create", "--draft", "--base", baseBranch, "--head", branch, "--title", "chore: prepare review candidate", "--body", "Draft candidate. Final summary follows independent and human review."]);
   else {
-    if (prs[0].baseRefName !== baseBranch) throw new Error("Existing PR targets a different base branch.");
-    if (!prs[0].isDraft) await command(h, "gh", ["pr", "ready", String(prs[0].number), "--undo"]);
+    const existing = prs[0];
+    if (!existing) throw new Error("Expected an existing pull request.");
+    if (existing.baseRefName !== baseBranch) throw new Error("Existing PR targets a different base branch.");
+    if (!existing.isDraft) await command(h, "gh", ["pr", "ready", String(existing.number), "--undo"]);
   }
   const pr = await currentPR(h);
   const base = await git(h, "rev-parse", `origin/${baseBranch}`);
@@ -135,25 +152,25 @@ async function prepare(h, project, ship) {
   state.phase = "await"; state.approved_head = null; state.feedback = null; persist();
 }
 
-async function signals(h, c) {
+async function signals(h: WorkflowHarness, c: PublishedCandidate): Promise<SignalData> {
   await unchanged(h, c);
-  const data = await ghJSON(h, ["pr", "view", String(c.pr), "--json", "headRefOid,baseRefOid,statusCheckRollup,comments,reviews,updatedAt"]);
+  const data = await ghJSON<SignalResponse>(h, ["pr", "view", String(c.pr), "--json", "headRefOid,baseRefOid,statusCheckRollup,comments,reviews,updatedAt"]);
   if (data.headRefOid !== c.head || data.baseRefOid !== c.base || !Array.isArray(data.statusCheckRollup)) throw new Error("Cannot verify exact-candidate CI signals.");
   let pending = false, red = false;
   for (const check of data.statusCheckRollup) {
     if (check.__typename === "CheckRun" || check.status) {
       if (check.status !== "COMPLETED") pending = true;
-      else if (!["SUCCESS", "NEUTRAL", "SKIPPED"].includes(check.conclusion)) red = true;
+      else if (!["SUCCESS", "NEUTRAL", "SKIPPED"].includes(check.conclusion ?? "")) red = true;
     } else {
-      if (!["SUCCESS", "FAILURE", "ERROR"].includes(check.state)) pending = true;
+      if (!["SUCCESS", "FAILURE", "ERROR"].includes(check.state ?? "")) pending = true;
       else if (check.state !== "SUCCESS") red = true;
     }
   }
   if ((data.reviews || []).some(review => review.state === "PENDING")) pending = true;
   return { ...data, pending, red };
 }
-async function settled(h, c) {
-  let previous, since = 0, status;
+async function settled(h: WorkflowHarness, c: PublishedCandidate): Promise<SignalData> {
+  let previous: string | undefined, since = 0, status: "pending" | "quiet" | undefined;
   while (true) {
     h.signal?.throwIfAborted();
     h.checkpoint?.();
@@ -175,15 +192,15 @@ async function settled(h, c) {
     await (h.sleep ? h.sleep(10_000) : delay(10_000, undefined, { signal: h.signal }));
   }
 }
-async function threads(h, c) {
+async function threads(h: WorkflowHarness, c: PublishedCandidate): Promise<ReviewThread[]> {
   const id = c.id || (await currentPR(h)).id;
-  const result = [];
-  let cursor = null;
+  const result: ReviewThread[] = [];
+  let cursor: string | null = null;
   do {
     const query = "query($id:ID!,$cursor:String){node(id:$id){...on PullRequest{reviewThreads(first:100,after:$cursor){nodes{id isResolved isOutdated comments(first:100){nodes{body path line url author{login}} pageInfo{hasNextPage}}} pageInfo{hasNextPage endCursor}}}}}";
     const args = ["api", "graphql", "-f", `query=${query}`, "-f", `id=${id}`];
     if (cursor) args.push("-f", `cursor=${cursor}`);
-    const response = await ghJSON(h, args);
+    const response = await ghJSON<GraphQLThreads>(h, args);
     const page = response.data?.node?.reviewThreads;
     if (response.errors?.length || !page) throw new Error("Cannot read complete PR review threads.");
     if (page.nodes.some(thread => thread.comments.pageInfo.hasNextPage)) throw new Error("Review thread exceeds fetched evidence; inspect the full thread before reviewing.");
@@ -193,34 +210,35 @@ async function threads(h, c) {
   } while (cursor);
   return result;
 }
-async function evidence(h, project, c) {
+async function evidence(h: WorkflowHarness, project: Project, c: PublishedCandidate): Promise<{ signature: string; red: boolean; data: Record<string, unknown> }> {
   const data = await signals(h, c);
   if (data.pending) throw new Error("CI or review feedback is still pending.");
   const { updatedAt, ...stable } = data;
   const feedback = await threads(h, c);
   const diff = await git(h, "diff", `${c.base}...${c.head}`);
   const history = await git(h, "log", "--format=%h %s", `${c.base}..${c.head}`);
-  const failures = [];
+  const failures: Array<{ name: string; logs: string }> = [];
   for (const check of data.statusCheckRollup) {
-    if (check.status === "COMPLETED" && !["SUCCESS", "NEUTRAL", "SKIPPED"].includes(check.conclusion)) {
+    if (check.status === "COMPLETED" && !["SUCCESS", "NEUTRAL", "SKIPPED"].includes(check.conclusion ?? "")) {
       const job = /\/actions\/runs\/\d+\/job\/(\d+)/.exec(check.detailsUrl || "");
-      if (job) {
-        const logs = await h.exec("gh", ["run", "view", "--job", job[1], "--log-failed"]);
+      const jobId = job?.[1];
+      if (jobId) {
+        const logs = await h.exec("gh", ["run", "view", "--job", jobId, "--log-failed"]);
         failures.push({ name: check.name, logs: (logs.stdout || logs.stderr).slice(-12000) });
       }
     }
   }
   const approved = [fs.readFileSync(specPath(project), "utf8"), contracts(project).meta, contracts(project).all];
   const checkpointFile = path.join(project.dir, "ship.toon");
-  const verifiedHead = fs.existsSync(checkpointFile) ? read(checkpointFile).verified_head : null;
+  const verifiedHead = fs.existsSync(checkpointFile) ? read<ShipState>(checkpointFile).verified_head : null;
   return { signature: digest({ stable, feedback, approved }), red: data.red, data: { ...stable, threads: feedback, failures, diff, history,
     local_validation: { commands: finalChecks(project), verified: verifiedHead === c.head, verified_head: verifiedHead } } };
 }
-async function review(h, project, c, feedback = "") {
+async function review(h: WorkflowHarness, project: Project, c: PublishedCandidate, feedback = ""): Promise<ReviewReport> {
   h.checkpoint?.("Independent candidate review");
   const before = await evidence(h, project, c);
   const result = await h.delegate("review", `Approved spec: ${specPath(project)}\nPlans/repairs: ${project.dir}\nCandidate: ${JSON.stringify(c)}\nEvidence: ${JSON.stringify(before.data)}${feedback ? `\nHuman feedback: ${feedback}\nThis invocation must return repairs or blocked, never pass.` : ""}`,
-    "dev-review", reviewSchema, { tools: readTools, metadata: { label: `Reviewer · Candidate ${c.head.slice(0, 12)}`, task: `Review PR #${c.pr} against approved spec and checks`, candidate: c.head } });
+    "dev-review", reviewSchema, { tools: readTools, metadata: { label: `Reviewer · Candidate ${c.head.slice(0, 12)}`, task: `Review PR #${c.pr} against approved spec and checks`, candidate: c.head } }) as ReviewResult;
   if (!["pass", "repairs", "blocked"].includes(result.verdict) || !Array.isArray(result.repairs)) throw new Error("Invalid review result.");
   if (feedback && result.verdict === "pass") throw new Error("Human feedback may not be silently passed.");
   if (result.verdict === "pass" && result.repairs.length) throw new Error("PASS cannot contain unaddressed repairs.");
@@ -232,39 +250,39 @@ async function review(h, project, c, feedback = "") {
   h.report(result.summary);
   return report;
 }
-function addRepairs(project, issues, c) {
+function addRepairs(project: Project, issues: RepairIssue[], c: Pick<PublishedCandidate, "head">): void {
   const { tasks, all } = contracts(project);
   let next = Math.max(0, ...all.map(t => Number(/^R(\d+)$/.exec(t.id)?.[1] || 0))) + 1;
   for (const issue of issues) {
-    if (all.some(t => findingKey(t) === issue.key && t.source?.candidate === c.head)) continue;
+    if (all.some(t => findingKey(t) === issue.key && typeof t.source !== "string" && t.source?.candidate === c.head)) continue;
     const id = `R${String(next++).padStart(3, "0")}`;
     save(path.join(project.dir, "repairs", `${id}.toon`), { version: 1, id, title: issue.title, goal: issue.goal,
       requirements: issue.requirements || [issue.reason].filter(Boolean), checks: issue.checks, depends_on: tasks.map(t => t.id),
       source: { kind: "candidate_review", finding_key: issue.key, candidate: c.head, evidence: issue.evidence || [] } });
   }
 }
-function queueRepairs(project, ship, issues, c) {
+function queueRepairs(project: Project, ship: ShipCheckpoint, issues: RepairIssue[], c: Pick<PublishedCandidate, "head">): void {
   const { state, persist } = ship;
   const seen = new Set(contracts(project).all.map(findingKey).filter(Boolean));
   if (state.repair_round >= 2 || !issues.length || issues.some(r => seen.has(r.key)) || new Set(issues.map(r => r.key)).size !== issues.length) throw blocked("Repair loop stopped: recurring finding or two repair rounds exhausted.");
   state.pending_repairs = { issues, candidate: c }; persist();
 }
-function applyPending(project, ship) {
+function applyPending(project: Project, ship: ShipCheckpoint): void {
   const { state, persist } = ship;
   if (!state.pending_repairs) return;
   addRepairs(project, state.pending_repairs.issues, state.pending_repairs.candidate);
   state.pending_repairs = null; state.repair_round++;
   state.phase = "build"; state.verified_head = null; state.candidate = null; state.approved_head = null; state.feedback = null; persist();
 }
-const preview = (report, c, round) => [`# Final review: PR #${c.pr}`, report.summary, `HEAD: ${c.head}\nBase: ${c.base}\nRepair rounds: ${round}`, "## Review focus", ...(report.review_focus || []), "## Validation", ...(report.validation || []), c.url].join("\n\n");
+const preview = (report: ReviewReport, c: PublishedCandidate, round: number): string => [`# Final review: PR #${c.pr}`, report.summary, `HEAD: ${c.head}\nBase: ${c.base}\nRepair rounds: ${round}`, "## Review focus", ...(report.review_focus || []), "## Validation", ...(report.validation || []), c.url].join("\n\n");
 
-export async function shipping(h, project, phase) {
+export async function shipping(h: WorkflowHarness, project: Project, phase: "prepare" | "review" | "ship"): Promise<void> {
   const ship = loadShip(project);
   const { state, persist } = ship;
   if (phase === "review") {
     requireComplete(project);
     const pr = await currentPR(h);
-    const c = { head: pr.headRefOid, base: pr.baseRefOid, pr: pr.number, id: pr.id, url: pr.url };
+    const c: PublishedCandidate = { head: pr.headRefOid, base: pr.baseRefOid, base_branch: pr.baseRefName, pr: pr.number, id: pr.id, url: pr.url };
     const report = await review(h, project, c);
     if (report.verdict === "repairs") {
       const decision = await h.review("Select concrete repairs", preview(report, c, state.repair_round), report.repairs);
@@ -276,7 +294,9 @@ export async function shipping(h, project, phase) {
   if (phase === "prepare") {
     requireComplete(project);
     state.phase = "prepare"; state.approved_head = null; persist();
-    await prepare(h, project, ship); h.report(`Prepared ${state.candidate.url}`); return;
+    await prepare(h, project, ship);
+    if (!state.candidate) throw new Error("Preparation completed without a candidate.");
+    h.report(`Prepared ${state.candidate.url}`); return;
   }
   if (state.phase === "blocked") {
     if (!await h.confirm("Resume blocked workflow?", `${state.blocked?.reason || "Shipping is blocked."}\nResume only after reconciling this with the approved spec/plans.`)) return;
@@ -290,8 +310,8 @@ export async function shipping(h, project, phase) {
       if (state.phase === "build") { await build(h, project); state.phase = "prepare"; persist(); }
       if (state.phase === "prepare") {
         try { await prepare(h, project, ship); }
-        catch (error) {
-          if (!error.gate) throw error;
+        catch (error: unknown) {
+          if (!isGateError(error)) throw error;
           const signature = digest([error.gate, error.evidence]);
           if (state.last_failure === signature) throw blocked(`Final gate failure recurred: ${error.gate}`);
           const head = await git(h, "rev-parse", "HEAD");
@@ -312,20 +332,20 @@ export async function shipping(h, project, phase) {
       if (state.phase === "human") {
         h.checkpoint?.("Human review of exact candidate");
         const file = path.join(project.dir, "review.toon");
-        const report = fs.existsSync(file) ? read(file) : null;
+        const report = fs.existsSync(file) ? read<ReviewReport>(file) : null;
         const current = await evidence(h, project, c);
         if (!report || report.head !== c.head || report.signature !== current.signature) { state.phase = "await"; state.approved_head = null; persist(); continue; }
         if (current.red) throw new Error("Reviewer reported PASS while CI is red; refusing human approval.");
         if (state.approved_head !== c.head) {
           const decision = await h.review("Approve exact candidate?", preview(report, c, state.repair_round));
-          if (decision.action === "feedback") { state.feedback = decision.feedback; state.repair_round = 0; persist(); continue; }
+          if (decision.action === "feedback") { state.feedback = decision.feedback ?? null; state.repair_round = 0; persist(); continue; }
           if (decision.action !== "approve") return;
           state.approved_head = c.head; persist();
         }
         h.checkpoint?.("Preparing PR title and body");
         const finalized = await h.delegate("ship", `Approved spec: ${specPath(project)}\nReview: ${file}\nCandidate: ${JSON.stringify(c)}`, undefined,
           { type: "object", required: ["title", "body"], additionalProperties: false, properties: { title: { type: "string" }, body: { type: "string" } } },
-          { tools: readTools, metadata: { label: "PR summary · Approved candidate", task: "Write title/body without changing code", candidate: c.head }, system: "Return concise human-facing PR title and Markdown body for this approved candidate. Conventional Commit title; no workflow IDs. Do not modify files or GitHub." });
+          { tools: readTools, metadata: { label: "PR summary · Approved candidate", task: "Write title/body without changing code", candidate: c.head }, system: "Return concise human-facing PR title and Markdown body for this approved candidate. Conventional Commit title; no workflow IDs. Do not modify files or GitHub." }) as { title: string; body: string };
         if (!/^[a-z][a-z0-9-]*(\([^)]+\))?!?: .+/.test(finalized.title) || /\b[PR]\d{3,}\b|Plan-ID:/i.test(finalized.title)) throw new Error("Final title must be a Conventional Commit without workflow IDs.");
         h.checkpoint?.("Before final candidate publication");
         const final = await evidence(h, project, c);
@@ -339,9 +359,9 @@ export async function shipping(h, project, phase) {
         state.phase = "done"; persist(); h.report(`Ready: ${c.url}`); return;
       }
     }
-  } catch (error) {
+  } catch (error: unknown) {
     // Cancellation or infrastructure failure preserves the resumable phase and approval.
-    if (error.blocked) {
+    if (isBlockedError(error)) {
       state.blocked = { reason: error.message, resume: state.phase }; state.phase = "blocked"; persist();
     }
     throw error;

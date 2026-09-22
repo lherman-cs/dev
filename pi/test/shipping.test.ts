@@ -1,31 +1,35 @@
-import { test } from 'node:test';
+import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import {execFileSync} from 'node:child_process';
 import {encode,decode} from '@toon-format/toon';
-import {runWorkflow} from '../lib/workflow.mjs';
+import {runWorkflow} from '../lib/workflow.ts';
+import type { PullRequest, RepairIssue, ReviewResult, WorkflowHarness } from '../lib/workflow-types.ts';
 
-const pass=()=>({verdict:'pass',summary:'No material issue',review_focus:['Compatibility'],validation:['Local gates'],repairs:[]});
-const issue=(key='test.root')=>({key,title:'Correct behavior',goal:'Keep approved behavior',reason:'Concrete defect',evidence:['file:line'],requirements:['Preserve interface'],checks:['test -f done']});
-function fixture(t) {
+const pass=(): ReviewResult=>({verdict:'pass',summary:'No material issue',review_focus:['Compatibility'],validation:['Local gates'],repairs:[]});
+const issue=(key='test.root'): RepairIssue=>({key,title:'Correct behavior',goal:'Keep approved behavior',reason:'Concrete defect',evidence:['file:line'],requirements:['Preserve interface'],checks:['test -f done']});
+interface ChildProcessFailure extends Error { status?: number; stdout?: string; stderr?: string }
+interface TestDecoded { phase: string; approved_head: string | null; repair_round: number; head: string; current: string | null; done: string[]; source: { finding_key: string }; requirements: string[]; candidate: { head: string } }
+interface TestSignalResponse { comments: Array<{ body: string }> }
+function fixture(t: TestContext) {
   const home=fs.mkdtempSync(path.join(os.tmpdir(),'shipping-test-'));
   t.after(()=>fs.rmSync(home,{recursive:true,force:true}));
   const root=path.join(home,'repo'),remote=path.join(home,'remote.git');fs.mkdirSync(root);
-  const git=(...args)=>execFileSync('git',args,{cwd:root,encoding:'utf8',stdio:['ignore','pipe','pipe']}).trim();
+  const git=(...args: string[]): string=>execFileSync('git',args,{cwd:root,encoding:'utf8',stdio:['ignore','pipe','pipe']}).trim();
   git('init','-q','-b','feature');git('config','user.name','Test');git('config','user.email','test@example.invalid');
   fs.writeFileSync(path.join(root,'seed'),'seed');git('add','seed');git('commit','-qm','test: seed');
   const base=git('rev-parse','HEAD');execFileSync('git',['init','--bare','-q',remote]);git('remote','add','origin',remote);git('push','origin','HEAD:main');git('fetch','origin','main');
   const dir=path.join(root,'plans','project');fs.mkdirSync(path.join(dir,'plans'),{recursive:true});
-  const write=(file,value)=>fs.writeFileSync(path.join(dir,file),encode(value)+'\n');
-  const read=file=>decode(fs.readFileSync(path.join(dir,file),'utf8'));
+  const write=(file: string,value: Parameters<typeof encode>[0]): void=>fs.writeFileSync(path.join(dir,file),encode(value)+'\n');
+  const read=(file: string): TestDecoded=>decode(fs.readFileSync(path.join(dir,file),'utf8')) as unknown as TestDecoded;
   fs.writeFileSync(path.join(dir,'spec.md'),'Status: APPROVED\n');
   write('project.toon',{status:'ready',base,final_checks:['test -f done']});
   write('plans/P001.toon',{id:'P001',title:'task',goal:'do',depends_on:[],checks:['test -f done']});
-  const pr={id:'PR_test',number:1,url:'https://example.invalid/pr/1',state:'OPEN',isDraft:true,headRefOid:base,baseRefOid:base,baseRefName:'main'};
-  const api=[],delegations=[],decisions=[],reports=[];let clock=1,exists=false,red=false;
-  const h={cwd:root,now:()=>clock,sleep:async ms=>{clock+=ms;},report:message=>reports.push(message),confirm:async()=>true,select:async()=>undefined,
+  const pr: PullRequest={id:'PR_test',number:1,url:'https://example.invalid/pr/1',state:'OPEN',isDraft:true,headRefOid:base,baseRefOid:base,baseRefName:'main'};
+  const api: string[][]=[],delegations: string[]=[],decisions: unknown[][]=[],reports: string[]=[];let clock=1,exists=false,red=false;
+  const h: WorkflowHarness={cwd:root,now:()=>clock,sleep:async ms=>{clock+=ms;},report:message=>{reports.push(message);},confirm:async()=>true,select:async()=>undefined,
     review:async (...args)=>{decisions.push(args);return {action:'approve'};},
     async exec(program,args){
       if(program==='gh') {
@@ -38,7 +42,7 @@ function fixture(t) {
         return {code:0,stdout:'ok',stderr:''};
       }
       try {return {code:0,stdout:execFileSync(program,args,{cwd:this.cwd,encoding:'utf8',stdio:['ignore','pipe','pipe']}),stderr:''};}
-      catch(error){return {code:error.status||-1,stdout:error.stdout||'',stderr:error.stderr||''};}
+      catch(error: unknown){const failure=error as ChildProcessFailure;return {code:failure.status??-1,stdout:failure.stdout??'',stderr:failure.stderr??''};}
     },
     async delegate(name,task){
       delegations.push(name);
@@ -50,7 +54,7 @@ function fixture(t) {
       if(name==='ship') return {title:'feat: implement outcome',body:'Summary and validation'};
       assert.fail(`Unexpected delegated phase ${name}`);
     }};
-  return {h,dir,root,base,git,write,read,pr,api,delegations,decisions,reports,setRed:value=>red=value};
+  return {h,dir,root,base,git,write,read,pr,api,delegations,decisions,reports,setRed:(value: boolean)=>{red=value;}};
 }
 test('ship sequences preparation in code, settles feedback, approves exact HEAD and never merges',async t=>{
   const f=fixture(t);await runWorkflow(f.h,'ship',f.dir);
@@ -113,13 +117,14 @@ test('final gate failure becomes one narrow repair in ship, not a Preparer model
 });
 test('quiet period resets when late review feedback arrives; waiting uses no worker',async t=>{
   const f=fixture(t),execute=f.h.exec.bind(f.h),sleep=f.h.sleep,delegate=f.h.delegate;let late=false,sleeps=0;
+  assert.ok(sleep);
   f.h.sleep=async ms=>{assert.deepEqual(f.delegations,['build']);await sleep(ms);if(++sleeps===3)late=true;};
   f.h.exec=async (program,args)=>{
     const result=await execute(program,args);
-    if(program==='gh'&&args[1]==='view') {const data=JSON.parse(result.stdout);data.comments=late?[{body:'Late bot feedback'}]:[];result.stdout=JSON.stringify(data);}
+    if(program==='gh'&&args[1]==='view') {const data=JSON.parse(result.stdout) as TestSignalResponse;data.comments=late?[{body:'Late bot feedback'}]:[];result.stdout=JSON.stringify(data);}
     return result;
   };
-  f.h.delegate=async (name,...args)=>{if(name==='review')assert.ok(f.h.now()>=90001);return delegate(name,...args);};
+  f.h.delegate=async (name,...args)=>{if(name==='review'){assert.ok(f.h.now);assert.ok(f.h.now()>=90001);}return delegate(name,...args);};
   await runWorkflow(f.h,'ship',f.dir);assert.equal(f.read('ship.toon').phase,'done');
   assert.ok(f.reports.includes('New feedback detected. Restarting the 60-second quiet period.'));
 });
@@ -148,8 +153,8 @@ test('standalone Prepare reports a final gate failure without inventing repairs'
 test('default final gates run just check and just test before publication',async t=>{
   const f=fixture(t);fs.writeFileSync(path.join(f.root,'Justfile'),'check:\n    true\ntest:\n    true\n');f.git('add','Justfile');f.git('commit','-qm','test: repository gates');
   f.write('project.toon',{status:'ready',base:f.git('rev-parse','HEAD'),final_checks:[]});
-  const execute=f.h.exec.bind(f.h),gates=[];
-  f.h.exec=async (program,args)=>{if(program==='bash'&&args[1].startsWith('just ')){gates.push(args[1]);return {code:0,stdout:'ok',stderr:''};}return execute(program,args);};
+  const execute=f.h.exec.bind(f.h),gates: string[]=[];
+  f.h.exec=async (program,args)=>{const script=args[1];if(program==='bash'&&script?.startsWith('just ')){gates.push(script);return {code:0,stdout:'ok',stderr:''};}return execute(program,args);};
   await runWorkflow(f.h,'ship',f.dir);assert.deepEqual(gates,['just check','just test']);
 });
 
@@ -165,7 +170,7 @@ test('Prepare resumes a real interrupted rebase with a narrowly scoped conflict 
   f.pr.baseRefOid=f.git('rev-parse','origin/main');
   f.h.delegate=async (name,task,_skill,_schema,options)=>{
     assert.equal(name,'build_retry');assert.match(task,/Conflicted files:\nseed/);
-    assert.ok(!options.tools.includes('bash'));
+    assert.ok(options?.tools); assert.ok(!options.tools.includes('bash'));
     fs.writeFileSync(path.join(f.root,'seed'),'both approved changes');return 'Resolved';
   };
   await runWorkflow(f.h,'prepare',f.dir);
@@ -183,8 +188,9 @@ test('manual repair selection refuses evidence that changed during the human dec
 });
 
 test('pause during agentless CI polling preserves candidate and stops before reviewer dispatch',async t=>{
-  const {WorkflowControl,WorkflowPaused}=await import('../lib/workflow-control.mjs');
+  const {WorkflowControl,WorkflowPaused}=await import('../lib/workflow-control.ts');
   const f=fixture(t),c=new WorkflowControl('ship',f.dir),sleep=f.h.sleep;
+  assert.ok(sleep);
   f.h.checkpoint=activity=>c.checkpoint(activity);f.h.sleep=async ms=>{await sleep(ms);c.pause();};
   await assert.rejects(runWorkflow(f.h,'ship',f.dir),WorkflowPaused);
   assert.deepEqual(f.delegations,['build']);assert.equal(f.read('ship.toon').phase,'await');assert.ok(f.read('ship.toon').candidate.head);

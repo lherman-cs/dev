@@ -3,26 +3,28 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 import { decode, encode } from "@toon-format/toon";
 import lockfile from "proper-lockfile";
+import type { CommandHarness, Contract, ProgressState, Project, ProjectManifest, WorkflowHarness, WorkflowPhase } from "./workflow-types.ts";
 
-export const read = (file) => decode(fs.readFileSync(file, "utf8"));
-export function save(file, data) {
+export const errorMessage = (error: unknown): string => error instanceof Error ? error.message : String(error);
+export const read = <T>(file: fs.PathLike): T => decode(fs.readFileSync(file, "utf8")) as T;
+export function save<T>(file: string, data: T): void {
   const temporary = `${file}.${process.pid}.tmp`;
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(temporary, encode(data) + "\n");
   fs.renameSync(temporary, file);
 }
-export async function command(h, program, args) {
+export async function command(h: CommandHarness, program: string, args: string[]): Promise<string> {
   const result = await h.exec(program, args);
   if (result.code !== 0) throw new Error(`${program} ${args.join(" ")}: ${result.stderr || result.stdout || `exit ${result.code}`}`);
   return result.stdout.trim();
 }
-export const git = (h, ...args) => command(h, "git", args);
-export const clean = async (h) => !(await git(h, "status", "--porcelain"));
-export const ghJSON = async (h, args) => JSON.parse(await command(h, "gh", args));
-const inside = (root, file) => { const r = path.relative(root, file); return r !== ".." && !r.startsWith(`..${path.sep}`) && !path.isAbsolute(r); };
+export const git = (h: CommandHarness, ...args: string[]): Promise<string> => command(h, "git", args);
+export const clean = async (h: CommandHarness): Promise<boolean> => !(await git(h, "status", "--porcelain"));
+export const ghJSON = async <T>(h: CommandHarness, args: string[]): Promise<T> => JSON.parse(await command(h, "gh", args)) as T;
+const inside = (root: string, file: string): boolean => { const r = path.relative(root, file); return r !== ".." && !r.startsWith(`..${path.sep}`) && !path.isAbsolute(r); };
 
 // Resolve real files, not substrings of 'plans'. Check the execution manifest later.
-export async function resolveProject(h, target) {
+export async function resolveProject(h: WorkflowHarness, target: string): Promise<Project> {
   const root = fs.realpathSync(await git(h, "rev-parse", "--show-toplevel"));
   let value = String(target || "").trim();
   if (!value) {
@@ -45,7 +47,7 @@ export async function resolveProject(h, target) {
   throw new Error(`No spec.md found above ${value} within ${root}.`);
 }
 
-export async function excludeState(h) {
+export async function excludeState(h: CommandHarness): Promise<void> {
   if (await git(h, "ls-files", "--", ":(top)plans")) throw new Error("plans/ contains tracked files; refusing to hide product files.");
   const file = await git(h, "rev-parse", "--path-format=absolute", "--git-path", "info/exclude");
   const text = fs.existsSync(file) ? fs.readFileSync(file, "utf8") : "";
@@ -54,14 +56,14 @@ export async function excludeState(h) {
     fs.appendFileSync(file, `${text && !text.endsWith("\n") ? "\n" : ""}/plans/\n`);
   }
 }
-export function contracts(project) {
+export function contracts(project: Project): { meta: ProjectManifest; tasks: Contract[]; all: Contract[] } {
   const manifest = path.join(project.dir, "project.toon");
   if (!fs.existsSync(manifest)) throw new Error(`Found ${path.join(project.dir, "spec.md")}, but no execution plan. Run /dev-plan ${path.join(project.dir, "spec.md")} first; build does not invent approved tasks.`);
-  const meta = read(manifest);
+  const meta = read<ProjectManifest>(manifest);
   if (meta.status !== "ready" || !/^Status:\s*APPROVED\s*$/mi.test(fs.readFileSync(path.join(project.dir, "spec.md"), "utf8"))) throw new Error("Spec and execution plan need explicit human approval before building.");
   let tasks = ["plans", "repairs"].flatMap(kind => {
     const dir = path.join(project.dir, kind);
-    return fs.existsSync(dir) ? fs.readdirSync(dir).filter(n => /^[PR]\d+\.toon$/.test(n)).sort().map(n => ({ ...read(path.join(dir, n)), file: path.join(dir, n) })) : [];
+    return fs.existsSync(dir) ? fs.readdirSync(dir).filter(n => /^[PR]\d+\.toon$/.test(n)).sort().map(n => ({ ...read<Omit<Contract, "file">>(path.join(dir, n)), file: path.join(dir, n) })) : [];
   });
   const all = tasks;
   const superseded = new Set(tasks.flatMap(t => Array.isArray(t.supersedes) ? t.supersedes : t.supersedes ? [t.supersedes] : []));
@@ -77,9 +79,9 @@ export function contracts(project) {
 }
 /** Uses raw execution deliberately: taking a pause fingerprint must not enter
  * the pause gate recursively. Includes untracked contents and ignored contracts. */
-export async function workflowFingerprint(h, project) {
+export async function workflowFingerprint(h: WorkflowHarness, project: Project): Promise<string> {
   const exec = h.rawExec || h.exec;
-  const run = async args => {
+  const run = async (args: string[]): Promise<string> => {
     const result = await exec.call(h, "git", args);
     if (result.code !== 0) throw new Error(`Cannot revalidate worktree: ${result.stderr}`);
     return result.stdout;
@@ -97,10 +99,10 @@ export async function workflowFingerprint(h, project) {
   hash.update(JSON.stringify([approved.meta, approved.all]));
   return hash.digest("hex");
 }
-export async function checks(h, commands) {
+export async function checks(h: WorkflowHarness, commands: readonly string[] = []): Promise<void> {
   for (const line of commands || []) await command(h, "bash", ["-c", line]);
 }
-async function verify(h, base, task) {
+async function verify(h: WorkflowHarness, base: string, task: Contract): Promise<string> {
   const head = await git(h, "rev-parse", "HEAD");
   if (await git(h, "rev-parse", "HEAD^") !== base || await git(h, "rev-list", "--count", `${base}..${head}`) !== "1") throw new Error(`Expected exactly one commit for ${task.id}.`);
   const message = await git(h, "log", "-1", "--format=%B");
@@ -111,10 +113,10 @@ async function verify(h, base, task) {
   return head;
 }
 
-export async function build(h, project) {
+export async function build(h: WorkflowHarness, project: Project): Promise<{ meta: ProjectManifest; tasks: Contract[] }> {
   const { meta, tasks } = contracts(project);
   const stateFile = path.join(project.dir, "progress.toon");
-  const state = fs.existsSync(stateFile) ? read(stateFile) : { version: 1, done: [], current: null, head: await git(h, "rev-parse", meta.base || "HEAD") };
+  const state: ProgressState = fs.existsSync(stateFile) ? read<ProgressState>(stateFile) : { version: 1, done: [], current: null, head: await git(h, "rev-parse", meta.base || "HEAD") };
   const accepted = new Set(state.done || []);
   if (state.current && !tasks.some(t => t.id === state.current)) throw new Error("Interrupted contract was removed or superseded; reconcile it before resuming.");
   if (!state.current && !await clean(h)) throw new Error("Preserve or commit unrelated changes before building.");
@@ -136,7 +138,9 @@ export async function build(h, project) {
       h.checkpoint?.();
       const role = attempt ? "build_retry" : "build";
       h.report(`${attempt ? "Retrying" : "Building"} ${task.id}: ${task.title || task.goal} (${accepted.size + 1}/${tasks.length}).`);
-      const result = await h.delegate(role, `Spec: ${path.join(project.dir, "spec.md")}\nExecution contract: ${task.file}\nAccepted predecessor: ${state.head}\n${failure}`, "dev-implement", undefined, { metadata: { label: `Builder · ${task.title || task.goal || task.id}`, task: task.goal || task.title, contract: task.id, attempt: attempt + 1, predecessor: state.head } });
+      const output = await h.delegate(role, `Spec: ${path.join(project.dir, "spec.md")}\nExecution contract: ${task.file}\nAccepted predecessor: ${state.head}\n${failure}`, "dev-implement", undefined, { metadata: { label: `Builder · ${task.title || task.goal || task.id}`, task: task.goal || task.title || task.id, contract: task.id, attempt: attempt + 1, predecessor: state.head } });
+      if (typeof output !== "string") throw new Error("Builder returned a non-text result.");
+      const result = output;
       // Infrastructure failures throw from delegate: never retry with another model.
       if (/\bNEEDS_REPLAN\b/.test(result)) throw Object.assign(new Error(result), { blocked: true });
       try {
@@ -147,8 +151,8 @@ export async function build(h, project) {
         break;
       } catch (error) {
         h.signal?.throwIfAborted();
-        h.workerOutcome?.(h.lastWorkerId, `Verification failed: ${error.message}`);
-        failure = `Verification failed: ${error.message}\nAmend the same contract commit; do not add another.`;
+        h.workerOutcome?.(h.lastWorkerId, `Verification failed: ${errorMessage(error)}`);
+        failure = `Verification failed: ${errorMessage(error)}\nAmend the same contract commit; do not add another.`;
         if (!attempt) h.report(`${task.id} did not pass verification. Retrying the same commit.`);
       }
     }
@@ -163,8 +167,8 @@ export async function build(h, project) {
   return { meta, tasks };
 }
 
-export async function runWorkflow(h, phase, target) {
-  if (!["build", "prepare", "review", "ship"].includes(phase)) throw new Error(`Unknown phase ${phase}`);
+export async function runWorkflow(h: WorkflowHarness, phase: WorkflowPhase, target: string): Promise<unknown> {
+  if (phase === "spec" || phase === "plan") throw new Error(`Unknown controller phase ${phase}`);
   const project = await resolveProject(h, target);
   h.cwd = project.root;
   if (h.control) h.control.snapshot = () => workflowFingerprint(h, project);
@@ -173,7 +177,7 @@ export async function runWorkflow(h, phase, target) {
   const release = await lockfile.lock(project.root, { lockfilePath, retries: 0 });
   try {
     if (phase === "build") return await build(h, project);
-    const { shipping } = await import("./ship.mjs");
+    const { shipping } = await import("./ship.ts");
     return await shipping(h, project, phase);
   } finally { await release(); }
 }

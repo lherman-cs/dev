@@ -10,7 +10,7 @@ Baseline: `94d10a650b3d10198043afa602d4887fbeee34ce`. This is migration evidence
 | Plan is independently testable, immutable after dispatch, replan is not debugging | Restored `dev-plan`; no progress edits or research transcript duplication. |
 | Implement one contract/commit; retry amends; no controller Git operations | Restored `dev-implement`; real-Git commit/check/recovery tests. |
 | No foreground orchestrator; fresh workers; universal narrow Explorer | Native SDK sessions, one `explore` tool, no arbitrary subagent framework. Native-session isolation/cancellation tests. |
-| Preparation mechanics belong to code; conflict resolver only when necessary | `ship.mjs` performs fetch/rebase/final gates/push/draft binding. Conflict worker has no shell/Git tool. |
+| Preparation mechanics belong to code; conflict resolver only when necessary | `ship.ts` performs fetch/rebase/final gates/push/draft binding. Conflict worker has no shell/Git tool. |
 | Final-gate failure produces one bounded repair; recurrence stops | Persistent finding key and two-round cap; tested final-gate repair and recurrence. |
 | Await terminal checks and settled review feedback without a model | Traditional `gh` polling with 60-second quiet period and cancellation. Pending/late-feedback tests. |
 | Reviewer uses complete candidate evidence, not taste; never edits | Restored skill; code supplies diff/history, checks, focused failures and review threads. Worker gets read tools and Explorer only. |
