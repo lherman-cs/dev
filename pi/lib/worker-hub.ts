@@ -313,7 +313,7 @@ export class WorkerHub {
   }
   canSend(id: string): boolean {
     const r = this.get(id);
-    return !!(isActive(r) && r?.accepting !== false && r.state === "working" && (r.actions?.send || r.session?.steer));
+    if (!r || !isActive(r)) return false;\n    return !!(r.accepting !== false && r.state === "working" && (r.actions?.send || r.session?.steer));
   }
   async send(id: string, text: string, mode: DeliveryMode = "steer"): Promise<WorkerDelivery> {
     if (!["steer", "followUp"].includes(mode)) throw new Error("Unknown delivery mode.");
