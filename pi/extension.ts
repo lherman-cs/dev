@@ -203,7 +203,9 @@ export default function (pi: PiAPI, dependencies: ExtensionDependencies = {}) {
             current.signal.throwIfAborted();
             if (selected === "Apply selected") return { action: "repairs", keys: [...chosen] };
             if (!selected || selected === "Cancel") return { action: "cancel" };
-            const repair = repairs[labels.indexOf(selected)];\n            if (!repair) return { action: "cancel" };\n            const key = repair.key;
+            const repair = repairs[labels.indexOf(selected)];
+            if (!repair) return { action: "cancel" };
+            const key = repair.key;
             chosen.has(key) ? chosen.delete(key) : chosen.add(key);
           }
         }
