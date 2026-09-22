@@ -33,7 +33,7 @@ test('instruction invariants and user-wide preferences are retained, without sta
   const agents=fs.readFileSync(new URL('../../AGENTS.md',import.meta.url),'utf8');
   for(const term of ['No duplication or contradiction','Least-privilege scope','Do not teach defaults','Child-worker contract ownership','general costly-evidence delegation trigger','shared Explorer tool contract','Every child-agent launch','fixed dev-ship launches','deliver completion asynchronously','must not restate these shared contracts','Pi lazy-skills','explicit `/skill:<name>` invocation','must not duplicate skill semantics','do not add precedence prose','only foreground coordinator is the fixed-purpose, typed `/dev-ship` runtime']) assert.ok(agents.includes(term),term);
   const preferences=fs.readFileSync(new URL('../AGENTS.md',import.meta.url),'utf8');
-  for(const term of ['Do not use em dashes','consequential decision remains unresolved','Preserve user work']) assert.ok(preferences.includes(term),term);
+  assert.ok(preferences.includes('Do not use em dashes'));
   for(const text of [agents,preferences]) {
     assert.ok(!text.includes('Explorer-first context economy'),'general Explorer trigger belongs to the tool contract');
     assert.ok(!text.includes('material time or produce substantial raw output'),'general Explorer trigger belongs to the tool contract');

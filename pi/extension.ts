@@ -3,6 +3,7 @@ import { asyncExploreTool, asyncReviewTool, createWorkerRunner, renderAsyncWorke
 import path from "node:path";
 import { buildHandoffTool, handoffFile } from "./lib/ship-handoff.ts";
 import { ShipStore } from "./lib/ship-store.ts";
+import { shipObserveTool } from "./lib/ship-observe-tool.ts";
 import { abortActiveShipWait, shipActionTool } from "./lib/ship-action.ts";
 import { WorkerHub, isActive } from "./lib/worker-hub.ts";
 import { WorkerHistory } from "./lib/worker-history.ts";
@@ -91,8 +92,10 @@ export default function extension(pi: ExtensionAPI, dependencies: ExtensionDepen
   pi.registerTool(asyncExploreTool(run, publishWorkerCompletion));
   pi.registerTool(asyncReviewTool(run, publishWorkerCompletion));
   pi.registerTool(buildHandoffTool());
+  pi.registerTool(shipObserveTool(cwd => new ShipStore(path.dirname(handoffFile(cwd))).loadInvocation()));
   pi.registerTool(shipActionTool(run, publishWorkerCompletion));
   pi.on("tool_call", event => {
+    if (event.toolName === "ship_observe" && phase !== "ship") return { block: true, reason: "Ship observation requires an explicit dev-ship invocation." };
     if (event.toolName === "review" && phase !== "ship") return { block: true, reason: "The review tool is reserved for an explicit dev-ship invocation." };
     if (explorerOnlyTools.has(event.toolName)) return { block: true, reason: `Delegate ${event.toolName} to one or more narrowly scoped explore calls.` };
     if (writesOwned() && !mainReaders.has(event.toolName)) return { block: true, reason: ownershipMessage };
