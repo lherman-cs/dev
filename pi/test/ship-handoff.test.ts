@@ -17,7 +17,7 @@ function fixture(t: TestContext): string {
   git(repo, "checkout", "-b", "feature"); fs.writeFileSync(path.join(repo, "work.txt"), "candidate\n"); git(repo, "commit", "-am", "feat: candidate");
   return repo;
 }
-const request = { specPath: "plans/spec.md", planPath: "plans/plan.md", baseRef: "main", completedOutcomes: ["Handoff"], localChecks: [{ name: "test", command: "npm test", status: "passed" as const }], residualRisks: [], unresolvedDecisions: [] };
+const request = { specPath: "plans/spec.md", planPath: "plans/plan.md", baseRef: "main", completedOutcomes: ["Handoff"], localChecks: [{ name: "test", command: "npm test", status: "passed" as const }], residualRisks: [], unresolvedDecisions: [], expectedReviewSignals: [] };
 
 test("build handoff is atomic, HEAD-bound, and admits only clean matching identities", t => {
   const repo = fixture(t); const handoff = recordBuildHandoff(repo, request, 42);

@@ -5,6 +5,7 @@ import { execFileSync } from "node:child_process";
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type, type Static } from "@earendil-works/pi-ai";
 import { buildHandoffSchema, type BuildHandoff, type CandidateIdentity } from "./ship-contracts.ts";
+import { ShipStore } from "./ship-store.ts";
 
 const handoffParameters = Type.Object({
   specPath: Type.String({ minLength: 1 }),
@@ -18,6 +19,10 @@ const handoffParameters = Type.Object({
   }, { additionalProperties: false }), { maxItems: 100 }),
   residualRisks: Type.Array(Type.String({ minLength: 1, maxLength: 2_000 }), { maxItems: 100 }),
   unresolvedDecisions: Type.Array(Type.String({ minLength: 1, maxLength: 2_000 }), { maxItems: 100 }),
+  expectedReviewSignals: Type.Array(Type.Object({
+    kind: Type.Union([Type.Literal("author"), Type.Literal("check")]),
+    value: Type.String({ minLength: 1, maxLength: 500 }),
+  }, { additionalProperties: false }), { maxItems: 100 }),
 }, { additionalProperties: false });
 export type BuildHandoffRequest = Static<typeof handoffParameters>;
 
@@ -36,41 +41,33 @@ function approvedArtifact(cwd: string, value: string): { path: string; sha256: s
 
 /** Reads all Git identities live so a build handoff cannot be fabricated from chat context. */
 export function snapshotCandidate(cwd: string, baseRef: string, remote = "origin"): CandidateIdentity {
-  const root = runGit(cwd, ["rev-parse", "--show-toplevel"]);
+  const root = runGit(cwd, ["rev-parse", "--path-format=absolute", "--git-common-dir"]);
+  const worktree = runGit(cwd, ["rev-parse", "--show-toplevel"]);
   const branch = runGit(cwd, ["branch", "--show-current"]);
   if (!branch) throw new Error("Build handoff requires a named branch, not detached HEAD.");
   const head = runGit(cwd, ["rev-parse", "HEAD"]);
   const remoteUrl = runGit(cwd, ["remote", "get-url", remote]);
-  const remoteOid = runGit(cwd, ["rev-parse", `${remote}/${baseRef}`]);
-  const baseOid = remoteOid;
-  return { repository: { root, coordinate: remoteUrl }, worktree: root, branch: { name: branch, head }, base: { ref: baseRef, oid: baseOid }, remote: { name: remote, url: remoteUrl, oid: remoteOid } };
+  const baseOid = runGit(cwd, ["rev-parse", `${remote}/${baseRef}`]);
+  let remoteOid: string | undefined;
+  try { remoteOid = runGit(cwd, ["rev-parse", `refs/remotes/${remote}/${branch}`]); } catch { remoteOid = undefined; }
+  return { repository: { root, coordinate: remoteUrl }, worktree, branch: { name: branch, head }, base: { ref: baseRef, oid: baseOid }, remote: { name: remote, url: remoteUrl, ...(remoteOid ? { oid: remoteOid } : {}) } }; 
 }
 
 export function handoffFile(cwd: string): string { return runGit(cwd, ["rev-parse", "--git-path", "dev-ship/handoff.json"]); }
-function writeAtomic(file: string, data: unknown): void {
-  fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
-  const temp = `${file}.${process.pid}.${crypto.randomUUID()}.tmp`;
-  fs.writeFileSync(temp, `${JSON.stringify(data)}\n`, { mode: 0o600, flag: "wx" });
-  fs.renameSync(temp, file);
-}
 export function recordBuildHandoff(cwd: string, request: BuildHandoffRequest, now = Date.now()): BuildHandoff {
   if (runGit(cwd, ["status", "--porcelain=v1"])) throw new Error("Build handoff requires a clean worktree after the final coherent commit.");
   const remote = request.remote ?? "origin";
   const handoff: BuildHandoff = {
-    version: 1, candidate: snapshotCandidate(cwd, request.baseRef, remote),
+    version: 2, candidate: snapshotCandidate(cwd, request.baseRef, remote),
     approved: { spec: approvedArtifact(cwd, request.specPath), plan: approvedArtifact(cwd, request.planPath) },
     completedOutcomes: request.completedOutcomes, localChecks: request.localChecks, residualRisks: request.residualRisks,
-    unresolvedDecisions: request.unresolvedDecisions, recordedAt: now,
+    unresolvedDecisions: request.unresolvedDecisions, expectedReviewSignals: request.expectedReviewSignals, recordedAt: now,
   };
-  writeAtomic(handoffFile(cwd), handoff);
+  new ShipStore(path.dirname(handoffFile(cwd))).saveHandoff(handoff);
   return handoff;
 }
 export function loadBuildHandoff(cwd: string): BuildHandoff {
-  const file = handoffFile(cwd);
-  let value: unknown;
-  try { value = JSON.parse(fs.readFileSync(file, "utf8")); } catch { throw new Error("No valid build handoff is recorded for this worktree."); }
-  if (!value || typeof value !== "object" || (value as { version?: unknown }).version !== 1) throw new Error("Build handoff schema is invalid.");
-  return value as BuildHandoff;
+  return new ShipStore(path.dirname(handoffFile(cwd))).loadHandoff();
 }
 /** Admission is intentionally live: persisted state is evidence, never authority over Git. */
 export function admitBuildHandoff(cwd: string): BuildHandoff {

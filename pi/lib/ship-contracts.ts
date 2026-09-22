@@ -10,7 +10,11 @@ export const repositoryIdentitySchema = Type.Object({
 }, { additionalProperties: false });
 export const branchIdentitySchema = Type.Object({ name: text(500), head: oid });
 export const baseIdentitySchema = Type.Object({ ref: text(500), oid });
-export const remoteIdentitySchema = Type.Object({ name: text(100), url: text(2_000), oid });
+export const remoteIdentitySchema = Type.Object({ name: text(100), url: text(2_000), oid: Type.Optional(oid) }, { additionalProperties: false });
+export const expectedReviewSignalSchema = Type.Object({
+  kind: Type.Union([Type.Literal("author"), Type.Literal("check")]),
+  value: text(500),
+}, { additionalProperties: false });
 export const candidateIdentitySchema = Type.Object({
   repository: repositoryIdentitySchema,
   worktree: text(),
@@ -24,13 +28,14 @@ export const localCheckSchema = Type.Object({
   evidence: Type.Optional(text(2_000)),
 }, { additionalProperties: false });
 export const buildHandoffSchema = Type.Object({
-  version: Type.Literal(1),
+  version: Type.Literal(2),
   candidate: candidateIdentitySchema,
   approved: Type.Object({ spec: approvedArtifactSchema, plan: approvedArtifactSchema }, { additionalProperties: false }),
   completedOutcomes: Type.Array(text(2_000), { minItems: 1, maxItems: 100 }),
   localChecks: Type.Array(localCheckSchema, { maxItems: 100 }),
   residualRisks: Type.Array(text(2_000), { maxItems: 100 }),
   unresolvedDecisions: Type.Array(text(2_000), { maxItems: 100 }),
+  expectedReviewSignals: Type.Array(expectedReviewSignalSchema, { maxItems: 100 }),
   recordedAt: Type.Number({ minimum: 0 }),
 }, { additionalProperties: false });
 export type RepositoryIdentity = Static<typeof repositoryIdentitySchema>;

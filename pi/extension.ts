@@ -1,6 +1,8 @@
 import type { ExtensionAPI, ExtensionContext, SessionManager } from "@earendil-works/pi-coding-agent";
 import { asyncExploreTool, asyncReviewTool, createWorkerRunner, type AsyncWorkerCompletion } from "./lib/worker.ts";
-import { buildHandoffTool } from "./lib/ship-handoff.ts";
+import path from "node:path";
+import { buildHandoffTool, handoffFile } from "./lib/ship-handoff.ts";
+import { ShipStore } from "./lib/ship-store.ts";
 import { shipActionTool } from "./lib/ship-action.ts";
 import { WorkerHub, isActive } from "./lib/worker-hub.ts";
 import { WorkerHistory } from "./lib/worker-history.ts";
@@ -117,7 +119,9 @@ export default function extension(pi: ExtensionAPI, dependencies: ExtensionDepen
       if (writesOwned()) { nextCtx.ui.notify(ownershipMessage, "warning"); return; }
       setPhase(commandPhase);
       hubUI.setContext(nextCtx);
-      pi.sendUserMessage(`/skill:dev-${commandPhase}${args ? ` ${args}` : ""}`, { expandPromptTemplates: true });
+      const invocation = commandPhase === "ship" ? new ShipStore(path.dirname(handoffFile(nextCtx.cwd))).issueInvocation() : undefined;
+      const invocationContext = invocation ? `\n\nCommand-issued ship invocation ID: ${invocation}` : "";
+      pi.sendUserMessage(`/skill:dev-${commandPhase}${args ? ` ${args}` : ""}${invocationContext}`, { expandPromptTemplates: true });
     },
   });
   pi.on("session_shutdown", async () => {
