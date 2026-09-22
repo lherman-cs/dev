@@ -1,12 +1,12 @@
 import { role, type ResolvedRole } from "./roles.ts";
-import type { ApprovalIdentity, BuildHandoff, CandidateIdentity, FinalPacket, Inventory, ReviewerResult, WaitOutcome } from "./ship-contracts.ts";
+import type { ApprovalIdentity, BuildHandoff, CandidateIdentity, FinalPacket, Inventory, LocalCheck, PullRequestIdentity, ReviewerResult, WaitOutcome } from "./ship-contracts.ts";
 
 export type ShipAction = "start" | "prepare" | "publish" | "wait" | "audit" | "repair" | "approve" | "ready";
 export type ShipPhase = "handoff" | "prepared" | "published" | "waiting" | "audited" | "repairing" | "approved" | "ready" | "stopped";
-export interface ShipState { invocationId: string; revision: number; phase: ShipPhase; candidate: CandidateIdentity; handoff: BuildHandoff; repairs: number; stableKeys: string[]; wait?: WaitOutcome; inventory?: Inventory; reviewer?: ReviewerResult; packet?: FinalPacket; approval?: ApprovalIdentity; }
+export interface ShipState { invocationId: string; revision: number; phase: ShipPhase; candidate: CandidateIdentity; handoff: BuildHandoff; repairs: number; stableKeys: string[]; rewritten?: boolean; pullRequest?: PullRequestIdentity; localChecks?: LocalCheck[]; wait?: WaitOutcome; inventory?: Inventory; reviewer?: ReviewerResult; packet?: FinalPacket; approval?: ApprovalIdentity; }
 export interface ShipActionRequest { invocationId: string; expectedRevision: number; expectedCandidate: CandidateIdentity; action: ShipAction; }
 export interface ShipRuntimeDependencies { persist(state: ShipState): Promise<void> | void; refresh(candidate: CandidateIdentity): Promise<CandidateIdentity>; }
-const transitions: Record<ShipPhase, readonly ShipAction[]> = { handoff: ["start", "prepare"], prepared: ["publish"], published: ["wait"], waiting: ["audit"], audited: ["repair", "approve"], repairing: ["prepare"], approved: ["ready"], ready: [], stopped: [] };
+const transitions: Record<ShipPhase, readonly ShipAction[]> = { handoff: ["start", "prepare"], prepared: ["publish"], published: ["wait"], waiting: ["audit", "repair"], audited: ["repair", "approve"], repairing: ["prepare"], approved: ["ready"], ready: [], stopped: [] };
 const sameCandidate = (a: CandidateIdentity, b: CandidateIdentity) => JSON.stringify(a) === JSON.stringify(b);
 /** A closed, persisted state machine. Callers perform side effects only after admit succeeds. */
 export class ShipRuntime {
@@ -18,6 +18,8 @@ export class ShipRuntime {
     if (request.invocationId !== this.state.invocationId || request.expectedRevision !== this.state.revision) throw new Error("Stale ship action.");
     if (!sameCandidate(request.expectedCandidate, this.state.candidate)) throw new Error("Stale candidate identity.");
     if (!transitions[this.state.phase].includes(request.action)) throw new Error(`Cannot ${request.action} while ship state is ${this.state.phase}.`);
+    if (request.action === "repair" && this.state.wait?.status !== "failed" && this.state.reviewer?.verdict !== "REPAIRS") throw new Error("Repair requires failed CI or a Reviewer REPAIRS verdict.");
+    if (request.action === "approve" && this.state.reviewer?.verdict !== "PASS") throw new Error("Approval requires a Reviewer PASS verdict.");
     const live = await this.deps.refresh(this.state.candidate);
     if (!sameCandidate(live, this.state.candidate)) { const stopped = { ...this.state, candidate: live, phase: "stopped" as const }; delete stopped.approval; await this.replace(stopped); throw new Error("Candidate drifted; automatic shipping stopped."); }
     return this.snapshot() as ShipState;
@@ -42,7 +44,7 @@ export class ShipRuntime {
     const newKeys = action === "audit" && patch.reviewer?.verdict === "REPAIRS" ? patch.reviewer.findings.map(finding => finding.key) : [];
     const candidateChanged = patch.candidate && !sameCandidate(patch.candidate, this.state.candidate);
     const next: ShipState = { ...this.state, ...patch, repairs, stableKeys: [...new Set([...this.state.stableKeys, ...newKeys])], phase: phase[action] };
-    if (candidateChanged) { delete next.wait; delete next.inventory; delete next.reviewer; delete next.packet; delete next.approval; }
+    if (candidateChanged && action !== "publish") { delete next.pullRequest; delete next.wait; delete next.inventory; delete next.reviewer; delete next.packet; delete next.approval; }
     return this.replace(next);
   }
   private async replace(next: ShipState): Promise<ShipState> { this.state = { ...next, revision: this.state.revision + 1 }; await this.deps.persist(this.snapshot()); return this.snapshot() as ShipState; }

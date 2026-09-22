@@ -40,7 +40,7 @@ export function candidateEvidenceTool(expected: CandidateIdentity, pullRequest: 
   };
 }
 
-export interface RepairPayload { handoff: BuildHandoff; candidate: CandidateIdentity; pullRequest: PullRequestIdentity; failedCi: WaitOutcome; reviewer: ReviewerResult; round: 1 | 2 }
+export interface RepairPayload { handoff: BuildHandoff; candidate: CandidateIdentity; pullRequest: PullRequestIdentity; failedCi: WaitOutcome; reviewer: ReviewerResult | null; round: 1 | 2 }
 export interface ReviewPayload { handoff: BuildHandoff; candidate: CandidateIdentity; pullRequest: PullRequestIdentity; inventory: Inventory }
 
 export async function runShipBuilder(run: RunWorker, payload: RepairPayload, signal?: AbortSignal): Promise<BuilderResult> {

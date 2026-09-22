@@ -90,7 +90,7 @@ export default function extension(pi: ExtensionAPI, dependencies: ExtensionDepen
   pi.registerTool(asyncExploreTool(run, publishWorkerCompletion));
   pi.registerTool(asyncReviewTool(run, publishWorkerCompletion));
   pi.registerTool(buildHandoffTool());
-  pi.registerTool(shipActionTool());
+  pi.registerTool(shipActionTool(run));
   pi.on("tool_call", event => {
     if (event.toolName === "review" && phase !== "ship") return { block: true, reason: "The review tool is reserved for an explicit dev-ship invocation." };
     if (explorerOnlyTools.has(event.toolName)) return { block: true, reason: `Delegate ${event.toolName} to one or more narrowly scoped explore calls.` };

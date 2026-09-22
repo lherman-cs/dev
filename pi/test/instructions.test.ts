@@ -30,7 +30,7 @@ test('all role skills require explicit invocation',()=>{
 });
 test('instruction invariants and user-wide preferences are retained, without stale plugin authority',()=>{
   const agents=fs.readFileSync(new URL('../../AGENTS.md',import.meta.url),'utf8');
-  for(const term of ['No duplication or contradiction','Least-privilege scope','Do not teach defaults','Explorer-first context economy','Pi lazy-skills','explicit `/skill:<name>` invocation','must use Explorer heavily','independent scopes in parallel','raw exploration stays out of the main context','must not duplicate skill semantics','do not add precedence prose']) assert.ok(agents.includes(term),term);
+  for(const term of ['No duplication or contradiction','Least-privilege scope','Do not teach defaults','Explorer-first context economy','Pi lazy-skills','explicit `/skill:<name>` invocation','must use Explorer heavily','independent scopes in parallel','raw exploration stays out of the main context','must not duplicate skill semantics','do not add precedence prose','only foreground coordinator is the fixed-purpose, typed `/dev-ship` runtime']) assert.ok(agents.includes(term),term);
   const preferences=fs.readFileSync(new URL('../AGENTS.md',import.meta.url),'utf8');
   for(const term of ['Do not use em dashes','consequential decision remains unresolved','Preserve user work']) assert.ok(preferences.includes(term),term);
   assert.ok(!agents.includes('pi-subagents'));

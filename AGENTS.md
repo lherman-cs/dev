@@ -26,7 +26,7 @@ Rules:
 - Reusable semantic roles, sequencing, Git/GitHub work, verification, repair convergence, and human gates belong in skills.
 - Internal worker transport may add invocation data/output schema and tool boundaries, but must not duplicate skill semantics.
 - Never overwrite user Pi/OMP settings or credentials.
-- Preserve symmetric `dev a <phase>` / `/dev-<phase>` dispatch; no foreground coordinator model.
+- Preserve symmetric `dev a <phase>` / `/dev-<phase>` dispatch. The only foreground coordinator is the fixed-purpose, typed `/dev-ship` runtime; do not introduce a general coordinator.
 - If instructions conflict, fix the sources; do not add precedence prose.
 
 When changing instructions: find the narrowest owner, search for overlap, delete duplicates, and update regression checks for the invariant that matters.
