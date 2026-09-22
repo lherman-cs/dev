@@ -1,17 +1,12 @@
 import type { ExtensionAPI, ExtensionContext, SessionManager } from "@earendil-works/pi-coding-agent";
 import { asyncExploreTool, asyncReviewTool, createWorkerRunner, renderAsyncWorkerCompletion, type AsyncWorkerCompletion } from "./lib/worker.ts";
-import path from "node:path";
-import { buildHandoffTool, handoffFile } from "./lib/ship-handoff.ts";
-import { ShipStore } from "./lib/ship-store.ts";
-import { shipObserveTool } from "./lib/ship-observe-tool.ts";
-import { abortActiveShipWait, shipActionTool } from "./lib/ship-action.ts";
+import { shipArtifactsTool } from "./lib/ship-artifacts-tool.ts";
 import { WorkerHub, isActive } from "./lib/worker-hub.ts";
 import { WorkerHistory } from "./lib/worker-history.ts";
 import { registerWorkerHubUI } from "./worker-hub-ui.ts";
 import type { WorkerHistory as WorkerHistoryStore } from "./lib/worker-history.ts";
 import type { RegisterWorker, WorkerPatch, WorkerState } from "./lib/worker-types.ts";
 import type { PublicPhase } from "./lib/roles.ts";
-import { reconcileShipTodos } from "./lib/ship-todo.ts";
 
 export const explorerOnlyTools = new Set(["web_search", "source_check", "fetch_content", "get_search_content"]);
 const mainReaders = new Set(["read", "grep", "find", "ls", "explore", "review", "vcc_recall", "ask_user_question"]);
@@ -91,11 +86,9 @@ export default function extension(pi: ExtensionAPI, dependencies: ExtensionDepen
   };
   pi.registerTool(asyncExploreTool(run, publishWorkerCompletion));
   pi.registerTool(asyncReviewTool(run, publishWorkerCompletion));
-  pi.registerTool(buildHandoffTool());
-  pi.registerTool(shipObserveTool(cwd => new ShipStore(path.dirname(handoffFile(cwd))).loadInvocation()));
-  pi.registerTool(shipActionTool(run, publishWorkerCompletion));
+  pi.registerTool(shipArtifactsTool());
   pi.on("tool_call", event => {
-    if (event.toolName === "ship_observe" && phase !== "ship") return { block: true, reason: "Ship observation requires an explicit dev-ship invocation." };
+    if (event.toolName === "ship_artifacts" && phase !== "ship") return { block: true, reason: "Ship artifacts require an explicit dev-ship invocation." };
     if (event.toolName === "review" && phase !== "ship") return { block: true, reason: "The review tool is reserved for an explicit dev-ship invocation." };
     if (explorerOnlyTools.has(event.toolName)) return { block: true, reason: `Delegate ${event.toolName} to one or more narrowly scoped explore calls.` };
     if (writesOwned() && !mainReaders.has(event.toolName)) return { block: true, reason: ownershipMessage };
@@ -109,14 +102,9 @@ export default function extension(pi: ExtensionAPI, dependencies: ExtensionDepen
     }
     return undefined;
   };
-  pi.on("session_start", (_event, nextCtx) => {
-    const state = new ShipStore(path.dirname(handoffFile(nextCtx.cwd))).load()?.state;
-    if (state) reconcileShipTodos(nextCtx.sessionManager.getSessionFile() ?? `ship:${nextCtx.cwd}`, state);
-  });
   pi.on("session_before_switch", preventSessionChange);
   pi.on("session_before_fork", preventSessionChange);
   pi.on("input", event => {
-    if (event.streamingBehavior === "steer") abortActiveShipWait();
     const match = /^\/skill:dev-(spec|plan|build|ship)(?:\s|$)/.exec(event.text);
     if (match?.[1]) setPhase(match[1] as PublicPhase);
     return { action: "continue" };
@@ -129,13 +117,11 @@ export default function extension(pi: ExtensionAPI, dependencies: ExtensionDepen
       if (writesOwned()) { nextCtx.ui.notify(ownershipMessage, "warning"); return; }
       setPhase(commandPhase);
       hubUI.setContext(nextCtx);
-      const invocation = commandPhase === "ship" ? new ShipStore(path.dirname(handoffFile(nextCtx.cwd))).issueInvocation() : undefined;
-      const invocationContext = invocation ? `\n\nCommand-issued ship invocation ID: ${invocation}` : "";
-      pi.sendUserMessage(`/skill:dev-${commandPhase}${args ? ` ${args}` : ""}${invocationContext}`, { expandPromptTemplates: true });
+      pi.sendUserMessage(`/skill:dev-${commandPhase}${args ? ` ${args}` : ""}`, { expandPromptTemplates: true });
     },
   });
   pi.on("session_shutdown", async () => {
-    closing = true; abortActiveShipWait(); lifetime.abort();
+    closing = true; lifetime.abort();
     await Promise.allSettled(hub.list().filter(isActive).map(r => hub.abort(r.id)));
     await run.stopAll(); hub.flush(); unlisten?.(); hubUI.dispose(); hub.dispose();
   });
