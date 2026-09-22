@@ -47,7 +47,8 @@ export default function (pi: PiAPI, dependencies: ExtensionDependencies = {}) {
   const warn = (error: unknown) => { if (!closing) ctx?.ui.notify(`Agent Hub: ${errorMessage(error)}`, "warning"); };
   const hub = dependencies.hub || new WorkerHub({ onError: warn });
   const run: WorkerRunner = (dependencies.createWorkerRunner || createWorkerRunner)({ hub, getHistory: () => history,
-    askHuman: ({ ownerId, question, choices }, signal) => hub.request({ ownerId, title: question, run: async rawContext => {\n      const context = rawContext as AppContext;
+    askHuman: ({ ownerId, question, choices }, signal) => hub.request({ ownerId, title: question, run: async rawContext => {
+      const context = rawContext as AppContext;
       if (!context.hasUI) throw new Error("Human response requires interactive Pi.");
       return choices?.length ? context.ui.select(question, ["Cancel", ...choices], { signal }).then(value => value === "Cancel" ? undefined : value) : humanEditor(context, question, "", signal);
     } }, signal),
