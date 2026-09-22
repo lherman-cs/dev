@@ -31,7 +31,7 @@ test("four current-session aliases, Agent Hub and isolated tools register withou
   });
   assert.deepEqual([...commands.keys()].sort(), ["dev-build", "dev-plan", "dev-ship", "dev-spec"]);
   assert.ok(shortcuts.has("alt+a"));
-  assert.deepEqual(tools.map(tool => tool.name), ["explore", "review", "build_handoff"]);
+  assert.deepEqual(tools.map(tool => tool.name), ["explore", "review", "build_handoff", "ship_action"]);
   assert.equal(messages.length, 0);
   const explore = tools[0]; assert.ok(explore?.promptGuidelines?.join("\n").includes("one self-contained scope"));
   const toolCall = handlers.get("tool_call"); assert.ok(toolCall);

@@ -1,6 +1,7 @@
 import type { ExtensionAPI, ExtensionContext, SessionManager } from "@earendil-works/pi-coding-agent";
 import { createWorkerRunner, exploreTool, reviewTool } from "./lib/worker.ts";
 import { buildHandoffTool } from "./lib/ship-handoff.ts";
+import { shipActionTool } from "./lib/ship-action.ts";
 import { WorkerHub, isActive } from "./lib/worker-hub.ts";
 import { WorkerHistory } from "./lib/worker-history.ts";
 import { registerWorkerHubUI } from "./worker-hub-ui.ts";
@@ -63,6 +64,7 @@ export default function extension(pi: ExtensionAPI, dependencies: ExtensionDepen
   pi.registerTool(exploreTool(run));
   pi.registerTool(reviewTool(run));
   pi.registerTool(buildHandoffTool());
+  pi.registerTool(shipActionTool());
   pi.on("tool_call", event => {
     if (explorerOnlyTools.has(event.toolName)) return { block: true, reason: `Delegate ${event.toolName} to one or more narrowly scoped explore calls.` };
     if (writesOwned() && !mainReaders.has(event.toolName)) return { block: true, reason: ownershipMessage };
