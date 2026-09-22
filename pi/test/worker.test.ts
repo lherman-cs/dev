@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { ModelRuntime, createAgentSession, type AgentSession } from "@earendil-works/pi-coding-agent";
 import { createAssistantMessageEventStream, type AssistantMessage } from "@earendil-works/pi-ai";
-import { createWorkerRunner, exploreTool, reviewTool, type RunWorker } from "../lib/worker.ts";
+import { asyncExploreTool, asyncReviewTool, createWorkerRunner, exploreTool, reviewTool, type AsyncWorkerCompletion, type RunWorker } from "../lib/worker.ts";
 import { WorkerHub } from "../lib/worker-hub.ts";
 
 type StreamModel = Parameters<ModelRuntime['streamSimple']>[0];
@@ -13,6 +13,7 @@ type StreamContext = Parameters<ModelRuntime['streamSimple']>[1];
 type StreamOptions = NonNullable<Parameters<ModelRuntime['streamSimple']>[2]>;
 type Answer = (n: number, context: StreamContext, model: StreamModel, options: StreamOptions, stream: ReturnType<typeof createAssistantMessageEventStream>) => AssistantMessage | undefined | void;
 function required<T>(value: T | undefined, label: string): T { if (value === undefined) throw new Error(`Missing ${label}.`); return value; }
+function firstText(message: { content: string | Array<{ type: string; text?: string }> }): string | undefined { return typeof message.content === 'string' ? message.content : message.content.find(part=>part.type==='text')?.text; }
 
 async function fixture(t: TestContext, answer: Answer) {
   const cwd=fs.mkdtempSync(path.join(os.tmpdir(),'native-worker-'));
@@ -122,6 +123,38 @@ test('Explorer returns only a schema-checked compact result to the parent', asyn
   assert.ok(text.length<=4000,String(text.length));
   assert.match(text,/^FOUND\n\nDirect answer\n\nEvidence:/);
   assert.match(text,/\[Explorer result truncated\]$/);
+});
+test('Main Explorers start concurrently and publish each result as soon as it settles', async()=>{
+  const pending: Array<{ resolve(value: unknown): void }> = [];
+  const calls: Parameters<RunWorker>[0][] = [], completions: AsyncWorkerCompletion[] = [];
+  const run = ((args: Parameters<RunWorker>[0]) => {
+    calls.push(args);
+    return new Promise(resolve => pending.push({ resolve }));
+  }) as unknown as RunWorker;
+  const tool = asyncExploreTool(run, completion => completions.push(completion));
+  const signal = new AbortController().signal;
+  const first = await tool.execute('one',{task:'scope A'},signal,undefined,{cwd:process.cwd()} as never);
+  const second = await tool.execute('two',{task:'scope B'},signal,undefined,{cwd:process.cwd()} as never);
+  assert.match(firstText(first) || '',/Started asynchronous Explorer/);
+  assert.match(firstText(second) || '',/Started asynchronous Explorer/);
+  assert.equal(calls.length,2);assert.equal(completions.length,0);
+  assert.ok(calls.every(call=>call.signal===undefined),'detached work must not inherit the completed tool call signal');
+  required(pending[1],'second worker').resolve({status:'FOUND',answer:'B answer',evidence:[{claim:'B claim',anchor:'b.ts:1'}]});
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(completions.length,1);assert.equal(required(completions[0],'second completion').task,'scope B');assert.match(required(completions[0],'second completion').result,/B answer/);
+  required(pending[0],'first worker').resolve({status:'FOUND',answer:'A answer',evidence:[{claim:'A claim',anchor:'a.ts:1'}]});
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.deepEqual(completions.map(item=>item.task),['scope B','scope A']);
+  assert.ok(completions.every(item=>item.status==='completed'));
+});
+test('Main Reviewer failure is delivered asynchronously instead of rejecting its receipt', async()=>{
+  let reject!: (error: Error) => void;const completions: AsyncWorkerCompletion[]=[];
+  const run = (() => new Promise((_resolve, decline)=>{reject=decline;})) as unknown as RunWorker;
+  const tool=asyncReviewTool(run,completion=>completions.push(completion));
+  const receipt=await tool.execute('review',{task:'gate',candidate:'abc',evidence:'proof'},undefined,undefined,{cwd:process.cwd()} as never);
+  assert.match(firstText(receipt) || '',/Started asynchronous Reviewer/);
+  reject(new Error('review transport failed'));await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(completions.length,1);assert.equal(required(completions[0],'completion').status,'failed');assert.match(required(completions[0],'completion').result,/transport failed/);
 });
 test('authentication failure occurs before session creation and never changes models', async t=>{
   const f=await fixture(t,()=>assert.fail('should not call model'));

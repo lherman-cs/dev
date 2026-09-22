@@ -1,5 +1,5 @@
 import type { ExtensionAPI, ExtensionContext, SessionManager } from "@earendil-works/pi-coding-agent";
-import { createWorkerRunner, exploreTool, reviewTool } from "./lib/worker.ts";
+import { asyncExploreTool, asyncReviewTool, createWorkerRunner, type AsyncWorkerCompletion } from "./lib/worker.ts";
 import { buildHandoffTool } from "./lib/ship-handoff.ts";
 import { shipActionTool } from "./lib/ship-action.ts";
 import { WorkerHub, isActive } from "./lib/worker-hub.ts";
@@ -61,8 +61,22 @@ export default function extension(pi: ExtensionAPI, dependencies: ExtensionDepen
     });
   });
 
-  pi.registerTool(exploreTool(run));
-  pi.registerTool(reviewTool(run));
+  const publishWorkerCompletion = (completion: AsyncWorkerCompletion): void => {
+    if (closing) return;
+    const outcome = completion.status === "completed" ? "completed" : "failed";
+    const content = [
+      `Asynchronous ${completion.role} ${completion.id} ${outcome}.`,
+      `Task: ${completion.task}`,
+      completion.status === "completed" ? "Result:" : "Failure:",
+      completion.result,
+      "Use this result now if it unblocks the current work. Other asynchronous workers may still be running.",
+    ].join("\n\n");
+    try {
+      pi.sendMessage({ customType: "dev-worker-result", content, display: true, details: completion }, { triggerTurn: true, deliverAs: "steer" });
+    } catch (error) { warn(error); }
+  };
+  pi.registerTool(asyncExploreTool(run, publishWorkerCompletion));
+  pi.registerTool(asyncReviewTool(run, publishWorkerCompletion));
   pi.registerTool(buildHandoffTool());
   pi.registerTool(shipActionTool());
   pi.on("tool_call", event => {

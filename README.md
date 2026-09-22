@@ -16,7 +16,7 @@ dev a stats                        # interactive Pi session dashboard
 
 The public phases are exactly `spec`, `plan`, `build`, and `ship`. With no prompt, `dev a <phase>` opens the configured interactive Pi session. A prompt invokes the matching current-session `/dev-<phase>` alias. Each alias explicitly loads its `dev-<phase>` skill. The active conversation owns phase work, Git and GitHub actions, verification, repairs, and human gates. There is no controller, scheduler, checkpoint state, automatic retry, or background polling.
 
-`review({ task, candidate, evidence })` starts a fresh, read-only Reviewer child session. It returns a bounded `PASS`, `REPAIRS`, or `BLOCKED` result tied to the supplied candidate and evidence. The active Shipper must still verify current local and remote identity, evidence, and human confirmation. `explore` starts a separate bounded, read-only Explorer child session.
+`review({ task, candidate, evidence })` starts a fresh, read-only Reviewer child session. `explore` starts a separate bounded, read-only Explorer child session. Both Main tools return a job receipt immediately, run concurrently, and deliver their bounded result back into the active conversation as soon as it settles. Main continues independent work instead of blocking; if a result gates the next decision, it can stop and will be restarted automatically by the completion. The active Shipper must still verify current local and remote identity, evidence, and human confirmation.
 
 ## Agent Hub
 

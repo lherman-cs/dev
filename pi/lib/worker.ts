@@ -1,4 +1,5 @@
 import path from "node:path";
+import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { createAgentSession, DefaultResourceLoader, getAgentDir, ModelRuntime, SessionManager, SettingsManager, type AgentSession, type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type, type Static } from "@earendil-works/pi-ai";
@@ -34,6 +35,14 @@ const reviewResultSchema = Type.Object({
   blocker: Type.Union([Type.String({ minLength: 1, maxLength: 4000 }), Type.Null()]),
 }, { additionalProperties: false });
 export type ReviewResult = Static<typeof reviewResultSchema>;
+export interface AsyncWorkerCompletion {
+  id: string;
+  role: "Explorer" | "Reviewer";
+  task: string;
+  status: "completed" | "failed";
+  result: string;
+}
+export type PublishAsyncWorkerCompletion = (completion: AsyncWorkerCompletion) => void;
 const explorerResultSchema = Type.Object({
   status: Type.Union([Type.Literal("FOUND"), Type.Literal("INCONCLUSIVE"), Type.Literal("BLOCKED")]),
   answer: Type.String({ minLength: 1, description: "Direct answer to the assigned factual question." }),
@@ -302,4 +311,55 @@ export function exploreTool(run: RunWorker, report: (text: string) => void = () 
       const result = await run({ name: "explorer", cwd: ctx.cwd, task, schema: explorerResultSchema, ...(signal ? { signal } : {}), report, metadata: { ...parentMetadata, task, label: `Explorer · ${(task.split("\n", 1)[0] ?? "investigation").slice(0, 100)}` } });
       return toolResult(boundExplorerResult(renderExplorerResult(result)));
     } };
+}
+
+const resultText = (result: Awaited<ReturnType<ToolDefinition["execute"]>>): string => {
+  if (!result || typeof result !== "object" || !("content" in result) || !Array.isArray(result.content)) return String(result);
+  return result.content.filter(part => part.type === "text").map(part => part.text).join("\n").trim();
+};
+
+function publishDetached(
+  role: AsyncWorkerCompletion["role"], task: string,
+  work: Promise<Awaited<ReturnType<ToolDefinition["execute"]>>>, publish: PublishAsyncWorkerCompletion,
+): string {
+  const id = `${role.toLowerCase()}:${randomUUID()}`;
+  const notify = (completion: AsyncWorkerCompletion): void => { try { publish(completion); } catch { /* completion remains in Agent Hub history */ } };
+  void work.then(
+    result => notify({ id, role, task, status: "completed", result: resultText(result) }),
+    error => notify({ id, role, task, status: "failed", result: error instanceof Error ? error.message : String(error) }),
+  );
+  return id;
+}
+
+/** Main-only detached adapter. Worker-owned nested tools remain awaited. */
+export function asyncExploreTool(run: RunWorker, publish: PublishAsyncWorkerCompletion, report: (text: string) => void = () => undefined): ReturnType<typeof exploreTool> {
+  const foreground = exploreTool(run, report);
+  return { ...foreground,
+    description: "Start an independent read-only investigation in the background. Returns immediately; the result is delivered asynchronously.",
+    promptGuidelines: [
+      ...(foreground.promptGuidelines || []),
+      "Start independent investigations without waiting. Continue useful work; each result will arrive automatically and trigger progress.",
+      "If a result is required for the next decision, stop after exhausting independent work. Do not poll or repeat the investigation.",
+    ],
+    async execute(callId, args, _signal, onUpdate, ctx) {
+      const id = publishDetached("Explorer", args.task, Promise.resolve(foreground.execute(callId, args, undefined, onUpdate, ctx)), publish);
+      return toolResult(`Started asynchronous Explorer ${id}. Continue independent work; its result will arrive automatically.`);
+    },
+  };
+}
+
+export function asyncReviewTool(run: RunWorker, publish: PublishAsyncWorkerCompletion, report: (text: string) => void = () => undefined): ReturnType<typeof reviewTool> {
+  const foreground = reviewTool(run, report);
+  return { ...foreground,
+    description: "Start an exact-candidate review in the background. Returns immediately; the verdict is delivered asynchronously.",
+    promptGuidelines: [
+      ...(foreground.promptGuidelines || []),
+      "Continue independent work while review runs. Its verdict will arrive automatically and trigger progress.",
+      "If the verdict gates the next decision, stop after exhausting independent work. Do not poll or launch a duplicate review.",
+    ],
+    async execute(callId, args, _signal, onUpdate, ctx) {
+      const id = publishDetached("Reviewer", args.task, Promise.resolve(foreground.execute(callId, args, undefined, onUpdate, ctx)), publish);
+      return toolResult(`Started asynchronous Reviewer ${id}. Continue independent work; its verdict will arrive automatically.`);
+    },
+  };
 }
