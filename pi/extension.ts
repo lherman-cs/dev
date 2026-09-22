@@ -1,12 +1,12 @@
 import { safeText } from "./lib/worker-transcript.ts";
 import { humanEditor } from "./lib/human-editor.ts";
 import { Text } from "@earendil-works/pi-tui";
-import { createWorkerRunner, exploreTool, type WorkerRunner } from "./lib/worker.ts";
+import { createWorkerRunner, exploreTool, type WorkerRunner, type WorkerOptions } from "./lib/worker.ts";
 import { WorkerHub, isActive, type WorkerRecord, type WorkerState } from "./lib/worker-hub.ts";
 import { WorkerHistory } from "./lib/worker-history.ts";
 import { WorkflowControl, WorkflowPaused } from "./lib/workflow-control.ts";
 import { registerWorkerHubUI } from "./worker-hub-ui.ts";
-import { runWorkflow, excludeState, type WorkflowHost, type WorkflowPhase, type DelegateOptions, type ReviewRepair } from "./lib/workflow.ts";
+import { runWorkflow, excludeState, type WorkflowHost, type WorkflowPhase, type DelegateOptions, type ReviewRepair, type ReviewDecision } from "./lib/workflow.ts";
 
 type AppContext = {
   cwd: string;
@@ -50,7 +50,7 @@ export default function (pi: PiAPI, dependencies: ExtensionDependencies = {}) {
     askHuman: ({ ownerId, question, choices }, signal) => hub.request({ ownerId, title: question, run: async rawContext => {
       const context = rawContext as AppContext;
       if (!context.hasUI) throw new Error("Human response requires interactive Pi.");
-      return choices?.length ? context.ui.select(question, ["Cancel", ...choices], { signal }).then(value => value === "Cancel" ? undefined : value) : humanEditor(context, question, "", signal);
+      return choices?.length ? context.ui.select(question, ["Cancel", ...choices], { signal }).then((value: string | undefined) => value === "Cancel" ? undefined : value) : humanEditor(context, question, "", signal);
     } }, signal),
   });
   hub.onRelated = (record: WorkerRecord, text: string) => run.related(record, text);
@@ -70,7 +70,7 @@ export default function (pi: PiAPI, dependencies: ExtensionDependencies = {}) {
     if (active?.pending) return active.pending.respond();
     const questions = hub.questions();
     const choices = questions.map(q => `${hub.get(q.ownerId)?.label || "Agent"} · ${q.title}`);
-    const selected = await ctx.ui.select("Choose a question to answer", ["Cancel", ...choices]);
+    const selected = await context.ui.select("Choose a question to answer", ["Cancel", ...choices]);
     const index = choices.indexOf(selected);
     if (index >= 0) await questions[index].answer(ctx);
   };
@@ -101,7 +101,7 @@ export default function (pi: PiAPI, dependencies: ExtensionDependencies = {}) {
       register(record: { id: string; session: any; metadata?: Record<string, any>; label?: string; role?: string; model?: string; thinking?: string }) {
         valid();
         if (!record.id || !record.session) throw new Error("Register an id and an externally-owned AgentSession.");
-        hub.register({ ...record, metadata: { ...record.metadata, external: true } });
+        hub.register({ ...record, role: record.role ?? "external", metadata: { ...record.metadata, external: true } });
         return {
           update(patch: Partial<Pick<WorkerRecord, "label" | "metadata" | "state" | "activity" | "accepting" | "outcome" | "context">>) { valid(); hub.update(record.id, patch); },
           finish(state: WorkerState = "completed") { valid(); hub.unregister(record.id, state); },
@@ -131,11 +131,11 @@ export default function (pi: PiAPI, dependencies: ExtensionDependencies = {}) {
     handler: async (args, nextCtx) => {
       ctx = nextCtx;
       if (writesOwned()) { ctx.ui.notify(ownershipMessage, "warning"); return; }
-      hubUI.setContext(ctx); hubUI.setWorkflow(`dev-${phase}`);
+      hubUI.setContext(context); hubUI.setWorkflow(`dev-${phase}`);
       try {
-        await excludeState({ exec: (program, argv) => pi.exec(program, argv, { cwd: ctx!.cwd }) });
+        await excludeState({ exec: (program, argv) => pi.exec(program, argv, { cwd: context.cwd }) });
         pi.sendUserMessage(`/skill:dev-${phase}${args ? ` ${args}` : ""}`, { expandPromptTemplates: true });
-      } catch (error: unknown) { ctx.ui.notify(errorMessage(error), "error"); }
+      } catch (error: unknown) { context.ui.notify(errorMessage(error), "error"); }
     },
   });
 
@@ -150,20 +150,20 @@ export default function (pi: PiAPI, dependencies: ExtensionDependencies = {}) {
   async function start(phase: WorkflowPhase, args: string, nextCtx: AppContext) {
     ctx = nextCtx;
     if (active || !ctx.isIdle() || ctx.hasPendingMessages?.() || foregroundPrompts > 0 || hub.list().some(r => isActive(r) && !r.metadata.readOnly)) {
-      ctx.ui.notify("Finish or stop active writing work and Main's turn before starting another controller.", "warning"); return;
+      context.ui.notify("Finish or stop active writing work and Main's turn before starting another controller.", "warning"); return;
     }
-    try { history?.ensureParent(); } catch (error: unknown) { ctx.ui.notify(`Cannot persist the parent session: ${errorMessage(error)}`, "error"); return; }
+    try { history?.ensureParent(); } catch (error: unknown) { context.ui.notify(`Cannot persist the parent session: ${errorMessage(error)}`, "error"); return; }
     const current = new WorkflowControl(phase, args, () => hubUI.refresh());
     active = current; lastControl = current;
-    hubUI.setContext(ctx); hubUI.setWorkflow(`dev-${phase}`);
+    hubUI.setContext(context); hubUI.setWorkflow(`dev-${phase}`);
     const report = (text: string) => { current.update(text); audit("progress", { phase, text }); };
     const ask = <T>(title: string, show: () => Promise<T>): Promise<T> => {
-      if (!ctx.hasUI) return Promise.reject(new Error("Human approval requires interactive Pi."));
+      if (!context.hasUI) return Promise.reject(new Error("Human approval requires interactive Pi."));
       audit("needs human", { phase, text: title });
       return current.ask(title, show);
     };
     const h: WorkflowHost = {
-      cwd: ctx.cwd, signal: current.signal, control: current, lastWorkerId: undefined,
+      cwd: context.cwd, signal: current.signal, control: current, lastWorkerId: undefined,
       rawExec(program, argv) { return pi.exec(program, argv, { cwd: this.cwd }); },
       checkpoint: activity => current.checkpoint(activity),
       async exec(program, argv) {
@@ -183,7 +183,7 @@ export default function (pi: PiAPI, dependencies: ExtensionDependencies = {}) {
         current.checkpoint();
         const { metadata = {}, ...rest } = options;
         let id: string | undefined;
-        const result = await run({ cwd: this.cwd, name, task, skill, schema, ...rest,
+        const result = await run({ cwd: this.cwd, name: name as WorkerOptions["name"], task, skill, schema, ...rest,
           signal: this.signal, metadata: { phase, owner: "workflow", ...metadata },
           onStarted: value => { id = value; }, report: text => current.update(text),
         });
@@ -192,11 +192,11 @@ export default function (pi: PiAPI, dependencies: ExtensionDependencies = {}) {
       workerOutcome: (id: string | undefined, outcome: string) => { if (id) hub.update(id, { outcome }); },
       select: (title: string, choices: string[]) => ask(title, () => ctx!.ui.select(title, ["Cancel", ...choices], { signal: current.signal }).then((v: string | undefined) => v === "Cancel" ? undefined : v)),
       confirm: (title: string, message: string) => ask(title, async () => (await ctx!.ui.select(`${title}\n${message}`, ["Cancel", "Confirm"], { signal: current.signal })) === "Confirm"),
-      review: (title: string, markdown: string, repairs?: ReviewRepair[]) => ask(title, async () => {
+      review: (title: string, markdown: string, repairs?: ReviewRepair[]): Promise<ReviewDecision> => ask(title, async (): Promise<ReviewDecision> => {
         pi.sendMessage({ customType: "dev-workflow", content: markdown, display: true }, { triggerTurn: false });
         if (repairs) {
           pi.sendMessage({ customType: "dev-workflow", content: repairs.map(r => `## ${r.title}\n${r.reason}\n\n${r.goal}\n\n${(r.evidence || []).join("\n")}\n\nChecks: ${(r.checks || []).join(", ")}`).join("\n\n"), display: true }, { triggerTurn: false });
-          const chosen = new Set();
+          const chosen = new Set<string>();
           while (true) {
             const labels = repairs.map((r, i) => `${i + 1}. ${chosen.has(r.key) ? "[x]" : "[ ]"} ${r.title}`);
             const selected = await ctx.ui.select(title, ["Cancel", ...labels, "Apply selected"], { signal: current.signal });
@@ -207,11 +207,11 @@ export default function (pi: PiAPI, dependencies: ExtensionDependencies = {}) {
             chosen.has(key) ? chosen.delete(key) : chosen.add(key);
           }
         }
-        const action = await ctx.ui.select(title, ["Cancel", "Request changes", "Approve exact candidate"], { signal: current.signal });
+        const action = await context.ui.select(title, ["Cancel", "Request changes", "Approve exact candidate"], { signal: current.signal });
         current.signal.throwIfAborted();
         if (action === "Approve exact candidate") return { action: "approve" };
         if (action === "Request changes") {
-          const feedback = await humanEditor(ctx, "Review feedback", "", current.signal);
+          const feedback = await humanEditor(context, "Review feedback", "", current.signal);
           if (feedback?.trim()) return { action: "feedback", feedback };
         }
         return { action: "cancel" };
@@ -220,7 +220,7 @@ export default function (pi: PiAPI, dependencies: ExtensionDependencies = {}) {
     };
     let failure: unknown;
     try { await (dependencies.runWorkflow || runWorkflow)(h, phase, args); }
-    catch (error: unknown) { failure = error; if (!closing) ctx.ui.notify(workflowError(error, phase, args), current.signal.aborted ? "info" : "warning"); }
+    catch (error: unknown) { failure = error; if (!closing) context.ui.notify(workflowError(error, phase, args), current.signal.aborted ? "info" : "warning"); }
     finally {
       if (failure instanceof WorkflowPaused) {
         try { await current.capturePause(); }
@@ -231,7 +231,7 @@ export default function (pi: PiAPI, dependencies: ExtensionDependencies = {}) {
       hubUI.refresh();
     }
   }
-  for (const phase of ["build", "prepare", "review", "ship"]) pi.registerCommand(`dev-${phase}`, {
+  for (const phase of ["build", "prepare", "review", "ship"] as const) pi.registerCommand(`dev-${phase}`, {
     description: `Run ${phase} for an approved project or spec path`, handler: (args, nextCtx) => start(phase, args, nextCtx),
   });
   pi.registerCommand("dev-continue", { description: "Continue a safely paused workflow only if repository and contracts are unchanged", handler: async (_args, nextCtx) => { ctx = nextCtx; await continueWorkflow(); } });
