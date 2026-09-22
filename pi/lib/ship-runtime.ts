@@ -27,13 +27,21 @@ export class ShipRuntime {
     if (!sameCandidate(inventory.candidate, review.candidate) || inventory.digest !== review.inventoryDigest) throw new Error("Reviewer result does not match the live inventory.");
     const expected = new Set(inventory.items.map(item => item.id)), actual = review.dispositions.map(item => item.itemId);
     if (actual.length !== expected.size || new Set(actual).size !== actual.length || actual.some(id => !expected.has(id))) throw new Error("Reviewer must dispose exactly every inventory item.");
+    if (review.verdict === "REPAIRS") {
+      if (!review.findings.length) throw new Error("A REPAIRS verdict requires typed findings.");
+      const keys = review.findings.map(finding => finding.key);
+      if (new Set(keys).size !== keys.length || review.findings.some(finding => !finding.evidence.length || !finding.acceptanceChecks.length)) throw new Error("Repair findings require unique stable keys, evidence, and acceptance checks.");
+      if (keys.some(key => this.state.stableKeys.includes(key))) throw new Error("A repaired finding returned; automatic repair convergence stopped.");
+    }
   }
   async complete(action: ShipAction, patch: Partial<ShipState> = {}): Promise<ShipState> {
     const phase: Record<ShipAction, ShipPhase> = { start: "handoff", prepare: "prepared", publish: "published", wait: "waiting", audit: "audited", repair: "repairing", approve: "approved", ready: "ready" };
     if (action === "repair" && this.state.repairs >= 2) throw new Error("The global two-round repair limit is exhausted.");
     const repairs = action === "repair" ? this.state.repairs + 1 : this.state.repairs;
+    if (action === "audit" && patch.inventory && patch.reviewer) this.validateReview(patch.inventory, patch.reviewer);
+    const newKeys = action === "audit" && patch.reviewer?.verdict === "REPAIRS" ? patch.reviewer.findings.map(finding => finding.key) : [];
     const candidateChanged = patch.candidate && !sameCandidate(patch.candidate, this.state.candidate);
-    const next: ShipState = { ...this.state, ...patch, repairs, phase: phase[action] };
+    const next: ShipState = { ...this.state, ...patch, repairs, stableKeys: [...new Set([...this.state.stableKeys, ...newKeys])], phase: phase[action] };
     if (candidateChanged) { delete next.wait; delete next.inventory; delete next.reviewer; delete next.packet; delete next.approval; }
     return this.replace(next);
   }

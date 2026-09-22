@@ -87,6 +87,8 @@ interface RunArguments<TShape extends TSchema | undefined = undefined> {
   report?: (text: string) => void;
   system?: string;
   tools?: string[];
+  /** Narrow tools inherited only by descendants of this worker run. */
+  scopedTools?: ToolDefinition[];
   metadata?: RunMetadata;
   onStarted?: (workerId: string) => void;
 }
@@ -114,7 +116,7 @@ export function createWorkerRunner(options: RunnerOptions): WorkerRunner {
   if (!hub?.register || !hub?.unregister || !hub?.nextId) throw new Error("createWorkerRunner requires a WorkerHub so child sessions cannot be hidden.");
   let modelsPromise: Promise<ModelRuntime> | undefined;
   const activeRuns = new Set<ActiveRun>();
-  async function execute<TShape extends TSchema | undefined = undefined>({ cwd, name, task, skill, schema, signal: parentSignal, report = () => undefined, system = "", tools, metadata = {}, onStarted }: RunArguments<TShape>): Promise<RunResult<TShape>> {
+  async function execute<TShape extends TSchema | undefined = undefined>({ cwd, name, task, skill, schema, signal: parentSignal, report = () => undefined, system = "", tools, scopedTools = [], metadata = {}, onStarted }: RunArguments<TShape>): Promise<RunResult<TShape>> {
     const controller = new AbortController();
     const signal = parentSignal ? AbortSignal.any([parentSignal, controller.signal]) : controller.signal;
     const owned = { controller }; activeRuns.add(owned);
@@ -156,9 +158,9 @@ export function createWorkerRunner(options: RunnerOptions): WorkerRunner {
       const label = metadata.label || `${roleLabel(name)} · ${(String(metadata.task || task).split("\n", 1)[0] ?? name).slice(0, 100)}`;
       const history = getHistory();
       const manager = history?.create(cwd, { id, label, role: name, model: selected.model, thinking: selected.thinking, metadata: workerMetadata, startedAt: Date.now() }) || SessionManager.inMemory(cwd);
-      const childRun: RunWorker = <TChildShape extends TSchema | undefined = undefined>(args: RunArguments<TChildShape>) => execute({ ...args, signal: AbortSignal.any([signal, args.signal ?? signal]) });
-      const customTools: ToolDefinition[] = explorer ? [] : [exploreTool(childRun, quietReport, { parentId: id, owner: metadata.owner, phase: metadata.phase }) as unknown as ToolDefinition];
-      if (askHuman && !readonly) {
+      const childRun: RunWorker = <TChildShape extends TSchema | undefined = undefined>(args: RunArguments<TChildShape>) => execute({ ...args, scopedTools: args.scopedTools ?? scopedTools, signal: AbortSignal.any([signal, args.signal ?? signal]) });
+      const customTools: ToolDefinition[] = [...scopedTools, ...(explorer ? [] : [exploreTool(childRun, quietReport, { parentId: id, owner: metadata.owner, phase: metadata.phase }) as unknown as ToolDefinition])];
+      if (askHuman && !readonly && metadata.phase !== "ship") {
         const askSchema = Type.Object({ question: Type.String(), choices: Type.Optional(Type.Array(Type.String())) });
         customTools.push({ name: "ask_human", label: "Ask human", description: "Ask a bounded question and wait for the human to respond explicitly in Main.",
         parameters: askSchema,
@@ -176,9 +178,9 @@ export function createWorkerRunner(options: RunnerOptions): WorkerRunner {
           value = args; valueEpoch = inputEpoch; return toolResult("Result recorded.");
         } });
       const allowed = explorer
-        ? [...readers, "bash", "web_search", "source_check", "fetch_content", "get_search_content"]
+        ? [...readers, "bash", "web_search", "source_check", "fetch_content", "get_search_content", ...scopedTools.map(tool => tool.name)]
         : name === "review"
-          ? readers
+          ? [...readers, ...scopedTools.map(tool => tool.name)]
           : tools || [...readers, ...(!readonly ? ["bash", "edit", "write", "lsp_diagnostics", "lsp_fix", "chrome_devtools_load", "chrome_devtools_list_pages", "chrome_devtools_select_page", "chrome_devtools_navigate", "chrome_devtools_evaluate", "chrome_devtools_screenshot"] : [])];
       const created = await create({ cwd, model, thinkingLevel: selected.thinking, modelRuntime: models,
         settingsManager: settings, resourceLoader: loader, sessionManager: manager,
