@@ -70,9 +70,10 @@ const renderExplorerResult = (result: ExplorerResult): string => {
 const boundExplorerResult = (text: string): string => text.length > explorerResultChars
   ? `${text.slice(0, explorerResultChars - explorerResultMarker.length)}${explorerResultMarker}`
   : text;
-const roleLabel = (name: RoleName): string => ({
+const roleLabels: Partial<Record<RoleName, string>> = {
   build: "Builder", build_retry: "Builder retry", review: "Reviewer", explorer: "Explorer", ship: "PR summary",
-} satisfies Partial<Record<RoleName, string>>)[name] || name;
+};
+const roleLabel = (name: RoleName): string => roleLabels[name] || name;
 const errorMessage = (error: unknown): string => error instanceof Error ? error.message : String(error);
 
 /** Only behavioral settings cross the worker boundary, never ambient tools/UI. */
