@@ -29,9 +29,9 @@
     ]
   },
   "dependencies": {
-    "@earendil-works/pi-ai": "0.87.0",
-    "@earendil-works/pi-coding-agent": "0.87.0",
-    "@earendil-works/pi-tui": "0.87.0",
+    "@earendil-works/pi-ai": "0.87.1",
+    "@earendil-works/pi-coding-agent": "0.87.1",
+    "@earendil-works/pi-tui": "0.87.1",
     "@ff-labs/pi-fff": "0.11.0",
     "@juicesharp/rpiv-ask-user-question": "2.10.1",
     "@juicesharp/rpiv-todo": "2.10.1",

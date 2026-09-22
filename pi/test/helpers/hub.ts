@@ -17,7 +17,7 @@ export const tick = (): Promise<void> => new Promise(resolve => setImmediate(res
 export const strip = (text: string): string => text.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g,'').replace(/\x1b_[^\x07]*\x07/g,'').replace(/\x1b\][^\x07]*(?:\x07|\x1b\\)/g,'');
 export const screen = (view: Pick<AgentHubView, 'render'>, width = 80): string => strip(view.render(width).join('\n'));
 export const user = (text: string): UserMessage => ({role:'user',content:[{type:'text',text}],timestamp:Date.now()});
-export const assistant = (text: string): AssistantMessage => ({role:'assistant',content:[{type:'text',text}],api:'openai-responses',provider:'openai-codex',model:'gpt-5.6-luna',stopReason:'stop',timestamp:Date.now(),usage:{input:0,output:0,cacheRead:0,cacheWrite:0,totalTokens:0,cost:{input:0,output:0,cacheRead:0,cacheWrite:0,total:0}}});
+export const assistant = (text: string): AssistantMessage => ({role:'assistant',content:[{type:'text',text}],api:'openai-responses',provider:'openai-codex',model:'gpt-6-luna',stopReason:'stop',timestamp:Date.now(),usage:{input:0,output:0,cacheRead:0,cacheWrite:0,totalTokens:0,cost:{input:0,output:0,cacheRead:0,cacheWrite:0,total:0}}});
 
 export type SessionCall = ['steer' | 'followUp', string] | ['abort'];
 export interface TestSession extends WorkerSession {
@@ -46,7 +46,7 @@ export function session(): TestSession {
 
 type RegisterExtra = Partial<Omit<RegisterWorker, 'id' | 'role' | 'model' | 'thinking' | 'session'>>;
 export function register(hub: WorkerHub, workerSession: WorkerSession, id = 'agent:a', extra: RegisterExtra = {}) {
-  hub.register({id,label:`Explorer · ${id}`,role:'explorer',model:'gpt-5.6-luna',thinking:'medium',session:workerSession,metadata:{task:'Inspect tests',readOnly:true},...extra});
+  hub.register({id,label:`Explorer · ${id}`,role:'explorer',model:'gpt-6-luna',thinking:'medium',session:workerSession,metadata:{task:'Inspect tests',readOnly:true},...extra});
   const record = hub.get(id);
   if (!record) throw new Error(`Worker ${id} was not registered`);
   return record;

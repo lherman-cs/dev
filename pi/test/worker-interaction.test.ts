@@ -131,7 +131,7 @@ test('a rejected native input pipeline keeps its message recoverable without inv
 test('stop a Builder cancels nested Explorer; no child outlives its owner or retries',{timeout:10000},async t=>{
   const ready=deferred();let builders=0;
   const f=await fixture(t,({model})=>{
-    if(model.id==='gpt-5.6-luna'){ready.resolve();return;}
+    if(model.id==='gpt-6-luna'){ready.resolve();return;}
     if(++builders===1)return msg(model,[{type:'toolCall',id:'explore',name:'explore',arguments:{task:'Find an API'}}],'toolUse');
     return msg(model,'should not reach this');
   });

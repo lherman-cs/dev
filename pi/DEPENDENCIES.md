@@ -4,7 +4,7 @@ Pins below were checked against the published package source and entrypoints. Th
 
 | Package | Pin | Purpose / reviewed boundary |
 | --- | --- | --- |
-| `@earendil-works/pi-coding-agent` | 0.87.0 | Native sessions, authentication, tools, Markdown/Mermaid and cancellation. SDK integration is exercised without live provider calls. |
+| `@earendil-works/pi-coding-agent` | 0.87.1 | Native sessions, authentication, tools, Markdown/Mermaid and cancellation. SDK integration is exercised without live provider calls. |
 | `@ff-labs/pi-fff` | 0.11.0 | FFF-backed file and content search plus file autocomplete. It uses the package's default `tools-and-ui` mode, adding `fffind` and `ffgrep` while retaining Pi's built-in tools. |
 | `@narumitw/pi-lsp` | 0.49.8 | Published `dist/index.ts`; launches configured local language servers. Diagnostics and fixes are explicit tools. Server binaries/configuration remain trusted user inputs. |
 | `@narumitw/pi-github-pr` | 0.49.8 | Published entrypoint and `gh`-based PR status polling. It is a status display, not our approval authority or a replacement for reading review threads. |

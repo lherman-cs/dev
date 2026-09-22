@@ -187,7 +187,7 @@ test('cancellation reaches the native Pi session and cleans it up', async t=>{
 test('a native Builder receives worker-owned Explorer completion asynchronously without inheriting context',async t=>{
   let builderTurns=0,explorerTurns=0,finishExplorer: ((message: AssistantMessage) => void) | undefined;
   const f=await fixture(t,(_n,context,model,_options,stream)=>{
-    if(model.id==='gpt-5.6-luna') {
+    if(model.id==='gpt-6-luna') {
       assert.ok(!JSON.stringify(context.messages).includes('PRIVATE_PARENT_CONTEXT'));
       if(++explorerTurns===1) { finishExplorer=done=>stream.push({type:'done',reason:'toolUse',message:done}); return; }
       return message(model,[{type:'text',text:'submitted'}]);
