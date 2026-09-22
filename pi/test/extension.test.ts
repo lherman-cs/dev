@@ -59,6 +59,8 @@ test("four current-session aliases, Agent Hub and isolated tools register withou
   const toolCall = handlers.get("tool_call"); assert.ok(toolCall);
   for (const toolName of explorerOnlyTools) assert.match(toolCall({ toolName })?.reason ?? "", /narrowly scoped explore calls/);
   assert.match(toolCall({ toolName: "review" })?.reason ?? "", /reserved.*dev-ship/);
+  assert.match(toolCall({ toolName: "ship_builder" })?.reason ?? "", /reserved.*dev-ship/);
+  assert.match(toolCall({ toolName: "ship_artifacts" })?.reason ?? "", /dev-ship/);
 });
 
 test("review is active only for an explicit dev-ship phase", async () => {
