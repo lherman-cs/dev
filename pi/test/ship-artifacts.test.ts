@@ -15,8 +15,13 @@ test("artifact read checks approval, content hashes and real repository containm
     fs.writeFileSync(path.join(root, "plan.md"), "Status: APPROVED\n");
     const first = shipArtifacts(root, "spec.md", "plan.md");
     assert.match(first.spec.sha256, /^[a-f0-9]{64}$/);
+    assert.equal(shipArtifacts(root, "spec.md").plan, undefined);
+    assert.equal(shipArtifacts(root, "spec.md").spec.sha256, first.spec.sha256);
     fs.writeFileSync(path.join(root, "plan.md"), "Status: APPROVED\nchanged\n");
-    assert.notEqual(first.plan.sha256, shipArtifacts(root, "spec.md", "plan.md").plan.sha256);
+    assert.notEqual(first.plan?.sha256, shipArtifacts(root, "spec.md", "plan.md").plan?.sha256);
+    fs.writeFileSync(path.join(root, "plan.md"), "Status: DRAFT\n");
+    assert.throws(() => shipArtifacts(root, "spec.md", "plan.md"), /not approved/);
+    assert.match(shipArtifacts(root, "spec.md").spec.sha256, /^[a-f0-9]{64}$/);
     fs.writeFileSync(path.join(outside, "approved.md"), "Status: APPROVED\n");
     fs.rmSync(path.join(root, "spec.md"));
     fs.symlinkSync(path.join(outside, "approved.md"), path.join(root, "spec.md"));

@@ -1,12 +1,12 @@
 # Pi-first development workflow
 
-Pi is the harness. Git is implementation truth, the approved spec and plan are semantic truth, and GitHub is remote-candidate truth. `/dev-ship` is coordinated by the foreground agent from live evidence, with asynchronous Builder and Reviewer workers and explicit human readiness approval. It has no merge authority.
+Pi is the harness. Git is implementation truth, the approved spec and any approved plan are semantic truth, and GitHub is remote-candidate truth. `/dev-ship` is coordinated by the foreground agent from live evidence, with asynchronous Builder and Reviewer workers and explicit human readiness approval. It has no merge authority.
 
 ## Entry points
 
-`dev pi <args...>` passes arguments to the pinned project-local Pi runtime. `dev a <phase>` selects the configured model and thinking level, then opens Pi without a user turn. Adding a prompt submits `/dev-<phase> <prompt>` immediately. The public phase set is exactly `spec`, `plan`, `build`, and `ship`; every alias loads the corresponding explicit lazy skill in the current conversation. Resume uses Pi's saved session model.
+`dev pi <args...>` passes arguments to the pinned project-local Pi runtime. `dev a <phase>` selects the configured model and thinking level, then opens Pi without a user turn. Adding a prompt submits `/dev-<phase> <prompt>` immediately. The public phase set is exactly `spec`, `plan`, `build`, and `ship`; every alias loads the corresponding explicit lazy skill in the current conversation. Pi can resume saved sessions, but a fresh agent can also reconstruct work from live evidence.
 
-Three human gates remain: approve semantics, approve architecture and contracts, then approve the exact final candidate. The active Shipper never merges. It prepares and presents a candidate only after its own remote inspection, checks, review evidence, and explicit human confirmation.
+The spec and exact final candidate require human approval; architecture and contracts also require approval when a plan is requested. An approved spec can go straight to build without a plan. The active Shipper never merges. It prepares and presents a candidate only after its own remote inspection, checks, review evidence, and explicit human confirmation.
 
 ## Phase boundaries
 
@@ -14,7 +14,7 @@ Three human gates remain: approve semantics, approve architecture and contracts,
 | --- | --- |
 | Spec | Challenge semantics, scope, splits, callers, ownership, failures, and acceptance evidence. Present the review and stop after explicit approval. |
 | Plan | Turn the approved spec into independently testable outcomes with architecture, dataflow, proof, risks, and deletion choices. Stop after approval. |
-| Build | Complete approved outcomes incrementally. Validate and independently commit each coherent outcome. Resolve ordinary implementation and test failures; stop only for an unresolved consequential decision. |
+| Build | Complete approved spec outcomes incrementally, following an approved plan when present. Validate and independently commit each coherent outcome. Resolve ordinary implementation and test failures; stop only for an unresolved consequential decision. |
 | Ship | Inspect the approved scope, Git and GitHub; coordinate Builder preparation and independent Reviewer audit, revalidate live evidence, and present a final packet for explicit human approval. Never merge. |
 
 ## Isolated child sessions
@@ -40,6 +40,8 @@ Runtime allowlists enforce isolation, edit/write-tool denial, web-tool exclusivi
 Agent Hub is a view and owner-action adapter, not a scheduler. The foreground Shipper sequences live observations, Git/GitHub actions and human approval. The Hub preserves independent drafts, anchored history navigation, contextual help, native messages, tool rendering, and completed child transcripts. A queued instruction is not delivered until accepted. The worker owner seals completed sessions and rejects stale structured results after interventions. Related questions create a fresh bounded investigation rather than reviving a completed result.
 
 The active conversation is responsible for deciding whether to stop a child before changing the worktree. Git, approved artifacts, and remote state make failures visible and resumable. If Explorer is unavailable or fails, the parent may disclose and perform only necessary permitted read-only work directly with bounded output. This fallback grants no prohibited tool or mutation capability, and no fabricated completion is available.
+
+Each invoked phase reconciles from artifacts and live Git/worktree or remote evidence, even for a new agent with no saved session. The exclusive writing owner classifies existing dirty edits, adopts relevant work under approved scope, and may remove irrelevant uncommitted edits after a best-effort local backup with an explicit removal/backup report. Ignored files, committed history and independent remote work are outside that cleanup authority. Missing intent or approval, scope conflicts and competing ownership still require human direction; nothing relaunches automatically.
 
 Pi and the requested plugins own rendering and integrations. `pi-github-pr` displays status; the active role reads and evaluates exact GitHub evidence as needed. The installer does not ship MCP servers, browser-cookie opt-ins, permission bypasses, or user credential files.
 

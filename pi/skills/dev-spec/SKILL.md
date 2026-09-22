@@ -8,6 +8,7 @@ disable-model-invocation: true
 
 Make the requested outcome decision-complete.
 
+- Read `../references/reconcile.md` at entry. Compare any draft with evidenced user intent; a status marker alone does not prove approval.
 - Challenge ambiguity, hidden assumptions, speculative requirements, compatibility expectations, invariants, non-goals, risks, and project boundaries until human and agent are explicitly aligned. Do not merely formalize the initial request.
 - Trace the relevant end-to-end behavior, callers/callees, data ownership, invariants, and failure paths before defining semantics or acceptance evidence.
 - If outcomes are independently mergeable/testable, propose a split; the human decides and manages any extra worktrees.

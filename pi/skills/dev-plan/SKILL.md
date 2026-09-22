@@ -8,6 +8,7 @@ disable-model-invocation: true
 
 Require an explicitly approved spec.
 
+- Read `../references/reconcile.md` at entry. Compare any draft with the approved spec; a status marker alone does not prove approval.
 - Code and Git reality outrank assumptions.
 - Choose the simplest durable design that satisfies the spec and preserves correctness, robustness, scalability, and maintainability. Avoid unrelated cleanup and speculative abstraction.
 - Delete before adding; otherwise reuse existing code, prefer standard/native facilities, then existing dependencies, and add custom code last.

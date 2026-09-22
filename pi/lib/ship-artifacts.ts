@@ -6,7 +6,7 @@ import { execFileSync } from "node:child_process";
 export interface ApprovedArtifact { path: string; sha256: string }
 
 /** Report approval markers and hashes, not scope or permission to ship. */
-export function shipArtifacts(cwd: string, specPath: string, planPath: string): { spec: ApprovedArtifact; plan: ApprovedArtifact } {
+export function shipArtifacts(cwd: string, specPath: string, planPath?: string): { spec: ApprovedArtifact; plan?: ApprovedArtifact } {
   const root = fs.realpathSync(execFileSync("git", ["rev-parse", "--show-toplevel"], { cwd, encoding: "utf8" }).trim());
   const artifact = (name: string): ApprovedArtifact => {
     const absolute = path.resolve(root, name);
@@ -19,5 +19,5 @@ export function shipArtifacts(cwd: string, specPath: string, planPath: string): 
     if (!/^Status: APPROVED\b/m.test(content.toString("utf8"))) throw new Error(`Artifact is not approved: ${relative}`);
     return { path: relative, sha256: crypto.createHash("sha256").update(content).digest("hex") };
   };
-  return { spec: artifact(specPath), plan: artifact(planPath) };
+  return { spec: artifact(specPath), ...(planPath === undefined ? {} : { plan: artifact(planPath) }) };
 }
