@@ -54,3 +54,4 @@ export type Inventory = Static<typeof inventorySchema>;
 export type ReviewerResult = Static<typeof reviewerResultSchema>;
 export type WaitOutcome = Static<typeof waitOutcomeSchema>;
 export type FinalPacket = Static<typeof finalPacketSchema>;
+export type ApprovalIdentity = Static<typeof approvalIdentitySchema>;

@@ -1,0 +1,7 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { approvePacket, packetHash, renderFinalPacket } from "../lib/final-packet.ts";
+import type { FinalPacket } from "../lib/ship-contracts.ts";
+const oid = "a".repeat(40), candidate = { repository: { root: "/r", coordinate: "github.com/o/r" }, worktree: "/r", branch: { name: "f", head: oid }, base: { ref: "main", oid: "b".repeat(40) }, remote: { name: "origin", url: "https://github.com/o/r.git", oid: "b".repeat(40) } };
+const packet: FinalPacket = { candidate, pullRequest: { number: 1, url: "https://github.com/o/r/pull/1", state: "OPEN", draft: true, head: candidate.branch, base: candidate.base }, localChecks: [], ci: { status: "passed", candidate, checks: [] }, inventory: { candidate, items: [], digest: "c".repeat(64) }, reviewer: { verdict: "PASS", candidate, inventoryDigest: "c".repeat(64), dispositions: [], findings: [], blocker: null }, summary: "Ready", residualRisks: [], repairRounds: 0 };
+test("final approval is bound to the exact ready packet", () => { const hash = packetHash(packet); assert.equal(approvePacket(packet, hash, "human", 42).approvedAt, 42); assert.match(renderFinalPacket(packet), new RegExp(hash)); assert.throws(() => approvePacket(packet, "x".repeat(64), "human"), /drifted/); const failed = { ...packet, ci: { ...packet.ci, status: "failed" as const } }; assert.throws(() => approvePacket(failed, packetHash(failed), "human"), /not eligible/); });
