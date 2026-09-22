@@ -4,7 +4,7 @@
     "spec": "openai/gpt-6-sol:medium",
     "plan": "openai/gpt-6-sol:high",
     "build": "openai/gpt-6-sol:low",
-    "review": "openai/gpt-6-astra:low",
+    "review": "openai/gpt-6-sol:high",
     "ship": "openai/gpt-6-luna:medium",
     "explorer": "openai/gpt-6-luna:medium",
     "escalated_builder": "openai/gpt-6-sol:high"
