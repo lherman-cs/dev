@@ -19,7 +19,7 @@ Three human gates remain: approve semantics, approve architecture and contracts,
 
 ## Isolated child sessions
 
-`explore` is the general read-only investigation primitive. Each Main call creates a fresh asynchronous Explorer with a narrowly scoped factual question, explicit boundaries, and compact schema-checked evidence. Explorer has no shell, mutation, browser-control, or recursive delegation capability.
+`explore` is the general bounded investigation and verification primitive. Each Main call creates a fresh asynchronous Explorer with a narrowly scoped factual question or command, explicit boundaries, and compact schema-checked evidence. Explorer may run targeted tests, builds, lints, benchmarks, CI/check inspection, and log analysis, but has no edit/write, browser-control, or recursive delegation capability and must not make project decisions.
 
 `review` is an asynchronous read-only primitive available only to the active Shipper after an explicit `dev-ship` invocation:
 
@@ -33,11 +33,11 @@ Reviewer has repository read tools, VCC recall, bounded Explorer access, and `su
 
 Native SDK workers have isolated contexts and cancellation, with Pi-native persisted child transcripts when the parent has a session file. Every child created through the shared worker boundary registers in one session-wide Agent Hub. `Alt+A` opens the live roster, inspector, and thread UI; the Hub may steer or stop a supplied session but never owns phase sequencing, Git, verification, workflow state, or model policy.
 
-Runtime allowlists enforce isolation, mutation denial, web-tool exclusivity, and non-recursion. Whether a local read is exploratory and whether natural-language scopes overlap remain semantic parent responsibilities, made reviewable through explicit boundaries and exclusions rather than misrepresented as mechanically provable. Workers do not inherit the foreground conversation. Web research is available only inside Explorer; foreground-only PR/usage UI and MCP configurations are not replicated into children.
+Runtime allowlists enforce isolation, edit/write-tool denial, web-tool exclusivity, and non-recursion. The Explorer skill constrains its shell to targeted verification rather than source mutation. Whether a local read is exploratory and whether natural-language scopes overlap remain semantic parent responsibilities, made reviewable through explicit boundaries and exclusions rather than misrepresented as mechanically provable. Workers do not inherit the foreground conversation. Web research is available only inside Explorer; foreground-only PR/usage UI and MCP configurations are not replicated into children.
 
 ## Human supervision and recovery
 
-Agent Hub is a view and owner-action adapter, not a scheduler. The fixed dev-ship runtime, rather than the Hub, owns its typed state transitions and side-effect receipts. The Hub preserves independent drafts, anchored history navigation, contextual help, native messages, tool rendering, and completed child transcripts. A queued instruction is not delivered until accepted. The worker owner seals completed sessions and rejects stale structured results after interventions. Related questions create a fresh read-only investigation rather than reviving a completed result.
+Agent Hub is a view and owner-action adapter, not a scheduler. The fixed dev-ship runtime, rather than the Hub, owns its typed state transitions and side-effect receipts. The Hub preserves independent drafts, anchored history navigation, contextual help, native messages, tool rendering, and completed child transcripts. A queued instruction is not delivered until accepted. The worker owner seals completed sessions and rejects stale structured results after interventions. Related questions create a fresh bounded investigation rather than reviving a completed result.
 
 The active conversation is responsible for deciding whether to stop a child before changing the worktree. Git, approved artifacts, and remote state make failures visible and resumable. No hidden fallback or fabricated completion is available.
 

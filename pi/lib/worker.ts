@@ -176,7 +176,7 @@ export function createWorkerRunner(options: RunnerOptions): WorkerRunner {
           value = args; valueEpoch = inputEpoch; return toolResult("Result recorded.");
         } });
       const allowed = explorer
-        ? [...readers, "web_search", "source_check", "fetch_content", "get_search_content"]
+        ? [...readers, "bash", "web_search", "source_check", "fetch_content", "get_search_content"]
         : name === "review"
           ? readers
           : tools || [...readers, ...(!readonly ? ["bash", "edit", "write", "lsp_diagnostics", "lsp_fix", "chrome_devtools_load", "chrome_devtools_list_pages", "chrome_devtools_select_page", "chrome_devtools_navigate", "chrome_devtools_evaluate", "chrome_devtools_screenshot"] : [])];
@@ -277,7 +277,7 @@ export function createWorkerRunner(options: RunnerOptions): WorkerRunner {
   return run;
 }
 
-// Universal, bounded, read-only exploration; not an arbitrary subagent tool.
+// Universal, bounded investigation and verification; not an arbitrary subagent tool.
 export function reviewTool(run: RunWorker, report: (text: string) => void = () => undefined): ToolDefinition<typeof reviewParameters, Record<string, never>, unknown> {
   return { name: "review", label: "Reviewer",
     description: "Review one exact candidate in a fresh, read-only Reviewer session.",
@@ -300,10 +300,10 @@ export function reviewTool(run: RunWorker, report: (text: string) => void = () =
 
 export function exploreTool(run: RunWorker, report: (text: string) => void = () => undefined, parentMetadata: Record<string, unknown> = {}): ToolDefinition<typeof exploreParameters, Record<string, never>, unknown> {
   return { name: "explore", label: "Explorer",
-    description: "Delegate one independent, narrowly scoped read-only investigation. Use separate calls for separate scopes. Returns compact evidence, not a transcript.",
-    promptSnippet: "Delegate a narrow codebase, web, or other evidence-heavy investigation to an independent Explorer",
+    description: "Delegate one independent, narrowly scoped investigation or verification. Use separate calls for separate scopes. Returns compact evidence, not raw output.",
+    promptSnippet: "Delegate a narrow codebase, web, or other evidence-heavy investigation or verification to an independent Explorer",
     promptGuidelines: [
-      "Give each explore call one self-contained scope: state the factual question, boundaries, sibling exclusions, and expected evidence.",
+      "Give each explore call one self-contained scope: state the factual question or command, boundaries, sibling exclusions, and expected evidence.",
       "Use separate calls for independent scopes; run dependent follow-ups only after their prerequisite result.",
     ],
     parameters: exploreParameters,
@@ -335,7 +335,7 @@ function publishDetached(
 export function asyncExploreTool(run: RunWorker, publish: PublishAsyncWorkerCompletion, report: (text: string) => void = () => undefined): ReturnType<typeof exploreTool> {
   const foreground = exploreTool(run, report);
   return { ...foreground,
-    description: "Start an independent read-only investigation in the background. Returns immediately; the result is delivered asynchronously.",
+    description: "Start an independent investigation or verification in the background. Returns immediately; the result is delivered asynchronously.",
     promptGuidelines: [
       ...(foreground.promptGuidelines || []),
       "Start independent investigations without waiting. Continue useful work; each result will arrive automatically and trigger progress.",

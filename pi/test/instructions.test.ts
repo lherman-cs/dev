@@ -12,7 +12,7 @@ test('94d10a6 semantic contracts retain authority, outputs and stop conditions a
     'ship-builder':['technical preparation and repair','consequential ambiguity','repository-defined format, lint, test','Conventional Commits','PREPARED','FAILED','NEEDS_HUMAN'],
 
     review:['exact HEAD','Red CI is evidence','verified Explorer findings','bounded/adversarial but conservative','stable root-cause key','BLOCKED is only','Never edit product code','Do not rerun passing tests'],
-    explore:['one independently scoped factual question','boundaries and sibling exclusions','parent conversation context is unavailable','Remain read-only','Do not delegate','primary sources for external facts','Repository and tool evidence outrank summaries','Stop when the assigned scope is answered','FOUND','path:line','submit_result'],
+    explore:['one independently scoped factual question','boundaries and sibling exclusions','parent conversation context is unavailable','Do not edit source','targeted tests, builds, lints, benchmarks, CI/check inspection, and log-analysis commands','make project decisions','Do not delegate, invoke, or spawn another agent','primary sources for external facts','Repository and tool evidence outrank summaries','Stop when the assigned scope is answered','FOUND','path:line','submit_result'],
   };
   for(const [name,terms] of Object.entries(requirements)) {
     const text=skill(name);for(const term of terms)assert.ok(text.includes(term),`${name}: ${term}`);

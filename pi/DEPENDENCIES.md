@@ -16,6 +16,6 @@ Pins below were checked against the published package source and entrypoints. Th
 
 There is no `pi-subagents`, generated agent registry, fleet, general scheduler, or subagent IPC dependency. The fixed dev-ship runtime uses only pinned native Pi and Git/GitHub process boundaries.
 
-The native loader test loads all published entrypoints. Worker sessions load only web access plus LSP/browser tools for implementation; PR/usage UI and MCP server configuration remain in the foreground. Explorer has no shell, write/edit, browser-control, or recursive delegation tool. This is a capability boundary, not an OS sandbox against malicious installed code.
+The native loader test loads all published entrypoints. Worker sessions load only web access plus LSP/browser tools for implementation; PR/usage UI and MCP server configuration remain in the foreground. Explorer has shell access for targeted verification, but no write/edit, browser-control, or recursive delegation tool. Its command restrictions are semantic, not an OS sandbox or command allowlist.
 
 The dependency inspection on 2026-09-20 reported no npm advisories. This does not certify plugins as harmless: a package or configured tool can still perform sensitive operations within its intended capability. Future updates require reviewing changed source and rerunning native integration tests.

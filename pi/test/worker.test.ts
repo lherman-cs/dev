@@ -92,12 +92,12 @@ test('review transport rejects mismatched, inconsistent, and oversized results',
   await assert.rejects(invoke({...base,summary:'x'.repeat(13000)}),/transport limit/);
   const ok=await invoke(base); assert.equal(required(ok.content[0],'content').type,'text');
 });
-test('Explorer is fresh, read-only and cannot delegate recursively', async t=>{
+test('Explorer can verify but cannot edit or delegate recursively', async t=>{
   const f=await fixture(t,(_n,_c,m)=>message(m,[{type:'text',text:'Conclusion: found it'}]));
-  await f.run({cwd:f.cwd,name:'explorer',task:'find it',tools:['bash','edit','explore']});
+  await f.run({cwd:f.cwd,name:'explorer',task:'find it',tools:['edit','explore']});
   const names=required(f.sessions[0],'session').getActiveToolNames();
-  for(const name of ['explore','subagent','bash','edit','write','lsp_fix','install','git']) assert.ok(!names.includes(name),name);
-  for(const name of ['web_search','source_check','fetch_content','get_search_content']) assert.ok(names.includes(name),name);
+  for(const name of ['explore','subagent','edit','write','lsp_fix','install','git']) assert.ok(!names.includes(name),name);
+  for(const name of ['bash','web_search','source_check','fetch_content','get_search_content']) assert.ok(names.includes(name),name);
   const call=required(f.calls[0],'Explorer call');
   assert.match(JSON.stringify(call.context.messages),/Answer exactly one independently scoped factual question/);
   assert.match(JSON.stringify(call.context.messages),/FOUND/);
