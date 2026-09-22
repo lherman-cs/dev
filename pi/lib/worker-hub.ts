@@ -220,10 +220,10 @@ export class WorkerHub {
     const record = this.get(id);
     if (!isActive(record) || !record.actions?.cancelQueued) throw new Error("This owner cannot cancel a queue.");
     const removed = await record.actions.cancelQueued();
-    const texts = [...removed.steering, ...removed.followUp];
+    const pending = { steer: [...removed.steering], followUp: [...removed.followUp] };
     let count = 0;
     for (const d of record.deliveries) if (["sending", "queued"].includes(d.status)) {
-      const at = texts.indexOf(d.text);
+      const texts = pending[d.mode], at = texts.indexOf(d.text);
       if (at >= 0) { texts.splice(at, 1); d.status = "cancelled"; count++; }
     }
     this.#persist(record); this.#emit(record); return count;
@@ -235,10 +235,10 @@ export class WorkerHub {
       const cleanup = () => { signal?.removeEventListener("abort", cancel); this.#questions.delete(id); this.#emit(); };
       const cancel = () => { cleanup(); reject(signal?.reason || new Error("Question cancelled.")); };
       const question: HubQuestion = { id, ownerId, title, answering: false, cancel, answer: async (ctx: unknown): Promise<void> => {
-        if (question.answering || signal?.aborted || !this.#questions.has(id)) return;
+        if (question.answering || signal?.aborted || !this.#questions.has(id)) throw new Error("Question is no longer pending.");
         question.answering = true; this.#emit();
         try { const value = await run(ctx as C, signal); signal?.throwIfAborted(); resolve(value); }
-        catch (error) { reject(error); }
+        catch (error) { reject(error); throw error; }
         finally { cleanup(); }
       } };
       this.#questions.set(id, question); signal?.addEventListener("abort", cancel, { once: true }); this.#emit();

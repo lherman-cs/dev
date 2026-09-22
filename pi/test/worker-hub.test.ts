@@ -45,6 +45,16 @@ test('completion during asynchronous queue acceptance is never reported as deliv
   assert.equal(r.deliveries[0]?.status,'failed');hub.dispose();
 });
 
+test('bulk cancellation matches duplicate text by mode without claiming delivery', async () => {
+  const hub = new WorkerHub(), s = session();
+  const r = register(hub, s, 'a', { actions: { send: async () => {}, cancelQueued: async () => ({ steering: ['same'], followUp: ['same'] }) } });
+  const first = await hub.steer('a', 'same'), second = await hub.steer('a', 'same');
+  const follow = await hub.followUp('a', 'same');
+  assert.equal(await hub.cancelQueued('a'), 2);
+  assert.equal(first.status, 'cancelled'); assert.equal(second.status, 'queued'); assert.equal(follow.status, 'cancelled');
+  hub.unregister(r.id); assert.equal(second.status, 'failed'); hub.dispose();
+});
+
 test('a faulty observer cannot break tool execution or hide other observers',()=>{
   const errors: Error[]=[],hub=new WorkerHub({onError:error=>errors.push(error)}),s=session();let updates=0;
   hub.subscribe(()=>{throw new Error('UI fault');});hub.subscribe(()=>updates++);

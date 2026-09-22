@@ -66,6 +66,7 @@ export class AgentHubView {
   private detailScroll = 0;
   private _focused = true;
   private canCompose = true;
+  private displayedQuestions = new Map<string, string | null>();
   private hits: Array<{ y: number; x0: number; x1: number; run: () => void }> = [];
   private editorBounds?: { y: number; height: number; width: number; from: number };
   private tui: TUI;
@@ -190,18 +191,21 @@ export class AgentHubView {
     const c = this.composer(id), text = c.editor.getExpandedText();
     if (c.sending || !text.trim()) return;
     const version = c.version; c.sending = true;
+    const expectedQuestion = mode === "steer" ? this.displayedQuestions.get(id) : null;
     try {
-      const question = this.question(id);
+      const question = expectedQuestion ? this.hub.questions().find(q => q.id === expectedQuestion && q.ownerId === id && !q.answering) : undefined;
+      if (expectedQuestion && !question) throw new Error("The displayed question is no longer pending. Review your draft before choosing another action.");
+      if (!expectedQuestion && mode === "steer" && this.question(id)) throw new Error("A new question is pending. Review the answer intent before submitting.");
       if (question) {
         await question.answer({ answer: text });
         c.editor.addToHistory(text);
         if (c.version === version) c.editor.setText("");
-        this.notice(`Answered ${this.hub.get(id)?.label}.`, id);
+        this.notice(`Answer accepted by ${this.hub.get(id)?.label}.`, id);
       } else {
         const delivery = await this.hub.send(id, text, mode);
         c.editor.addToHistory(text);
         if (c.version === version) c.editor.setText("");
-        this.notice(`${delivery.status === "delivered" ? "Delivered" : "Queued"} to ${this.hub.get(id)?.label}. ${mode === "steer" ? "Current tools are not cancelled." : "Runs after current work."}`, id);
+        this.notice(`${delivery.status === "delivered" ? "Delivered" : delivery.status === "queued" ? "Queued (not delivered)" : "Cancelled before delivery"} to ${this.hub.get(id)?.label}. ${mode === "steer" ? "Current tools are not cancelled." : "Runs after current work."}`, id);
       }
     } catch (error: unknown) { this.notice(`Not sent: ${error instanceof Error ? error.message : String(error)}`, id); }
     finally { c.sending = false; this.hub.flushDraft(id); this.state.repaint(); }
@@ -209,6 +213,7 @@ export class AgentHubView {
   private open() {
     if (!this.current() || !this.rows().some(r => r.id === this.state.selectedId)) return;
     this.state.mode = "thread"; this.panel = undefined; this.transcript(); this.composer(this.state.selectedId!);
+    this.displayedQuestions.set(this.state.selectedId!, this.question()?.id ?? null);
     this.setEditorFocus(); this.repaint();
   }
   private back() {
@@ -364,7 +369,8 @@ export class AgentHubView {
     const editorLines = c.editor.render(Math.max(1, width));
     const editorHeight = Math.min(Math.max(3, Math.floor(height / 3)), editorLines.length);
     const delivery = r.deliveries?.at(-1), question = this.question(r.id);
-    const recipient = question ? `Question from ${safe(r.label)}: ${safe(question.title)}` : `To: ${safe(r.label)}${this.hub.canSend(r.id) ? "" : " · read-only result"}`;
+    this.displayedQuestions.set(r.id, question?.id ?? null);
+    const recipient = question ? `Question from ${safe(r.label)}: ${safe(question.title)} · answer ID ${safe(question.id)}` : `To: ${safe(r.label)}${this.hub.canSend(r.id) ? " · steer (F2 queues follow-up)" : " · read-only result"}`;
     const status = question ? `${sendKey()} answers this question directly.` : delivery ? `${delivery.status === "failed" ? "NOT DELIVERED" : delivery.status}: ${safe(delivery.error || (delivery.mode === "followUp" ? "after current work" : "next turn boundary"))}` : r.closed ? "F2 → New investigation uses this draft; it does not restart this agent." : `${sendKey()} sends; it does not cancel a running tool.`;
     const transcriptHeight = Math.max(0, height - editorHeight - 4);
     const window = this.transcript()?.window(this.viewport(), width, transcriptHeight);
