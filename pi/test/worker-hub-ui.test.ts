@@ -109,4 +109,15 @@ test('fullscreen mouse footer opens actions without sending and confirmation def
   assert.match(screen(v, 100), /Actions/); assert.deepEqual(s.calls, []);
 });
 
+test('search and reading state stay bound to a recipient across switches', t => {
+  const hub = new WorkerHub(); for (const id of ['a', 'b', 'c', 'd']) { const s = session(); register(hub, s, id); s.append(assistant(`needle ${id}`)); }
+  const { view: v, state } = viewFixture(t, { hub }); v.handleInput(keys.enter);
+  v.handleInput(keys.f3); v.handleInput('needle'); v.handleInput(keys.enter); v.handleInput(keys.escape);
+  assert.equal(state.viewports.get('a')?.match, 1); v.handleInput(keys.altDown);
+  assert.equal(state.viewports.get('b'), undefined);
+  v.handleInput(keys.altDown); v.handleInput(keys.altDown); v.handleInput(keys.altUp); v.handleInput(keys.altUp); v.handleInput(keys.altUp);
+  assert.equal(state.selectedId, 'a'); assert.equal(state.viewports.get('a')?.searchQuery, 'needle');
+  assert.match(screen(v), /Find needle 1\/1/);
+});
+
 test('stop cannot execute until the selected action is visible in a rendered confirmation', async t => { const hub = new WorkerHub(), s = session(); register(hub, s, 'a', { label: 'Very long agent purpose '.repeat(30) }); const { view: v } = viewFixture(t, { hub, rows: 8 }); v.handleInput(keys.enter); screen(v, 30); v.handleInput('\x18'); v.handleInput(keys.down); v.handleInput(keys.enter); await tick(); assert.equal(s.calls.length, 0); const rendered = screen(v, 30); assert.match(rendered, /Cancel/); assert.match(rendered, /Stop/); v.handleInput(keys.enter); await tick(); assert.deepEqual(s.calls, [['abort']]); });

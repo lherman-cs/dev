@@ -65,6 +65,17 @@ test('search and copy use full text, not collapsed previews; custom renderers ar
   assert.equal(tr.search({follow:true},'SECRET_MATCH'),true);assert.match(tr.exportText(),/SECRET_MATCH/);
 });
 
+test('search moves both directions with wrap and keeps per-thread match position', t => {
+  const {s,transcript:tr}=fixture(t);
+  s.append(assistant('NEEDLE first')); s.append(assistant('middle')); s.append(assistant('NEEDLE second'));
+  const view: Viewport={follow:true}; tr.window(view,60,5);
+  assert.equal(tr.search(view,'NEEDLE'),true); assert.equal(view.match,1); assert.equal(view.matches,2);
+  assert.equal(tr.search(view,'NEEDLE'),true); assert.equal(view.match,2);
+  assert.equal(tr.search(view,'NEEDLE'),true); assert.equal(view.match,1);
+  assert.equal(tr.search(view,'NEEDLE',-1),true); assert.equal(view.match,2);
+  assert.equal(tr.search(view,'missing'),false); assert.equal(view.matches,0);
+});
+
 test('native image tool results remain represented on terminals without graphics',t=>{
   setCapabilities({images:null,trueColor:true,hyperlinks:true});
   const {s,transcript:tr}=fixture(t);

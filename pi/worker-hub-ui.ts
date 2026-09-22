@@ -153,6 +153,7 @@ export class AgentHubView {
         }
         const transcript = new NativeTranscript({ ...this.tui, requestRender: () => this.schedule() }, record);
         transcript.setExpanded(!!this.state.viewports.get(id)?.expanded);
+        transcript.setHideThinking(this.state.viewports.get(id)?.hideThinking ?? true);
         this.transcripts.set(id, transcript);
       }
       const transcript = this.transcripts.get(id)!; transcript.sync(record); return transcript;
@@ -244,7 +245,7 @@ export class AgentHubView {
     if (id) {
       this.menu.push({ title: "Copy full available transcript", run: async () => { this.hub.load(id); const text = this.transcript()?.exportText(); if (text) await (this.options.copy ? this.options.copy(text) : copyToClipboard(text)); this.notice("Transcript copied.", id); } });
       this.menu.push({ title: "Expand / collapse tool output", run: () => { const v = this.viewport(); v.expanded = !v.expanded; this.transcript()?.setExpanded(!!v.expanded); } });
-      this.menu.push({ title: "Show / hide provider-supplied thinking", run: () => this.transcript()?.toggleThinking() });
+      this.menu.push({ title: "Show / hide provider-supplied thinking", run: () => { const v = this.viewport(); v.hideThinking = !(v.hideThinking ?? true); this.transcript()?.setHideThinking(v.hideThinking); } });
       if (isActive(r)) this.menu.push({ title: `Stop ${r.label}…`, run: () => this.stopAction() });
     }
     this.menu.push({ title: "Return to Main (agents keep running)", run: () => this.done() });
@@ -282,6 +283,7 @@ export class AgentHubView {
       if (matchesKey(data, "alt+down")) { this.move(1); return; }
       if (matchesKey(data, "pageUp") || matchesKey(data, "pageDown")) { this.transcript()?.scroll(this.viewport(), (matchesKey(data, "pageUp") ? -1 : 1) * Math.max(1, (this.viewport().height || 10) - 1)); this.repaint(); return; }
       if (matchesKey(data, "f4")) { this.transcript()?.live(this.viewport()); this.repaint(); return; }
+      if (matchesKey(data, "f5") || matchesKey(data, "f6")) { const v = this.viewport(); if (v.searchQuery) this.transcript()?.search(v, v.searchQuery, matchesKey(data, "f5") ? -1 : 1); this.repaint(); return; }
       if (matchesKey(data, "ctrl+o")) { const v = this.viewport(); v.expanded = !v.expanded; this.transcript()?.setExpanded(!!v.expanded); this.repaint(); return; }
       if (matchesKey(data, "ctrl+x")) { this.stopAction(); return; }
       if (!this.canCompose || (this.tui.terminal?.rows || 24) < 10) { this.notice("Resize the terminal to edit; your draft is preserved."); return; }
@@ -375,7 +377,7 @@ export class AgentHubView {
     this.editorBounds = { y: 1 + transcriptHeight + 3, height: editorHeight, width, from };
     return [
       this.theme.bold(`${safe(r.role)} · ${stateText(r)} · ${safe(r.outcome || r.activity)}`),
-      this.theme.fg("muted", `${contextText(r)} · ${this.viewport().follow ? "Live" : "Reading history · F4 live"} · ${window ? `${window.start + 1}–${window.end}/${window.total}` : ""}`),
+      this.theme.fg("muted", `${contextText(r)} · ${this.viewport().follow ? "Live" : "Reading history · F4 live"} · ${window ? `${window.start + 1}–${window.end}/${window.total}` : ""}${this.viewport().searchQuery ? ` · Find ${safe(this.viewport().searchQuery)} ${this.viewport().match || 0}/${this.viewport().matches || 0} (F5/F6)` : ""}`),
       ...lines, this.theme.fg("accent", recipient), ...editorLines.slice(from, from + editorHeight), this.theme.fg(delivery?.status === "failed" ? "error" : "muted", status),
     ].slice(0, height);
   }
@@ -387,7 +389,7 @@ export class AgentHubView {
       "Roster: ↑↓ / j k choose; Enter opens; Tab shows details on narrow terminals; F3 finds; s status, r role, o sort, 0 resets filters.",
       `Thread: type + ${sendKey()} sends to the named recipient. Left/Home/End still edit text; multiline pastes are preserved.`,
       "Alt+↑/↓ switches threads. Each thread keeps its own draft and reading position.",
-      "PgUp/PgDn browse history. F4 returns to live. F3 searches; Enter finds next. Ctrl+O expands tool output.",
+      "PgUp/PgDn browse history. F4 returns to live. F3 searches; F5/F6 previous/next match. Ctrl+O expands tool output.",
       "When an agent asks a question, the composer answers it directly; ↑/↓ recalls sent answers and messages.",
       "F2 actions: queue after current work, copy transcript, related investigation, or stop with confirmation.",
       "Queued is not delivered, and sending does not interrupt executing tools. Failed delivery remains recoverable.",

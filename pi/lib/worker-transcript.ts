@@ -31,7 +31,7 @@ export const contentText = (content: WorkerContent | undefined): string => typeo
 const messageContent = (message: WorkerMessage): WorkerContent | undefined => "content" in message ? message.content : undefined;
 const messageOutput = (message: WorkerMessage): string => "output" in message && typeof message.output === "string" ? message.output : "";
 
-export type Viewport = { follow: boolean; anchor?: { key: string; row: number }; top?: number; height?: number; expanded?: boolean };
+export type Viewport = { follow: boolean; anchor?: { key: string; row: number }; top?: number; height?: number; expanded?: boolean; hideThinking?: boolean; searchQuery?: string; match?: number; matches?: number };
 type DisposableComponent = Component & { invalidate?(): void; dispose?(): void };
 type Block = { key: string; component: DisposableComponent; raw: string; dirty: boolean; lines: string[]; width: number; event?: WorkerToolState };
 type FallbackTool = ReturnType<typeof createBashToolDefinition> | ReturnType<typeof createReadToolDefinition>
@@ -141,10 +141,11 @@ export class NativeTranscript {
     this.expanded = expanded;
     for (const b of this.blocks) if (b.key.startsWith("tool:")) { (b.component as ToolExecutionComponent).setExpanded(expanded); b.dirty = true; }
   }
-  toggleThinking() {
-    this.hideThinking = !this.hideThinking;
+  setHideThinking(value: boolean) {
+    this.hideThinking = value;
     for (const b of this.blocks) { if (b.component instanceof AssistantMessageComponent) b.component.setHideThinkingBlock(this.hideThinking); b.dirty = true; }
   }
+  toggleThinking() { this.setHideThinking(!this.hideThinking); }
   private layout(width: number) {
     this.sync(); this.width = width; this.starts = []; this.total = 0;
     for (const b of this.blocks) {
@@ -182,8 +183,9 @@ export class NativeTranscript {
     state.follow = top === max; state.anchor = this.anchor(top); state.top = top;
   }
   live(state: Viewport) { state.follow = true; delete state.anchor; }
-  search(state: Viewport, query: string) {
-    const q = query.toLocaleLowerCase(); if (!q) return false;
+  search(state: Viewport, query: string, direction: 1 | -1 = 1) {
+    const q = query.toLocaleLowerCase(); if (!q) { state.searchQuery = ""; state.matches = 0; delete state.match; return false; }
+    state.searchQuery = query;
     this.sync();
     const candidates = this.blocks.filter(b => b.raw.toLocaleLowerCase().includes(q));
     for (const b of candidates) if (b.key.startsWith("tool:")) { (b.component as ToolExecutionComponent).setExpanded(true); b.dirty = true; state.expanded = true; }
@@ -193,10 +195,15 @@ export class NativeTranscript {
       const rows = b.lines.flatMap((line, row) => stripTerminalSequences(line).toLocaleLowerCase().includes(q) ? [{ key: b.key, row, index }] : []);
       return rows.length ? rows : [{ key: b.key, row: 0, index }];
     });
+    state.matches = hits.length;
+    if (!hits.length) { delete state.match; return false; }
     const index = this.blocks.findIndex(b => b.key === state.anchor?.key);
-    const found = hits.find(h => h.index > index || (h.index === index && h.row > (state.anchor?.row ?? -1))) || hits[0];
-    if (!found) return false;
-    state.follow = false; state.anchor = { key: found.key, row: found.row }; return true;
+    const current = hits.findIndex(h => h.index === index && h.row === state.anchor?.row);
+    const target = current >= 0 ? (current + direction + hits.length) % hits.length
+      : direction === 1 ? Math.max(0, hits.findIndex(h => h.index > index || h.index === index && h.row > (state.anchor?.row ?? -1)))
+        : (hits.map((h, i) => h.index < index || h.index === index && h.row < (state.anchor?.row ?? 0) ? i : -1).reduce((a, b) => Math.max(a, b), -1) + hits.length) % hits.length;
+    const found = hits[target]!;
+    state.match = target + 1; state.follow = false; state.anchor = { key: found.key, row: found.row }; return true;
   }
   exportText() {
     // Export original content, never rendered/truncated previews. Active output
