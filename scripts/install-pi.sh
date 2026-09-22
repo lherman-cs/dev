@@ -30,7 +30,7 @@ const agent = process.env.PI_CODING_AGENT_DIR;
 const executable = path.join(process.argv[2], 'node_modules/.bin/pi');
 const settings = path.join(agent, 'settings.json');
 const packages = fs.existsSync(settings) ? JSON.parse(fs.readFileSync(settings, 'utf8')).packages || [] : [];
-const owned = /^npm:(pi-subagents|@narumitw\/pi-(?:lsp|github-pr|chrome-devtools|usage)|pi-web-access|pi-mcp-adapter|@juicesharp\/rpiv-todo|@juicesharp\/rpiv-ask-user-question)(@[^/]+)?$/;
+const owned = /^npm:(pi-subagents|@ff-labs\/pi-fff|@narumitw\/pi-(?:lsp|github-pr|chrome-devtools|usage)|pi-web-access|pi-mcp-adapter|@juicesharp\/rpiv-todo|@juicesharp\/rpiv-ask-user-question)(@[^/]+)?$/;
 for (const entry of packages) {
   const source = typeof entry === 'string' ? entry : entry.source;
   if (owned.test(source)) execFileSync(executable, ['remove', source], { stdio: 'inherit' });

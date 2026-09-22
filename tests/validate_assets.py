@@ -6,7 +6,7 @@ import subprocess
 root = Path(__file__).resolve().parents[1]
 pkg = json.loads((root / 'pi/package.json').read_text())
 lock = json.loads((root / 'pi/package-lock.json').read_text())
-requested = {'@narumitw/pi-lsp', '@narumitw/pi-github-pr', '@narumitw/pi-chrome-devtools', '@narumitw/pi-usage', '@sting8k/pi-vcc', 'pi-web-access', 'pi-mcp-adapter'}
+requested = {'@ff-labs/pi-fff', '@narumitw/pi-lsp', '@narumitw/pi-github-pr', '@narumitw/pi-chrome-devtools', '@narumitw/pi-usage', '@sting8k/pi-vcc', 'pi-web-access', 'pi-mcp-adapter'}
 assert requested <= pkg['dependencies'].keys()
 pi_package = '@earendil-works/pi-coding-agent'
 pi_version = pkg['dependencies'][pi_package]
@@ -27,6 +27,7 @@ vcc = json.loads((root / 'dotfiles/.pi/agent/pi-vcc-config.json').read_text())
 assert vcc == {'overrideDefaultCompaction': True, 'smartKeepTail': True, 'continueAfterThresholdCompact': True, 'debug': False, 'skipForProviders': [], 'skipCustomTypes': []}
 assert not (root / 'pi/settings.json').exists()
 assert not (root / 'pi/pi-vcc-config.json').exists()
+assert not (root / 'pi/pi-fff.json').exists()
 assert all(not any(c in version for c in '*^~') for version in pkg['dependencies'].values())
 public_phases = ('spec', 'plan', 'build', 'ship')
 internal_roles = ('review', 'explorer', 'escalated_builder')
