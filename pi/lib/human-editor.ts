@@ -46,7 +46,7 @@ export async function humanEditor(
       };
       const abort = () => finish(undefined);
       const component = new ExtensionEditorComponent(tui, keys, title, prefill, finish, () => finish(undefined));
-      editor = component.children.find(isEditorChild);
+      editor = component.children.find(isEditorChild) as EditorChild | undefined;
       if (!editor) throw new Error("Pinned Pi editor is unavailable; refusing to open an unrecoverable response editor.");
       detach = () => signal?.removeEventListener("abort", abort);
       signal?.addEventListener("abort", abort, { once: true });
