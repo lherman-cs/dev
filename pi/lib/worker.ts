@@ -14,6 +14,23 @@ const readers = ["read", "grep", "find", "ls"];
 const explorerResultChars = 4000;
 const explorerResultMarker = "\n[Explorer result truncated]";
 const reviewResultChars = 12000;
+const builderResultChars = 12000;
+const builderParameters = Type.Object({
+  task: Type.String({ minLength: 1, maxLength: 12000 }),
+  candidate: Type.String({ minLength: 1, maxLength: 2000 }),
+  evidence: Type.String({ minLength: 1, maxLength: 12000 }),
+}, { additionalProperties: false });
+const builderResultSchema = Type.Object({
+  status: Type.Union([Type.Literal("PREPARED"), Type.Literal("FAILED"), Type.Literal("NEEDS_HUMAN")]),
+  candidate: Type.String({ minLength: 1, maxLength: 2000 }),
+  evidence: Type.String({ minLength: 1, maxLength: 12000 }),
+  resultingIdentity: Type.String({ minLength: 1, maxLength: 2000 }),
+  summary: Type.String({ minLength: 1, maxLength: 4000 }),
+  commits: Type.Array(Type.String({ minLength: 1, maxLength: 500 }), { maxItems: 50 }),
+  localChecks: Type.Array(Type.Object({ name: Type.String({ minLength: 1, maxLength: 200 }), result: Type.String({ minLength: 1, maxLength: 1000 }) }, { additionalProperties: false }), { maxItems: 50 }),
+  repairedFindingKeys: Type.Array(Type.String({ minLength: 1, maxLength: 200 }), { maxItems: 50 }),
+  risks: Type.Array(Type.String({ minLength: 1, maxLength: 1000 }), { maxItems: 30 }),
+}, { additionalProperties: false });
 const exploreParameters = Type.Object({ task: Type.String() });
 const reviewParameters = Type.Object({
   task: Type.String({ minLength: 1, maxLength: 12000 }),
@@ -323,6 +340,29 @@ export function reviewTool(run: RunWorker, report: (text: string) => void = () =
       const text = JSON.stringify(result);
       if (text.length > reviewResultChars) throw new Error("Reviewer result exceeds the transport limit.");
       return toolResult(text);
+    } };
+}
+
+export function shipBuilderTool(run: RunWorker): ToolDefinition<typeof builderParameters, Record<string, never>, unknown> {
+  return { name: "ship_builder", label: "Ship Builder", description: "Prepare or repair an exact candidate in a writing child; return a bounded result.", parameters: builderParameters,
+    async execute(_id, args, signal, _onUpdate, ctx) {
+      const result = await run({ cwd: ctx.cwd, name: "build", skill: "dev-ship-builder", schema: builderResultSchema,
+        task: `Candidate identity: ${args.candidate}\nEvidence identity: ${args.evidence}\n\nTask:\n${args.task}`,
+        ...(signal ? { signal } : {}), metadata: { phase: "ship", task: args.task, label: `Builder · ${args.candidate}` },
+      });
+      if (result.candidate !== args.candidate || result.evidence !== args.evidence) throw new Error("Builder result does not match the supplied candidate and evidence identities.");
+      const text = JSON.stringify(result);
+      if (text.length > builderResultChars) throw new Error("Builder result exceeds the transport limit.");
+      return toolResult(text);
+    } };
+}
+
+export function asyncShipBuilderTool(run: RunWorker, publish: PublishAsyncWorkerCompletion): ReturnType<typeof shipBuilderTool> {
+  const foreground = shipBuilderTool(run);
+  return { ...foreground, description: "Start a writing Builder in the background. Returns immediately; completion is delivered asynchronously.",
+    async execute(callId, args, _signal, onUpdate, ctx) {
+      const id = publishDetached("Builder", args.task, Promise.resolve(foreground.execute(callId, args, undefined, onUpdate, ctx)), publish);
+      return toolResult(`Started asynchronous Builder ${id}. Continue independent work; its result will arrive automatically.`);
     } };
 }
 

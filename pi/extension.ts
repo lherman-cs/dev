@@ -1,5 +1,5 @@
 import type { ExtensionAPI, ExtensionContext, SessionManager } from "@earendil-works/pi-coding-agent";
-import { asyncExploreTool, asyncReviewTool, createWorkerRunner, renderAsyncWorkerCompletion, type AsyncWorkerCompletion } from "./lib/worker.ts";
+import { asyncExploreTool, asyncReviewTool, asyncShipBuilderTool, createWorkerRunner, renderAsyncWorkerCompletion, type AsyncWorkerCompletion } from "./lib/worker.ts";
 import { shipArtifactsTool } from "./lib/ship-artifacts-tool.ts";
 import { WorkerHub, isActive } from "./lib/worker-hub.ts";
 import { WorkerHistory } from "./lib/worker-history.ts";
@@ -34,8 +34,8 @@ export default function extension(pi: ExtensionAPI, dependencies: ExtensionDepen
   const setPhase = (next: PublicPhase | undefined): void => {
     phase = next;
     const active = pi.getActiveTools();
-    const tools = active.filter(name => name !== "review");
-    if (next === "ship") tools.push("review");
+    const tools = active.filter(name => name !== "review" && name !== "ship_builder");
+    if (next === "ship") tools.push("review", "ship_builder");
     if (tools.length !== active.length || tools.some((name, index) => name !== active[index])) pi.setActiveTools(tools);
   };
   const lifetime = new AbortController();
@@ -86,10 +86,11 @@ export default function extension(pi: ExtensionAPI, dependencies: ExtensionDepen
   };
   pi.registerTool(asyncExploreTool(run, publishWorkerCompletion));
   pi.registerTool(asyncReviewTool(run, publishWorkerCompletion));
+  pi.registerTool(asyncShipBuilderTool(run, publishWorkerCompletion));
   pi.registerTool(shipArtifactsTool());
   pi.on("tool_call", event => {
     if (event.toolName === "ship_artifacts" && phase !== "ship") return { block: true, reason: "Ship artifacts require an explicit dev-ship invocation." };
-    if (event.toolName === "review" && phase !== "ship") return { block: true, reason: "The review tool is reserved for an explicit dev-ship invocation." };
+    if ((event.toolName === "review" || event.toolName === "ship_builder") && phase !== "ship") return { block: true, reason: "This worker tool is reserved for an explicit dev-ship invocation." };
     if (explorerOnlyTools.has(event.toolName)) return { block: true, reason: `Delegate ${event.toolName} to one or more narrowly scoped explore calls.` };
     if (writesOwned() && !mainReaders.has(event.toolName)) return { block: true, reason: ownershipMessage };
     return undefined;

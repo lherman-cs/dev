@@ -39,7 +39,7 @@ test("four current-session aliases, Agent Hub and isolated tools register withou
   });
   assert.deepEqual([...commands.keys()].sort(), ["dev-build", "dev-plan", "dev-ship", "dev-spec"]);
   assert.ok(shortcuts.has("alt+a"));
-  assert.deepEqual(tools.map(tool => tool.name), ["explore", "review", "ship_artifacts"]);
+  assert.deepEqual(tools.map(tool => tool.name), ["explore", "review", "ship_builder", "ship_artifacts"]);
   assert.equal(messages.length, 0);
   const explore = tools[0]; assert.ok(explore);
   const guidance = explore.promptGuidelines?.join("\n") ?? "";
@@ -81,10 +81,10 @@ test("review is active only for an explicit dev-ship phase", async () => {
   });
   const context = { ui: { notify: noop } } as never;
   await commands.get("dev-ship")?.handler("", context);
-  assert.ok(active.includes("review"));
+  assert.ok(active.includes("review")); assert.ok(active.includes("ship_builder"));
   assert.equal(handlers.get("tool_call")?.({ toolName: "review" }), undefined);
   await commands.get("dev-build")?.handler("", context);
-  assert.ok(!active.includes("review"));
+  assert.ok(!active.includes("review")); assert.ok(!active.includes("ship_builder"));
   assert.match(handlers.get("tool_call")?.({ toolName: "review" })?.reason ?? "", /reserved.*dev-ship/);
   handlers.get("input")?.({ text: "/skill:dev-ship plan.md" });
   assert.ok(active.includes("review"));
