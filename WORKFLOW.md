@@ -1,6 +1,6 @@
 # Pi-first development workflow
 
-Pi is the harness. Git is implementation truth, the approved spec and plan are semantic truth, and GitHub is remote-candidate truth. `/dev-ship` uses one fixed-purpose typed runtime for handoff admission, identity checks, bounded worker routing, CI waiting, and the final human gate. It is not a general scheduler, technical decision-maker, or merge authority.
+Pi is the harness. Git is implementation truth, the approved spec and plan are semantic truth, and GitHub is remote-candidate truth. `/dev-ship` is coordinated by the foreground agent from live evidence, with asynchronous Builder and Reviewer workers and explicit human readiness approval. It has no merge authority.
 
 ## Entry points
 
@@ -15,7 +15,7 @@ Three human gates remain: approve semantics, approve architecture and contracts,
 | Spec | Challenge semantics, scope, splits, callers, ownership, failures, and acceptance evidence. Present the review and stop after explicit approval. |
 | Plan | Turn the approved spec into independently testable outcomes with architecture, dataflow, proof, risks, and deletion choices. Stop after approval. |
 | Build | Complete approved outcomes incrementally. Validate and independently commit each coherent outcome. Resolve ordinary implementation and test failures; stop only for an unresolved consequential decision. |
-| Ship | Use the fixed ship runtime to admit the exact handoff, route Builder and Reviewer payloads unchanged, revalidate identities, and present readiness for explicit human confirmation. Never merge. |
+| Ship | Inspect the approved scope, Git and GitHub; coordinate Builder preparation and independent Reviewer audit, revalidate live evidence, and present a final packet for explicit human approval. Never merge. |
 
 ## Isolated child sessions
 
@@ -27,17 +27,17 @@ Three human gates remain: approve semantics, approve architecture and contracts,
 review({ task, candidate, evidence })
 ```
 
-It creates a fresh Reviewer that explicitly loads `dev-review`. The Shipper receives a job receipt immediately, so independent Explorers and Reviewers can run concurrently while it continues useful work. Each completion is injected as soon as it settles and triggers its owning caller again if idle. No caller awaits a child agent. This includes Main tools, worker-owned Explorers, and the fixed ship runtime's Builder and Reviewer routes. Callers should stop only when a pending result truly gates further progress.
+It creates a fresh Reviewer that explicitly loads `dev-review`. The Shipper receives a job receipt immediately, so independent Explorers and Reviewers can run concurrently while it continues useful work. Each completion is injected as soon as it settles and triggers its owning caller again if idle. No caller awaits a child agent. This includes Main tools, worker-owned Explorers, and ship Builder and Reviewer calls. Callers should stop only when a pending result truly gates further progress.
 
 Reviewer has repository read tools, VCC recall, bounded Explorer access, and `submit_result`, but no mutation, shell, Git, PR, direct-human, or recursive-review capability. Its response is bounded, uses `PASS`, `REPAIRS`, or `BLOCKED`, and exactly echoes the supplied candidate and evidence. Transport validation does not prove evidence completeness or prevent candidate drift: the active Shipper rechecks both before any repair or human confirmation.
 
-Native SDK workers have isolated contexts and cancellation, with Pi-native persisted child transcripts when the parent has a session file. Worker-backed ship transitions first persist an exact pending reservation, return a receipt, and apply or fail that reserved transition from the later asynchronous completion. Every child created through the shared worker boundary registers in one session-wide Agent Hub. `Alt+A` opens the live roster, inspector, and thread UI; the Hub may steer or stop a supplied session but never owns phase sequencing, Git, verification, workflow state, or model policy.
+Native SDK workers have isolated contexts and cancellation, with Pi-native persisted child transcripts when the parent has a session file. Ship Builder returns a receipt immediately, and its bounded exact-candidate result arrives separately. Every child created through the shared worker boundary registers in one session-wide Agent Hub. `Alt+A` opens the live roster, inspector, and thread UI; the Hub may steer or stop a supplied session but never owns phase sequencing, Git, verification, workflow state, or model policy.
 
 Runtime allowlists enforce isolation, edit/write-tool denial, web-tool exclusivity, and non-recursion. The Explorer tool contract owns the general material-cost delegation trigger; the Explorer skill constrains its shell to targeted verification rather than source mutation. Whether a local operation will be materially costly and whether natural-language scopes overlap remain semantic parent responsibilities, made reviewable through explicit boundaries and exclusions rather than misrepresented as mechanically provable. Workers do not inherit the foreground conversation. Web research is available only inside Explorer; foreground-only PR/usage UI and MCP configurations are not replicated into children.
 
 ## Human supervision and recovery
 
-Agent Hub is a view and owner-action adapter, not a scheduler. The fixed dev-ship runtime, rather than the Hub, owns its typed state transitions and side-effect receipts. The Hub preserves independent drafts, anchored history navigation, contextual help, native messages, tool rendering, and completed child transcripts. A queued instruction is not delivered until accepted. The worker owner seals completed sessions and rejects stale structured results after interventions. Related questions create a fresh bounded investigation rather than reviving a completed result.
+Agent Hub is a view and owner-action adapter, not a scheduler. The foreground Shipper sequences live observations, Git/GitHub actions and human approval. The Hub preserves independent drafts, anchored history navigation, contextual help, native messages, tool rendering, and completed child transcripts. A queued instruction is not delivered until accepted. The worker owner seals completed sessions and rejects stale structured results after interventions. Related questions create a fresh bounded investigation rather than reviving a completed result.
 
 The active conversation is responsible for deciding whether to stop a child before changing the worktree. Git, approved artifacts, and remote state make failures visible and resumable. If Explorer is unavailable or fails, the parent may disclose and perform only necessary permitted read-only work directly with bounded output. This fallback grants no prohibited tool or mutation capability, and no fabricated completion is available.
 
