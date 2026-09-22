@@ -127,7 +127,7 @@ mod tests {
     }
     #[test]
     fn every_phase_is_interactive_until_invoked() {
-        for phase in ["spec", "plan", "build", "prepare", "review", "ship"] {
+        for phase in ["spec", "plan", "build", "ship"] {
             let args = phase_args(&roles(), phase, &[]).unwrap();
             assert_eq!(args.len(), 6);
             assert_eq!(&args[..2], &["--provider", "openai-codex"]);

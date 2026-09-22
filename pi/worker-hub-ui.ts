@@ -2,7 +2,6 @@ import { Editor, Input, matchesKey, Text, truncateToWidth, visibleWidth, wrapTex
 import { copyToClipboard, type ExtensionAPI, type ExtensionContext, type Theme } from "@earendil-works/pi-coding-agent";
 import { isActive, WorkerHub } from "./lib/worker-hub.ts";
 import type { WorkerDelivery, WorkerRecord } from "./lib/worker-types.ts";
-import type { WorkflowControl } from "./lib/workflow-control.ts";
 import { NativeTranscript, safeText, type Viewport } from "./lib/worker-transcript.ts";
 
 const safe = (text: unknown) => safeText(String(text ?? "")).replace(/[\r\n\t]+/g, " ");
@@ -46,13 +45,8 @@ export type HubViewState = {
 export const createHubViewState = (): HubViewState => ({ selectedId: undefined, mode: "roster", composers: new Map(), viewports: new Map(), notices: new Map(), repaint: () => {} });
 
 type Action = { title: string; run: () => unknown | Promise<unknown> };
-type HubUIOptions = {
-  control?: () => WorkflowControl | undefined;
-  respond?: (questionId?: string) => void | Promise<void>;
-  resume?: () => void | Promise<void>;
-  copy?: (text: string) => void | Promise<void>;
-};
-/** One surface, shared by ordinary child tools and deterministic controllers. */
+type HubUIOptions = { copy?: (text: string) => void | Promise<void> };
+/** One surface for native child-session inspection and steering. */
 export class AgentHubView {
   private unsubscribe: () => void;
   private timer: ReturnType<typeof setTimeout> | undefined;
@@ -190,24 +184,13 @@ export class AgentHubView {
   }
   private stopAction() {
     const r = this.current(); if (!isActive(r)) return;
-    const scope = r.metadata["parentId"] ? "Only this investigation stops. Its parent may continue." : r.metadata["owner"] === "workflow" ? "The owning workflow will stop with partial work preserved." : "Only this agent and its children stop.";
+    const scope = r.metadata["parentId"] ? "Only this investigation stops. Its parent may continue." : "Only this agent and its children stop.";
     this.confirm = { title: `Stop ${r.label}? ${scope} Already completed edits/commands are not undone.`, run: () => this.hub.abort(r.id) };
     this.menuReady = false; this.menuIndex = 0; this.panel = "confirm"; this.setEditorFocus(); this.repaint();
   }
   private actions() {
     const r = this.current(), id = r?.id;
     this.menu = [];
-    const control = this.options.control?.();
-    for (const question of this.hub.questions()) this.menu.push({ title: `Respond: ${this.hub.get(question.ownerId)?.label || "Agent"} · ${question.title} (in Main)`, run: () => { this.done(); setImmediate(() => this.options.respond?.(question.id)); } });
-    if (control?.pending) this.menu.push({ title: `Respond: ${control.pending.title} (in Main)`, run: () => { this.done(); setImmediate(() => this.options.respond?.()); } });
-    if (control?.state === "running") {
-      this.menu.push({ title: "Pause workflow after current safe step", run: () => control.pause() });
-      this.menu.push({ title: "Stop workflow now (preserve partial work)", run: () => {
-        this.confirm = { title: "Stop the workflow and all its workers? Completed effects are not undone.", run: () => control.stop() };
-        this.panel = "confirm"; this.menuReady = false; this.menuIndex = 0;
-      } });
-    } else if (control?.state === "paused") this.menu.push({ title: "Continue paused workflow (revalidate unchanged work)", run: () => { this.done(); setImmediate(() => this.options.resume?.()); } });
-    else if (control && ["stopped", "failed"].includes(control.state)) this.menu.push({ title: `Recovery: ${control.resumeCommand}`, run: () => this.notice(`Reconcile partial work, then run ${control.resumeCommand} in Main.`) });
     if (id && this.hub.canSend(id)) this.menu.push({ title: "Queue this draft after the agent's current work", run: () => this.send(id, "followUp") });
     if (r?.actions?.cancelQueued && r.deliveries.some(d => d.status === "queued")) { const workerId = r.id; this.menu.push({ title: "Cancel ALL still-queued messages to this agent", run: () => this.hub.cancelQueued(workerId).then(n => this.notice(`Cancelled ${n} queued messages. Original text is retained.`, workerId)) }); }
     if (r?.closed && r.file && this.hub.onRelated) { const workerId = r.id; this.menu.push({ title: "Investigate this draft in a NEW read-only thread", run: async () => {
@@ -347,8 +330,6 @@ export class AgentHubView {
       "F2 actions: queue after current work, copy transcript, related investigation, or stop with confirmation.",
       "Queued is not delivered, and sending does not interrupt executing tools. Failed delivery remains recoverable.",
       "Completed results are read-only. A new investigation never restarts an accepted Builder or changes an old verdict.",
-      "Workflow pause waits for a safe boundary. Stop requests cancellation; neither action undoes completed effects.",
-      "Human approvals wait in Main until you explicitly choose Respond. Ordinary hub Enter never approves work.",
     ].join("\n"), 1, 0).render(width);
       this.helpScroll = Math.min(this.helpScroll, Math.max(0, lines.length - height));
       return lines.slice(this.helpScroll, this.helpScroll + height);
@@ -371,9 +352,6 @@ export class AgentHubView {
     const title = typeof this.title === "function" ? this.title() : this.title;
     const r = this.current();
     const header = [this.theme.fg("accent", this.theme.bold(`Agent Hub · ${this.state.mode === "thread" ? safe(r?.label || "Unavailable thread") : safe(title)}`))];
-    const control = this.options.control?.();
-    if (this.hub.questions().length && height >= 12) header.push(this.theme.fg("warning", `${this.hub.questions().length} agents need you · F2 respond`));
-    if (control && height >= 12) header.push(this.theme.fg(control.pending ? "warning" : "muted", safe(`${control.phase} · ${control.state} · ${control.pending ? `Needs you: ${control.pending.title} · F2 respond` : control.pauseRequested ? "Pause requested; finishing current step" : control.activity}`)));
     const hints = this.panel ? ["Esc back", "F1 help", ...(this.panel === "help" ? ["PgUp/Dn more"] : []), ...(this.panel === "actions" || this.panel === "confirm" ? ["↑↓ choose", "Enter select"] : [])]
       : this.state.mode === "thread" ? ["Esc back", "F1 help", `${sendKey()} send`, "Alt+↑↓ switch", "F2 actions", "PgUp/Dn history", "F4 live"]
       : ["Esc Main", "F1 help", "↑↓ choose", "Enter open", "F2 actions", "F3 find", "Tab details", ...(this.narrowDetails ? ["PgUp/Dn more"] : [])];
@@ -409,12 +387,9 @@ export function registerWorkerHubUI(pi: ExtensionAPI, hub: WorkerHub, options: H
   const seen = new Map<string, string>();
   const widget = () => {
     if (!ctx?.hasUI || disposed) return;
-    ctx.ui.setWidget("dev-workers", (_tui: TUI, theme: Theme) => ({
+    ctx.ui.setWidget("agent-hub", (_tui: TUI, theme: Theme) => ({
       render: (width: number) => {
-        const control = options.control?.();
-        const status = control ? [safe(`${control.phase} · ${control.state} · ${control.pending ? `Needs you: ${control.pending.title} · /dev-respond` : control.pauseRequested ? "Pause requested" : control.activity}`)] : [];
-        const questions = hub.questions();
-        return [...status, ...(questions.length ? [`${questions.length} agents need you · /dev-respond`] : []), ...compactWorkerLines(hub.list())].map(t => theme.fg("muted", truncateToWidth(t, width)));
+        return compactWorkerLines(hub.list()).map(t => theme.fg("muted", truncateToWidth(t, width)));
       }, invalidate() {},
     }));
   };
@@ -442,13 +417,11 @@ export function registerWorkerHubUI(pi: ExtensionAPI, hub: WorkerHub, options: H
     }, { overlay: true, overlayOptions: { anchor: "center", width: "100%", maxHeight: "100%", margin: 0 } });
     try { return await open; } finally { open = undefined; close = undefined; widget(); }
   };
-  pi.registerCommand("dev-workers", { description: "Agent Hub: inspect, message, or stop child agents", handler: async (_args, nextCtx) => { ctx = nextCtx; await show(); } });
   pi.registerShortcut("alt+a", { description: "Agent Hub: switch child threads or return to Main", handler: async nextCtx => { ctx = nextCtx; await show(); } });
   return {
     setContext(next: ExtensionContext) { ctx = next; widget(); },
-    setWorkflow(next?: string) { title = next || "Main session"; refresh(); },
     refresh,
     async beforePrompt() { close?.(); if (open) await open; await new Promise(resolve => setImmediate(resolve)); },
-    dispose() { disposed = true; close?.(); if (timer) clearTimeout(timer); unsubscribe(); hub.flush(); ctx?.ui.setWidget("dev-workers", undefined); state = createHubViewState(); ctx = undefined; },
+    dispose() { disposed = true; close?.(); if (timer) clearTimeout(timer); unsubscribe(); hub.flush(); ctx?.ui.setWidget("agent-hub", undefined); state = createHubViewState(); ctx = undefined; },
   };
 }

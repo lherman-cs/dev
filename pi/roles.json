@@ -4,8 +4,6 @@
     "spec": "openai/gpt-5.6-sol:medium",
     "plan": "openai/gpt-5.6-sol:high",
     "build": "openai/gpt-5.6-sol:low",
-    "build_retry": "openai/gpt-5.6-sol:medium",
-    "prepare": "openai/gpt-5.6-luna:medium",
     "review": "openai/gpt-6-astra:low",
     "ship": "openai/gpt-5.6-luna:medium",
     "explorer": "openai/gpt-5.6-luna:medium"

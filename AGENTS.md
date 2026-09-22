@@ -12,8 +12,8 @@ Instruction ownership:
 - `pi/AGENTS.md` (seed for the user-owned Pi `AGENTS.md`): user-wide preferences only.
 - Repository/local `AGENTS.md`: repository-specific facts and conventions.
 - `pi/skills/dev-*/SKILL.md`: reusable role-specific authority, outputs, and stop conditions.
-- `pi/extension.ts` and `pi/lib/*.mjs`: deterministic lifecycle mechanics; invocation schemas/boundaries; tiny contracts for non-reusable internal workers.
-- `plans/Pxxx.toon` / `repairs/Rxxx.toon`: one task's scope and acceptance checks.
+- `pi/extension.ts` and `pi/lib/*.ts`: current-session alias dispatch; child-session capability boundaries; transport validation; tiny contracts for non-reusable internal workers.
+- Approved Markdown specs and plans: one task's scope and acceptance checks.
 - `pi/roles.json`: exact roles and explicit subscription/API authentication transport.
 - `pi/package.json` and lockfile: pinned requested plugins, not a second harness.
 - `WORKFLOW.md`: documentation, not another prompt-policy source.
@@ -23,9 +23,8 @@ Rules:
 - A narrower layer may specialize but never restate or contradict a broader layer.
 - Skills are compact, single-purpose, and mode-free.
 - **Pi lazy-skills.** Keep skill bodies out of standing instructions; load them only through an explicit `/skill:<name>` invocation when needed.
-- Reusable semantic roles belong in skills; retries, polling, checkpoints, Git/GitHub sequencing, and independent verification belong in code.
-- Controller prompts may add invocation data/output schema/tool boundaries, but must not duplicate skill semantics.
-- Workflow IDs stay in ignored workflow state, never commit messages.
+- Reusable semantic roles, sequencing, Git/GitHub work, verification, repair convergence, and human gates belong in skills.
+- Internal worker transport may add invocation data/output schema and tool boundaries, but must not duplicate skill semantics.
 - Never overwrite user Pi/OMP settings or credentials.
 - Preserve symmetric `dev a <phase>` / `/dev-<phase>` dispatch; no foreground coordinator model.
 - If instructions conflict, fix the sources; do not add precedence prose.

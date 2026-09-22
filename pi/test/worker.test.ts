@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { ModelRuntime, createAgentSession, type AgentSession } from "@earendil-works/pi-coding-agent";
 import { createAssistantMessageEventStream, type AssistantMessage } from "@earendil-works/pi-ai";
-import { createWorkerRunner, exploreTool, type RunWorker } from "../lib/worker.ts";
+import { createWorkerRunner, exploreTool, reviewTool, type RunWorker } from "../lib/worker.ts";
 import { WorkerHub } from "../lib/worker-hub.ts";
 
 type StreamModel = Parameters<ModelRuntime['streamSimple']>[0];
@@ -44,7 +44,7 @@ function message(model: StreamModel, content: AssistantMessage['content'], stopR
 }
 test('actual Pi SDK: fresh contexts, exact role, repo instructions, lazy skill, narrow Explorer', async t=>{
   const f=await fixture(t,(_n,_c,m)=>message(m,[{type:'text',text:'done'}]));
-  for(let i=0;i<2;i++) assert.equal(await f.run({cwd:f.cwd,name:'build',task:`task ${i}`,skill:'dev-implement'}),'done');
+  for(let i=0;i<2;i++) assert.equal(await f.run({cwd:f.cwd,name:'build',task:`task ${i}`,skill:'dev-build'}),'done');
   const firstSession=required(f.sessions[0],'first session'),secondSession=required(f.sessions[1],'second session');
   assert.notEqual(firstSession.sessionId,secondSession.sessionId);
   assert.equal(firstSession.sessionFile,undefined);
@@ -71,6 +71,24 @@ test('native SDK validates structured result tool instead of scraping model pros
   assert.deepEqual(await f.run({cwd:f.cwd,name:'review',task:'check',schema,skill:'dev-review'}),{verdict:'pass'});
   assert.ok(!required(f.sessions[0],'session').getActiveToolNames().some(name=>name==='edit'||name==='write'));
 });
+test('Reviewer is fresh, read-only, cannot ask directly, and may use bounded Explorer', async t=>{
+  const f=await fixture(t,(_n,_c,m)=>message(m,[{type:'text',text:'done'}]));
+  await f.run({cwd:f.cwd,name:'review',task:'candidate',skill:'dev-review',tools:['bash','edit','ask_human']});
+  const names=required(f.sessions[0],'session').getActiveToolNames();
+  for(const name of ['bash','edit','write','ask_human','review','git']) assert.ok(!names.includes(name),name);
+  assert.ok(names.includes('explore'));
+});
+test('review transport rejects mismatched, inconsistent, and oversized results', async()=>{
+  const base={verdict:'PASS',candidate:'abc',evidence:'proof',summary:'ok',findings:[],blocker:null};
+  const invoke=async (result: unknown) => {
+    const run: RunWorker=async()=>result as never;
+    return reviewTool(run).execute('id',{task:'review',candidate:'abc',evidence:'proof'},undefined,undefined,{cwd:process.cwd()} as never);
+  };
+  await assert.rejects(invoke({...base,candidate:'other'}),/does not match/);
+  await assert.rejects(invoke({...base,findings:[{key:'x'}]}),/inconsistent/);
+  await assert.rejects(invoke({...base,summary:'x'.repeat(13000)}),/transport limit/);
+  const ok=await invoke(base); assert.equal(required(ok.content[0],'content').type,'text');
+});
 test('Explorer is fresh, read-only and cannot delegate recursively', async t=>{
   const f=await fixture(t,(_n,_c,m)=>message(m,[{type:'text',text:'Conclusion: found it'}]));
   await f.run({cwd:f.cwd,name:'explorer',task:'find it',tools:['bash','edit','explore']});
@@ -83,7 +101,7 @@ test('Explorer is fresh, read-only and cannot delegate recursively', async t=>{
 });
 test('every non-Explorer worker role receives the bounded Explorer primitive', async t=>{
   const f=await fixture(t,(_n,_c,m)=>message(m,[{type:'text',text:'done'}]));
-  const roles=['spec','plan','build','build_retry','prepare','review','ship'] as const;
+  const roles=['spec','plan','build','review','ship'] as const;
   for(const name of roles) await f.run({cwd:f.cwd,name,task:`${name} task`});
   assert.equal(f.sessions.length,roles.length);
   for(const session of f.sessions) {
@@ -134,7 +152,7 @@ test('a native Builder can call Explorer without inheriting the Builder conversa
     }
     return ++builderTurns===1?message(model,[{type:'toolCall',id:'explore',name:'explore',arguments:{task:'Locate the repository entry point'}}],'toolUse'):message(model,[{type:'text',text:'done'}]);
   });
-  assert.equal(await f.run({cwd:f.cwd,name:'build',task:'PRIVATE_PARENT_CONTEXT',skill:'dev-implement'}),'done');
+  assert.equal(await f.run({cwd:f.cwd,name:'build',task:'PRIVATE_PARENT_CONTEXT',skill:'dev-build'}),'done');
   assert.equal(f.calls.length,4);
   assert.equal(required(f.calls[1],'Explorer call').model.id,'gpt-5.6-luna');
   assert.match(JSON.stringify(required(f.calls[3],'final call').context.messages),/FOUND\\n\\nLocal evidence\\n\\nEvidence/);

@@ -65,8 +65,8 @@ test('damaged files do not hide intact histories; restoration is cancellable', a
   const empty = new WorkerHub({ history }); t.after(() => empty.dispose()); const c = new AbortController(); c.abort(); await history.restore(empty, c.signal); assert.equal(empty.list().length, 0);
 });
 
-test('controller-only Main is natively resumable before any assistant turn; later messages append normally', t => {
-  const { root, parent, history } = fixture(t), id = parent.getSessionId(); parent.appendCustomEntry('controller-start', { phase: 'ship' }); const leaf = parent.getLeafId();
+test('Main with a custom entry is natively resumable before any assistant turn; later messages append normally', t => {
+  const { root, parent, history } = fixture(t), id = parent.getSessionId(); parent.appendCustomEntry('worker-start', { phase: 'ship' }); const leaf = parent.getLeafId();
   assert.equal(fs.existsSync(pathOf(parent.getSessionFile())), false); history.ensureParent(); assert.equal(parent.getSessionId(), id); assert.equal(parent.getLeafId(), leaf);
   assert.ok(!parent.getEntries().some(entry => entry.type === 'message' && entry.message.role === 'assistant')); parent.appendMessage(assistant('A real later reply'));
   const restored = SessionManager.open(pathOf(parent.getSessionFile())); assert.equal(restored.getSessionId(), id); assert.equal(restored.getEntries().filter(entry => entry.type === 'message').length, 1);

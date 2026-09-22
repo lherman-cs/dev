@@ -135,7 +135,7 @@ test('stop a Builder cancels nested Explorer; no child outlives its owner or ret
     if(++builders===1)return msg(model,[{type:'toolCall',id:'explore',name:'explore',arguments:{task:'Find an API'}}],'toolUse');
     return msg(model,'should not reach this');
   });
-  const work=f.run({cwd:f.cwd,name:'build',task:'build',skill:'dev-implement'});const rejection=assert.rejects(work,/abort|cancel/i);await ready.promise;
+  const work=f.run({cwd:f.cwd,name:'build',task:'build',skill:'dev-build'});const rejection=assert.rejects(work,/abort|cancel/i);await ready.promise;
   const parent=required(f.hub.list().find(record=>record.role==='build'),'builder'),child=required(f.hub.list().find(record=>record.role==='explorer'),'explorer');
   assert.equal(child.metadata['parentId'],parent.id);await f.hub.abort(parent.id);await rejection;
   assert.ok(f.hub.list().every(r=>r.state==='aborted'));assert.ok(f.sessions.every(s=>!s.isStreaming));assert.equal(builders,1);
@@ -179,10 +179,10 @@ test('one parent cancellation stops all of its parallel Explorers',{timeout:1000
 
 test('related question starts a NEW read-only Explorer without changing the old outcome',{timeout:10000},async t=>{
   const f=await fixture(t,({model})=>msg(model,'research result'));
-  await f.run({cwd:f.cwd,name:'build',task:'original',skill:'dev-implement'});
+  await f.run({cwd:f.cwd,name:'build',task:'original',skill:'dev-build'});
   const old=required(f.hub.list()[0],'original worker'),oldMessages=JSON.stringify(old.messages),id=await f.hub.related(old.id,'What did the old code do?');
-  // Allow the already-started related run to settle; there is no controller or
-  // original parent continuation triggered by opening/asking this thread.
+  // Allow the already-started related run to settle; opening this thread does
+  // not restart the original parent work.
   while(f.run.hasActive())await new Promise(r=>setImmediate(r));
   const fresh=required(f.hub.get(id),'related worker');assert.notEqual(fresh.id,old.id);assert.equal(fresh.metadata['readOnly'],true);assert.equal(fresh.metadata['relatedTo'],old.id);
   assert.equal(JSON.stringify(old.messages),oldMessages);assert.equal(old.state,'completed');assert.equal(f.calls.length,2);
@@ -232,21 +232,6 @@ test('result tool already generated before a queued instruction cannot certify a
   const finish=await ready.promise;await f.hub.send(required(f.hub.list()[0],'worker').id,'Please change the title');
   finish([{type:'toolCall',id:'old-title',name:'submit_result',arguments:{title:'Generated before your correction'}}],'toolUse');
   await rejection;
-});
-
-test('child questions wait for explicit human response and cancellation releases the wait',{timeout:10000},async t=>{
-  const f=await fixture(t,({n,model,context})=>n===1?msg(model,[{type:'toolCall',id:'ask',name:'ask_human',arguments:{question:'Which implementation should I inspect?'}}],'toolUse'):msg(model,'Human answered: '+JSON.stringify(context.messages.at(-1))));
-  const work=f.run({cwd:f.cwd,name:'explorer',task:'ask a question'});
-  while(!f.hub.questions().length)await new Promise(r=>setImmediate(r));
-  const question=required(f.hub.questions()[0],'human question');assert.equal(f.calls.length,1);await question.answer({answer:'Existing implementation'});
-  assert.match(await work,/Existing implementation/);assert.equal(f.hub.questions().length,0);
-});
-
-test('stopping a questioning child cancels the question without implicitly answering',{timeout:10000},async t=>{
-  const f=await fixture(t,({model})=>msg(model,[{type:'toolCall',id:'ask',name:'ask_human',arguments:{question:'Need help'}}],'toolUse'));
-  const work=f.run({cwd:f.cwd,name:'explorer',task:'ask'});const rejected=assert.rejects(work,/abort|cancel/i);
-  while(!f.hub.questions().length)await new Promise(r=>setImmediate(r));
-  await f.hub.abort(required(f.hub.list()[0],'worker').id);await rejected;assert.equal(f.hub.questions().length,0);assert.equal(f.calls.length,1);
 });
 
 test('cancelled queued feedback does not become delivered feedback or poison a new review result',{timeout:10000},async t=>{

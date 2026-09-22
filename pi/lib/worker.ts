@@ -12,7 +12,28 @@ const packageDir = fileURLToPath(new URL("../", import.meta.url));
 const readers = ["read", "grep", "find", "ls"];
 const explorerResultChars = 4000;
 const explorerResultMarker = "\n[Explorer result truncated]";
+const reviewResultChars = 12000;
 const exploreParameters = Type.Object({ task: Type.String() });
+const reviewParameters = Type.Object({
+  task: Type.String({ minLength: 1, maxLength: 12000 }),
+  candidate: Type.String({ minLength: 1, maxLength: 2000 }),
+  evidence: Type.String({ minLength: 1, maxLength: 12000 }),
+}, { additionalProperties: false });
+const reviewResultSchema = Type.Object({
+  verdict: Type.Union([Type.Literal("PASS"), Type.Literal("REPAIRS"), Type.Literal("BLOCKED")]),
+  candidate: Type.String({ minLength: 1, maxLength: 2000 }),
+  evidence: Type.String({ minLength: 1, maxLength: 12000 }),
+  summary: Type.String({ minLength: 1, maxLength: 4000 }),
+  findings: Type.Array(Type.Object({
+    key: Type.String({ minLength: 1, maxLength: 200 }),
+    title: Type.String({ minLength: 1, maxLength: 500 }),
+    problem: Type.String({ minLength: 1, maxLength: 4000 }),
+    evidence: Type.Array(Type.String({ minLength: 1, maxLength: 1000 }), { maxItems: 20 }),
+    acceptance_checks: Type.Array(Type.String({ minLength: 1, maxLength: 1000 }), { maxItems: 20 }),
+  }, { additionalProperties: false }), { maxItems: 30 }),
+  blocker: Type.Union([Type.String({ minLength: 1, maxLength: 4000 }), Type.Null()]),
+}, { additionalProperties: false });
+export type ReviewResult = Static<typeof reviewResultSchema>;
 const explorerResultSchema = Type.Object({
   status: Type.Union([Type.Literal("FOUND"), Type.Literal("INCONCLUSIVE"), Type.Literal("BLOCKED")]),
   answer: Type.String({ minLength: 1, description: "Direct answer to the assigned factual question." }),
@@ -31,7 +52,7 @@ const renderExplorerResult = (result: ExplorerResult): string => {
 const boundExplorerResult = (text: string): string => text.length > explorerResultChars
   ? `${text.slice(0, explorerResultChars - explorerResultMarker.length)}${explorerResultMarker}`
   : text;
-const roleLabels: Partial<Record<RoleName, string>> = { build: "Builder", build_retry: "Builder retry", review: "Reviewer", explorer: "Explorer", ship: "PR summary" };
+const roleLabels: Partial<Record<RoleName, string>> = { build: "Builder", review: "Reviewer", explorer: "Explorer", ship: "Shipper" };
 const roleLabel = (name: RoleName): string => roleLabels[name] ?? name;
 
 /** Only behavioral settings cross the worker boundary, never ambient tools/UI. */
@@ -128,7 +149,7 @@ export function createWorkerRunner(options: RunnerOptions): WorkerRunner {
       const manager = history?.create(cwd, { id, label, role: name, model: selected.model, thinking: selected.thinking, metadata: workerMetadata, startedAt: Date.now() }) || SessionManager.inMemory(cwd);
       const childRun: RunWorker = <TChildShape extends TSchema | undefined = undefined>(args: RunArguments<TChildShape>) => execute({ ...args, signal: AbortSignal.any([signal, args.signal ?? signal]) });
       const customTools: ToolDefinition[] = explorer ? [] : [exploreTool(childRun, quietReport, { parentId: id, owner: metadata.owner, phase: metadata.phase }) as unknown as ToolDefinition];
-      if (askHuman) {
+      if (askHuman && !readonly) {
         const askSchema = Type.Object({ question: Type.String(), choices: Type.Optional(Type.Array(Type.String())) });
         customTools.push({ name: "ask_human", label: "Ask human", description: "Ask a bounded question and wait for the human to respond explicitly in Main.",
         parameters: askSchema,
@@ -147,7 +168,9 @@ export function createWorkerRunner(options: RunnerOptions): WorkerRunner {
         } });
       const allowed = explorer
         ? [...readers, "web_search", "source_check", "fetch_content", "get_search_content"]
-        : tools || [...readers, ...(!readonly ? ["bash", "edit", "write", "lsp_diagnostics", "lsp_fix", "chrome_devtools_load", "chrome_devtools_list_pages", "chrome_devtools_select_page", "chrome_devtools_navigate", "chrome_devtools_evaluate", "chrome_devtools_screenshot"] : [])];
+        : name === "review"
+          ? readers
+          : tools || [...readers, ...(!readonly ? ["bash", "edit", "write", "lsp_diagnostics", "lsp_fix", "chrome_devtools_load", "chrome_devtools_list_pages", "chrome_devtools_select_page", "chrome_devtools_navigate", "chrome_devtools_evaluate", "chrome_devtools_screenshot"] : [])];
       const created = await create({ cwd, model, thinkingLevel: selected.thinking, modelRuntime: models,
         settingsManager: settings, resourceLoader: loader, sessionManager: manager,
         tools: [...allowed, "vcc_recall", ...customTools.map(tool => tool.name)], customTools });
@@ -246,6 +269,26 @@ export function createWorkerRunner(options: RunnerOptions): WorkerRunner {
 }
 
 // Universal, bounded, read-only exploration; not an arbitrary subagent tool.
+export function reviewTool(run: RunWorker, report: (text: string) => void = () => undefined): ToolDefinition<typeof reviewParameters, Record<string, never>, unknown> {
+  return { name: "review", label: "Reviewer",
+    description: "Review one exact candidate in a fresh, read-only Reviewer session.",
+    parameters: reviewParameters,
+    async execute(_id, args, signal, _onUpdate, ctx) {
+      const result = await run({ name: "review", cwd: ctx.cwd,
+        task: `Review this exact candidate. Candidate identity: ${args.candidate}\nEvidence identity: ${args.evidence}\n\nTask:\n${args.task}`,
+        skill: "dev-review", schema: reviewResultSchema, tools: readers, ...(signal ? { signal } : {}), report,
+        metadata: { task: args.task, label: `Reviewer · ${args.candidate}`, candidate: args.candidate, evidence: args.evidence },
+      }) as ReviewResult;
+      if (result.candidate !== args.candidate || result.evidence !== args.evidence) throw new Error("Reviewer result does not match the supplied candidate and evidence identities.");
+      if ((result.verdict === "PASS" && (result.findings.length || result.blocker !== null))
+        || (result.verdict === "REPAIRS" && (!result.findings.length || result.blocker !== null))
+        || (result.verdict === "BLOCKED" && (result.findings.length || result.blocker === null))) throw new Error("Reviewer result is inconsistent with its verdict.");
+      const text = JSON.stringify(result);
+      if (text.length > reviewResultChars) throw new Error("Reviewer result exceeds the transport limit.");
+      return toolResult(text);
+    } };
+}
+
 export function exploreTool(run: RunWorker, report: (text: string) => void = () => undefined, parentMetadata: Record<string, unknown> = {}): ToolDefinition<typeof exploreParameters, Record<string, never>, unknown> {
   return { name: "explore", label: "Explorer",
     description: "Delegate one independent, narrowly scoped read-only investigation. Use separate calls for separate scopes. Returns compact evidence, not a transcript.",
