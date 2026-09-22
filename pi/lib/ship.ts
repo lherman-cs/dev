@@ -29,7 +29,7 @@ type ShipState = {
   pending_repairs?: PendingRepairs | null;
 };
 type ShipCheckpoint = { state: ShipState; persist: () => void };
-type SignalData = {
+type RawSignalData = {\n};\ntype SignalData = RawSignalData & {
   headRefOid: string;
   baseRefOid: string;
   statusCheckRollup: any[];
@@ -46,7 +46,7 @@ const digest = (value: unknown): string => createHash("sha256").update(JSON.stri
 const blocked = (message: string): GateError => Object.assign(new Error(message), { blocked: true });
 const nonempty = (value: unknown): value is string => typeof value === "string" && value.trim().length > 0;
 const readTools = ["read", "grep", "find", "ls"];
-const findingKey = (task: ExecutionTask): string | undefined => typeof task.source === "string" ? task.source : task.source?.finding_key;
+const findingKey = (task: ExecutionTask): string | undefined => typeof task.source === "string" ? task.source : task.source?.finding_key;\nconst sourceCandidate = (task: ExecutionTask): string | undefined => typeof task.source === "object" && task.source ? task.source.candidate : undefined;
 const specPath = (project: Project): string => path.join(project.dir, "spec.md");
 const finalChecks = (project: Project): string[] => {
   const declared = contracts(project).meta.final_checks;
@@ -76,7 +76,7 @@ const reviewSchema: Record<string, unknown> = {
 // All durable state remains the original small TOON checkpoint, not model history.
 function loadShip(project: Project): ShipCheckpoint {
   const file = path.join(project.dir, "ship.toon");
-  const state = fs.existsSync(file) ? read<ShipState>(file) : { version: 1, phase: "build", repair_round: 0, verified_head: null, candidate: null, approved_head: null, last_failure: null, blocked: null };
+  const state: ShipState = fs.existsSync(file) ? read<ShipState>(file) : { version: 1, phase: "build", repair_round: 0, verified_head: null, candidate: null, approved_head: null, last_failure: null, blocked: null };
   if (!["build", "prepare", "await", "review", "human", "blocked", "done"].includes(state.phase)) throw new Error("Unknown shipping checkpoint; preserve it and reconcile explicitly.");
   return { state, persist: () => save(file, state) };
 }
@@ -175,7 +175,7 @@ async function prepare(h: WorkflowHost, project: Project, ship: ShipCheckpoint):
 
 async function signals(h: WorkflowHost, c: Candidate): Promise<SignalData> {
   await unchanged(h, c);
-  const data = await ghJSON<Omit<SignalData, "pending" | "red">>(h, ["pr", "view", String(c.pr), "--json", "headRefOid,baseRefOid,statusCheckRollup,comments,reviews,updatedAt"]);
+  const data = await ghJSON<RawSignalData>(h, ["pr", "view", String(c.pr), "--json", "headRefOid,baseRefOid,statusCheckRollup,comments,reviews,updatedAt"]);
   if (data.headRefOid !== c.head || data.baseRefOid !== c.base || !Array.isArray(data.statusCheckRollup)) throw new Error("Cannot verify exact-candidate CI signals.");
   let pending = false, red = false;
   for (const check of data.statusCheckRollup as any[]) {
@@ -274,7 +274,7 @@ function addRepairs(project: Project, issues: RepairIssue[], c: CandidateRef): v
   const { tasks, all } = contracts(project);
   let next = Math.max(0, ...all.map((t: ExecutionTask) => Number(/^R(\d+)$/.exec(t.id)?.[1] || 0))) + 1;
   for (const issue of issues) {
-    if (all.some((t: ExecutionTask) => findingKey(t) === issue.key && t.source?.candidate === c.head)) continue;
+    if (all.some((t: ExecutionTask) => findingKey(t) === issue.key && sourceCandidate(t) === c.head)) continue;
     const id = `R${String(next++).padStart(3, "0")}`;
     save(path.join(project.dir, "repairs", `${id}.toon`), { version: 1, id, title: issue.title, goal: issue.goal,
       requirements: issue.requirements || [issue.reason].filter(Boolean), checks: issue.checks, depends_on: tasks.map(t => t.id),
@@ -314,7 +314,7 @@ export async function shipping(h: WorkflowHost, project: Project, phase: Workflo
   if (phase === "prepare") {
     requireComplete(project);
     state.phase = "prepare"; state.approved_head = null; persist();
-    await prepare(h, project, ship); h.report(`Prepared ${state.candidate.url}`); return;
+    await prepare(h, project, ship);\n    if (!state.candidate) throw new Error("Preparation did not produce a candidate.");\n    h.report(`Prepared ${state.candidate.url}`); return;
   }
   if (state.phase === "blocked") {
     if (!await h.confirm("Resume blocked workflow?", `${state.blocked?.reason || "Shipping is blocked."}\nResume only after reconciling this with the approved spec/plans.`)) return;
