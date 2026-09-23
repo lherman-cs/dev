@@ -22,7 +22,7 @@ review = "openai/gpt-6-astra:medium"
 
 # Role: Classify a tiny typed stopping report, without checking the work or the goal.
 # Reason: Use one configured model for a restricted four-label intent decision.
-assessor = "openai/gpt-6-sol:low"
+assessor = "openai/gpt-6-astra:low"
 
 # Role: Repair, validate, rebase, publish, and establish PR readiness.
 # Signals: AutomationBench, Agents' Last Exam, FrontierCode, OSWorld.
