@@ -6,7 +6,7 @@ disable-model-invocation: true
 
 # dev-build
 
-Implement the requested outcome to completion, one independently testable part at a time. An approved spec or plan is optional. Follow applicable approved decisions; otherwise derive semantics from the request and repository evidence and resolve ordinary design choices yourself.
+Implement the requested outcome to completion, one independently testable part at a time. An approved spec is optional. Follow applicable approved decisions; otherwise derive semantics from the request and repository evidence and resolve ordinary design choices yourself.
 
 - Read `../references/reconcile.md` at entry. Map requested outcomes to existing commits, partial edits and current proof before implementing the next one. A missing spec, plan, earlier phase, or session is not a stop condition.
 - Preserve applicable approved semantics and architecture; adapt local mechanics.
