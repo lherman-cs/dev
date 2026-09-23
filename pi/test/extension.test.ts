@@ -40,7 +40,7 @@ test("three current-session aliases, Agent Hub and isolated tools register witho
   });
   assert.deepEqual([...commands.keys()].sort(), ["dev-build", "dev-goal", "dev-ship", "dev-spec"]);
   assert.ok(shortcuts.has("alt+a"));
-  assert.deepEqual(tools.map(tool => tool.name), ["goal_control", "finish", "explore", "review"]);
+  assert.deepEqual(tools.map(tool => tool.name), ["goal_control", "continue_goal", "finish", "stopping_report", "explore", "review"]);
   assert.equal(messages.length, 0);
   const explore = tools.find(tool => tool.name === "explore"); assert.ok(explore);
   const toolCall = handlers.get("tool_call"); assert.ok(toolCall);
@@ -163,7 +163,7 @@ test("failed Explorer delivery pauses the active goal instead of silently settli
   await new Promise(done => setImmediate(done));
   const goals = manager.getBranch().filter(entry => entry.type === "custom" && entry.customType === "dev-goal");
   assert.equal((goals.at(-1) as { data: { status: string; reason: string } }).data.status, "Paused");
-  assert.match((goals.at(-1) as { data: { status: string; reason: string } }).data.reason, /queue unavailable/);
+  assert.match((goals.at(-1) as { data: { status: string; reason: string } }).data.reason, /delivery failed/);
 });
 
 test("a completed asynchronous Explorer steers Main and triggers progress", async () => {

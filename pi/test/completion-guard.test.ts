@@ -1,290 +1,119 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
-import { mkdtempSync, writeFileSync, rmSync, unlinkSync, mkdirSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { SessionManager, type ExtensionAPI, type ExtensionContext, type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { registerCompletionGuard } from "../lib/completion-guard.ts";
-import type { RunWorker } from "../lib/worker.ts";
+import { validateReport, classifyReport, serializeReport, type ClassifierBackend, type StoppingReport } from "../lib/finish-classifier.ts";
 
-function fixture(hasAsyncWork = () => false, deliveryFails = false, cwd = process.cwd()) {
-  const manager = SessionManager.inMemory(cwd);
-  const context = { cwd, sessionManager: manager, hasUI: false, ui: { notify: () => undefined, setWidget: () => undefined } } as unknown as ExtensionContext;
+const report: StoppingReport = { progress: "Finished entire goal", remaining: null, blocker: null };
+const flush = () => new Promise<void>(done => setImmediate(done));
+function fixture(backend?: ClassifierBackend, failDelivery = false) {
+  const manager = SessionManager.inMemory(process.cwd());
+  const context = { sessionManager: manager, ui: { setWidget: () => undefined, notify: () => undefined } } as unknown as ExtensionContext;
   const handlers = new Map<string, Array<(event: any, ctx: ExtensionContext) => any>>();
-  const tools: ToolDefinition[] = [], messages: string[] = [], assessments: Array<{ name: string; task: string }> = [];
-  let resolve!: (value: unknown) => void;
-  let reject!: (reason: unknown) => void;
-  const run = ((args: { name: string; task: string }) => { assessments.push(args); return new Promise<unknown>((done, fail) => { resolve = done; reject = fail; }); }) as RunWorker;
-  const pi = {
-    on: (name: string, handler: (event: any, ctx: ExtensionContext) => any) => {
-      handlers.set(name, [...(handlers.get(name) || []), handler]); return () => undefined;
-    },
-    registerTool: (tool: ToolDefinition) => { tools.push(tool); },
-    appendEntry: (name: string, data: unknown) => { manager.appendCustomEntry(name, data); },
-    sendMessage: (message: { content: string }) => { if (deliveryFails) throw new Error("queue unavailable"); messages.push(message.content); },
+  const tools = new Map<string, ToolDefinition>();
+  const messages: string[] = [];
+  const pi = { on: (name: string, fn: (event: any, ctx: ExtensionContext) => any) => { handlers.set(name, [...(handlers.get(name) ?? []), fn]); },
+    registerTool: (tool: ToolDefinition) => { tools.set(tool.name, tool); },
+    appendEntry: (name: string, data: unknown) => manager.appendCustomEntry(name, data),
+    sendMessage: (m: { content: string }) => { if (failDelivery) throw Error("transport unavailable"); messages.push(m.content); },
   } as unknown as ExtensionAPI;
-  const guard = registerCompletionGuard(pi, run);
-  const emit = (name: string, event: any = {}, ctx = context) => handlers.get(name)?.map(fn => fn(event, ctx));
-  const finish = tools.find(t => t.name === "finish")!, control = tools.find(t => t.name === "goal_control")!;
-  const settle = () => emit("agent_before_settle", { outcome: "completed", context: { canContinue: true } })?.[0];
-  return { guard, emit, finish, control, settle, context, manager, messages, assessments,
-    resolve: (verdict: unknown) => resolve(verdict), reject: (reason: unknown) => reject(reason) };
-}
-const flush = async () => { await new Promise(done => setImmediate(done)); };
-function scratchRepo(fn: (cwd: string) => Promise<void>) {
-  const cwd = mkdtempSync(join(tmpdir(), "pi-goal-"));
-  execFileSync("git", ["init", "-q", cwd]);
-  execFileSync("git", ["-C", cwd, "-c", "user.name=Test", "-c", "user.email=t@example.org", "commit", "--allow-empty", "-qm", "base"]);
-  return fn(cwd).finally(() => rmSync(cwd, { recursive: true, force: true }));
+  const guard = registerCompletionGuard(pi, undefined, () => backend ?? { label: () => "test assessor", checkFit: async () => {}, classify: async () => "unclear" });
+  const emit = (name: string, event: unknown = {}) => handlers.get(name)?.map(fn => fn(event, context));
+  const state = () => manager.getBranch().filter(e => e.type === "custom" && e.customType === "dev-goal")
+    .map(e => e.type === "custom" ? e.data as { status: string; reason: string; stages: unknown[]; outcome: string } : undefined).at(-1)!;
+  const execute = (name: string, args: unknown, signal = new AbortController().signal) => tools.get(name)!.execute("test", args as never, signal, () => {}, context);
+  guard.activate("Finish the requested goal", "build", context);
+  return { guard, emit, tools, execute, state, messages, context };
 }
 
-test("partial milestones continue without assessing; closed todos request one finish gate", () => {
-  const f = fixture(); f.guard.activate("Implement two cases", "build", f.context);
-  f.emit("tool_result", { toolName: "todo", details: { tasks: [{ id: 1, subject: "case A", status: "pending" }] } });
-  assert.match(f.settle().entries[0].content, /case A/);
-  f.emit("tool_result", { toolName: "todo", details: { tasks: [{ id: 1, subject: "case A", status: "completed" }] } });
-  assert.match(f.settle().entries[0].content, /Submit finish/);
-});
-
-test("only current-goal asynchronous evidence suppresses settlement and premature finish", async () => {
-  const f = fixture(() => true);
-  f.guard.activate("Complete A", "build", f.context);
-  const owner = f.guard.workerOwner();
-  f.guard.workerStarted("explorer:1", owner);
-  assert.equal(f.settle(), undefined);
-  await assert.rejects(f.finish.execute("id", { outcome: "complete", summary: "Done", evidence: "A" }, undefined, undefined, f.context), /asynchronous evidence/);
-  assert.equal(f.guard.workerFinished("explorer:1", owner), true);
-  assert.match(f.settle().entries[0].content, /finish/);
-});
-
-test("paused and replaced goals cannot inherit late worker completions", () => {
-  const f = fixture(); f.guard.activate("Original A", "build", f.context);
-  const old = f.guard.workerOwner();
-  f.guard.workerStarted("explorer:old", old);
-  f.guard.pause("Interrupted");
-  f.guard.resume(f.context);
-  assert.equal(f.guard.workerFinished("explorer:old", old), false);
-  const fresh = f.guard.workerOwner();
-  assert.notEqual(fresh, old);
-  f.guard.workerStarted("reviewer:fresh", fresh);
-  assert.equal(f.settle(), undefined);
-  assert.equal(f.guard.workerFinished("reviewer:fresh", fresh), true);
-  assert.match(f.settle().entries[0].content, /finish/);
-});
-
-test("unsupported finish returns missing work; accepted finish settles", async () => {
-  const f = fixture(); f.guard.activate("Implement A and B", "build", f.context);
-  const args = { outcome: "complete", summary: "A is done", evidence: "test A" };
-  const receipt = await f.finish.execute("id", args, undefined, undefined, f.context);
-  assert.match((receipt.content[0] as { text: string }).text, /provisional/);
-  assert.equal(f.assessments[0]?.name, "assessor");
-  assert.match(f.assessments[0]!.task, /Endpoint.*requested implementation/);
-  f.resolve({ verdict: "missing", explanation: "B has no proof", missing: ["Implement B"] }); await flush();
-  assert.match(f.messages.at(-1)!, /B has no proof/);
-  assert.ok(f.settle());
-  await f.finish.execute("id", args, undefined, undefined, f.context);
-  f.resolve({ verdict: "complete", explanation: "A and B verified", missing: [] }); await flush();
-  assert.ok(f.messages.some(message => /confirmed/.test(message)));
-  assert.equal(f.settle(), undefined);
-  f.emit("input", { source: "interactive", text: "Also prove B" });
-  assert.equal(f.settle(), undefined); // Completed identity stays historical.
-});
-
-test("session navigation and candidate drift cannot accept late results", async () => {
-  const f = fixture(); f.guard.activate("Complete A", "ship", f.context);
-  await f.finish.execute("id", { outcome: "complete", summary: "done", evidence: "A" }, undefined, undefined, f.context);
-  f.emit("tool_result", { toolName: "todo", details: { tasks: [{ id: 2, subject: "A", status: "pending" }] } });
-  f.resolve({ verdict: "complete", explanation: "old", missing: [] }); await flush();
-  assert.ok(f.messages.some(message => /superseded/.test(message)));
-  assert.match(f.settle().entries[0].content, /A/);
-});
-
-test("an unsupported blocker never settles, and repeated assessment failures pause explicitly", async () => {
-  const f = fixture(); f.guard.activate("Complete A", "build", f.context);
-  const args = { outcome: "blocked", summary: "Need human", evidence: "No reason supplied" };
-  await f.finish.execute("id", args, undefined, undefined, f.context);
-  f.resolve({ verdict: "missing", explanation: "Ordinary implementation remains", missing: ["Implement A"] }); await flush();
-  assert.match(f.messages.at(-1)!, /Ordinary implementation/);
-  await f.finish.execute("id", args, undefined, undefined, f.context);
-  f.reject(new Error("transport down")); await flush();
-  await f.finish.execute("id", args, undefined, undefined, f.context);
-  f.reject(new Error("transport down")); await flush();
-  assert.match(f.messages.at(-1)!, /unavailable/i);
-  assert.equal(f.settle(), undefined);
-});
-
-test("failed assessment delivery cannot silently certify completion", async () => {
-  const f = fixture(() => false, true); f.guard.activate("Complete A", "build", f.context);
-  await f.finish.execute("id", { outcome: "complete", summary: "Done", evidence: "test A" }, undefined, undefined, f.context);
-  f.resolve({ verdict: "complete", explanation: "verified", missing: [] }); await flush();
-  assert.equal(f.messages.length, 0);
-  assert.equal(f.settle(), undefined);
-  const record = f.manager.getBranch().filter(e => e.type === "custom" && e.customType === "dev-goal").at(-1);
-  assert.match(String(record?.type === "custom" && (record.data as { reason?: string }).reason), /delivery failed/i);
-});
-
-test("repeated identical missing work without progress pauses instead of retrying forever", async () => {
-  const f = fixture(); f.guard.activate("Implement B", "build", f.context);
-  const args = { outcome: "complete", summary: "Done", evidence: "test A" };
-  for (let attempt = 0; attempt < 2; attempt++) {
-    await f.finish.execute("id", args, undefined, undefined, f.context);
-    f.resolve({ verdict: "missing", explanation: "B remains", missing: ["Implement B"] }); await flush();
+test("explicit terminal outcomes settle without creating a classifier", async () => {
+  let called = 0;
+  for (const outcome of ["complete", "blocked"]) {
+    const f = fixture({ label: () => "unused", checkFit: async () => { called++; }, classify: async () => { called++; return "done"; } });
+    await f.execute("finish", { outcome, summary: "Foreground claim", evidence: "reported" });
+    assert.equal(f.state().status, outcome === "complete" ? "Completed" : "Blocked");
+    assert.match(f.state().outcome, /foreground/);
   }
-  assert.match(f.messages.at(-1)!, /Repeated identical/);
-  assert.equal(f.settle(), undefined);
+  assert.equal(called, 0);
 });
 
-test("a genuine blocker can settle, while session navigation discards a late assessment", async () => {
-  const f = fixture(); f.guard.activate("Publish with human authority", "ship", f.context);
-  const args = { outcome: "blocked", summary: "Missing protected-branch approval", evidence: "Human approver unavailable" };
-  await f.finish.execute("id", args, undefined, undefined, f.context);
-  f.resolve({ verdict: "blocked", explanation: "Approval is required and unavailable", missing: [] }); await flush();
-  assert.ok(f.messages.some(message => /confirmed/.test(message)));
-  assert.equal(f.settle(), undefined);
-  f.guard.abandon(); // Blocked goal must be explicitly ended before replacing it in a non-interactive session.
-  await f.guard.activate("New request", "build", f.context);
-  await f.finish.execute("id", { outcome: "complete", summary: "Done", evidence: "Proof" }, undefined, undefined, f.context);
-  f.emit("session_before_switch");
-  f.resolve({ verdict: "complete", explanation: "stale", missing: [] }); await flush();
-  assert.equal(f.messages.filter(message => /stale/.test(message)).length, 0);
-  assert.equal(f.settle(), undefined);
+test("explicit continuation schedules fixed wording and no classifier", async () => {
+  const f = fixture({ label: () => "unused", checkFit: async () => { throw Error("called"); }, classify: async () => { throw Error("called"); } });
+  await f.execute("continue_goal", {});
+  assert.equal(f.state().status, "Active");
+  assert.match(f.messages.at(-1)!, /Continue only the work already authorized/);
+  f.emit("agent_before_settle", { outcome: "completed", context: { canContinue: true } });
+  assert.equal(f.state().status, "Active");
 });
 
-test("untracked contents, including changes beyond the displayed evidence window, invalidate pending proof", () => scratchRepo(async cwd => {
-  const f = fixture(() => false, false, cwd); await f.guard.activate("Deliver artifact", "build", f.context);
-  const file = join(cwd, "artifact.txt");
-  writeFileSync(file, "A".repeat(30000));
-  await f.finish.execute("id", { outcome: "complete", summary: "Delivered", evidence: "artifact" }, undefined, undefined, f.context);
-  writeFileSync(file, "A".repeat(29999) + "B");
-  f.resolve({ verdict: "complete", explanation: "Verified old version", missing: [] }); await flush();
-  assert.ok(f.messages.some(m => /superseded/.test(m)));
-  assert.match(f.settle().entries[0].content, /finish/);
-}));
-
-test("an ignored referenced plan edit invalidates in-flight acceptance", () => scratchRepo(async cwd => {
-  writeFileSync(join(cwd, ".gitignore"), "plans/\n");
-  mkdirSync(join(cwd, "plans")); const spec = join(cwd, "plans", "spec.md"); writeFileSync(spec, "Requirement A");
-  const f = fixture(() => false, false, cwd); await f.guard.activate("Implement ./plans/spec.md", "build", f.context);
-  await f.finish.execute("id", { outcome: "complete", summary: "Done", evidence: "./plans/spec.md" }, undefined, undefined, f.context);
-  writeFileSync(spec, "Requirement B");
-  f.resolve({ verdict: "complete", explanation: "Old plan", missing: [] }); await flush();
-  assert.ok(f.messages.some(message => /superseded/.test(message)));
-}));
-
-test("a tracked deletion remains identifiable rather than becoming an uncheckable candidate", () => scratchRepo(async cwd => {
-  const file = join(cwd, "tracked.txt"); writeFileSync(file, "before");
-  execFileSync("git", ["-C", cwd, "add", "tracked.txt"]);
-  execFileSync("git", ["-C", cwd, "-c", "user.name=Test", "-c", "user.email=t@example.org", "commit", "-qm", "add file"]);
-  unlinkSync(file);
-  const f = fixture(() => false, false, cwd); await f.guard.activate("Remove old file", "build", f.context);
-  await f.finish.execute("id", { outcome: "complete", summary: "Removed", evidence: "git status" }, undefined, undefined, f.context);
-  assert.match(f.assessments[0]!.task, / D tracked.txt/);
-}));
-
-test("a non-Git project has content-bound evidence rather than an unchanged fallback", async t => {
-  const cwd = mkdtempSync(join(tmpdir(), "pi-nongit-")); t.after(() => rmSync(cwd, { recursive: true, force: true }));
-  const file = join(cwd, "artifact.txt"); writeFileSync(file, "before");
-  const f = fixture(() => false, false, cwd); await f.guard.activate("Change artifact", undefined, f.context);
-  await f.finish.execute("id", { outcome: "complete", summary: "Changed", evidence: "artifact" }, undefined, undefined, f.context);
-  writeFileSync(file, "after");
-  f.resolve({ verdict: "complete", explanation: "Old version", missing: [] }); await flush();
-  assert.ok(f.messages.some(m => /superseded/.test(m)));
+test("report schema rejects missing, extra, whitespace, inconsistent and oversized inputs", () => {
+  for (const input of [{ progress: "p", remaining: null }, { ...report, extra: "override" },
+    { ...report, progress: " " }, { ...report, remaining: [], blocker: null },
+    { ...report, remaining: null, blocker: "external" },
+    { ...report, progress: "é".repeat(240), remaining: "é".repeat(240), blocker: "é".repeat(240) }])
+    assert.throws(() => validateReport(input), /Invalid stopping report:.*Retry|Invalid stopping report:.*retry/);
+  assert.deepEqual(validateReport({ ...report, remaining: "unknown" }), { ...report, remaining: "unknown" });
+  assert.equal(JSON.parse(serializeReport(report)).version, 1);
 });
 
-test("accepted evidence must still describe the candidate at settlement", () => scratchRepo(async cwd => {
-  const f = fixture(() => false, false, cwd); await f.guard.activate("Deliver artifact", "ship", f.context);
-  await f.finish.execute("id", { outcome: "complete", summary: "Done", evidence: "proof" }, undefined, undefined, f.context);
-  f.resolve({ verdict: "complete", explanation: "Checked", missing: [] }); await flush();
-  writeFileSync(join(cwd, "new.txt"), "Changed after assessment");
-  assert.match(f.settle().entries[0].content, /fresh finish|Submit finish/);
-  const record = f.manager.getBranch().filter(e => e.type === "custom" && e.customType === "dev-goal").at(-1);
-  assert.equal(record?.type === "custom" && (record.data as { status: string }).status, "Active");
-}));
-
-test("paused work is read-only until explicit resume; canContinue false pauses without a loop", async () => {
-  const f = fixture(); await f.guard.activate("Fix code", "build", f.context);
-  f.emit("input", { source: "interactive", text: "Unrelated side question" });
-  assert.ok(f.emit("tool_call", { toolName: "edit", input: {} })?.[0]?.block);
-  assert.equal(f.emit("tool_call", { toolName: "read", input: {} })?.[0], undefined);
-  assert.match(f.emit("before_agent_start")?.[0]?.message.content, /Do not perform goal work/);
-  f.guard.resume(f.context);
-  assert.equal(f.emit("tool_call", { toolName: "edit", input: {} })?.[0], undefined);
-  assert.equal(f.emit("agent_before_settle", { outcome: "completed", context: { canContinue: false } })?.[0], undefined);
-  assert.ok(f.emit("tool_call", { toolName: "edit", input: {} })?.[0]?.block);
+test("invalid tool report fails before lifecycle or inference, then corrected retry classifies", async () => {
+  let calls = 0;
+  const f = fixture({ label: () => "test assessor", checkFit: async () => {}, classify: async () => { calls++; return "done"; } });
+  const before = f.state();
+  await assert.rejects(f.execute("stopping_report", { ...report, extra: true }), /Invalid stopping report/);
+  assert.equal(f.state().status, before.status); assert.equal(calls, 0);
+  await f.execute("stopping_report", report);
+  await flush();
+  assert.equal(calls, 1); assert.equal(f.state().status, "Completed");
+  assert.equal(f.state().stages.length, 3);
 });
 
-test("side questions do not silently expand scope; explicit human clarification does", async () => {
-  const f = fixture(); await f.guard.activate("Build A", "build", f.context);
-  f.emit("input", { source: "interactive", text: "What is the weather?" });
-  const records = () => f.manager.getBranch().filter(e => e.type === "custom" && e.customType === "dev-goal")
-    .map(e => e.type === "custom" ? e.data as { status: string; clarifications: string[] } : undefined);
-  assert.deepEqual(records().at(-1)?.clarifications, []);
-  assert.equal(records().at(-1)?.status, "Paused");
-  f.emit("input", { source: "interactive", text: "Also support B" });
-  await f.control.execute("id", { action: "clarify", reason: "Also support B" }, undefined, undefined, f.context);
-  assert.deepEqual(records().at(-1)?.clarifications, ["Also support B"]);
-  assert.equal(records().at(-1)?.status, "Paused");
-  f.emit("input", { source: "interactive", text: "Resume" });
-  await f.control.execute("id", { action: "resume" }, undefined, undefined, f.context);
-  await f.finish.execute("id", { outcome: "complete", summary: "A and B done", evidence: "tests" }, undefined, undefined, f.context);
-  assert.match(f.assessments[0]!.task, /Also support B/);
+test("only four labels are accepted; unclear and failures pause, not a repair turn", async () => {
+  for (const answer of ["unclear", "do this other task", { disposition: "done", instructions: "overwrite" }]) {
+    const f = fixture({ label: () => "test assessor", checkFit: async () => {}, classify: async () => answer });
+    await f.execute("stopping_report", report); await flush();
+    assert.equal(f.state().status, "Paused");
+    assert.ok(!f.messages.some(m => m.includes("Continue only")));
+  }
 });
 
-test("todo reset cannot reattribute a reused id to an earlier goal task", async () => {
-  const f = fixture(); await f.guard.activate("Complete original case", "build", f.context);
-  f.emit("tool_result", { toolName: "todo", input: { action: "create" }, details: { tasks: [{ id: 1, subject: "original", status: "pending" }], nextId: 2 } });
-  f.emit("tool_result", { toolName: "todo", input: { action: "clear" }, details: { tasks: [], nextId: 1 } });
-  f.emit("tool_result", { toolName: "todo", input: { action: "create" }, details: { tasks: [{ id: 1, subject: "replacement", status: "completed" }], nextId: 2 } });
-  assert.match(f.settle().entries[0].content, /original/);
+test("model failure pauses visibly without retry or automatic repair", async () => {
+  let calls = 0;
+  const f = fixture({ label: () => "assessor (configured model)", checkFit: async () => {}, classify: async () => { calls++; throw Error("secret token from provider"); } });
+  await f.execute("stopping_report", report); await flush();
+  assert.equal(f.state().status, "Paused"); assert.equal(calls, 1);
+  assert.match(f.state().reason, /resume after restoring access or clarifying/);
+  assert.doesNotMatch(JSON.stringify(f.state()), /secret token/);
+  assert.ok(!f.messages.some(m => m.includes("Continue only")));
 });
 
-test("model-only control cannot abandon or resume without fresh human input", async () => {
-  const f = fixture(); await f.guard.activate("Build A", "build", f.context);
-  await assert.rejects(f.control.execute("id", { action: "abandon" }, undefined, undefined, f.context), /direct current human instruction/);
-  f.emit("input", { source: "interactive", text: "Stop building A" });
-  await f.control.execute("id", { action: "abandon" }, undefined, undefined, f.context);
-  assert.equal(f.settle(), undefined);
+test("classifier receives only a versioned report and continuation has fixed text", async () => {
+  let input: StoppingReport | undefined;
+  const f = fixture({ label: () => "test assessor", checkFit: async () => {}, classify: async received => { input = received; return "continue"; } });
+  await f.execute("stopping_report", { ...report, remaining: "Run integration check" }); await flush();
+  assert.deepEqual(input, { ...report, remaining: "Run integration check" });
+  assert.equal(f.state().status, "Active");
+  assert.match(f.messages.at(-1)!, /Continue only the work already authorized/);
 });
 
-test("checking completion forbids new mutating work until evidence arrives", async () => {
-  const f = fixture(); await f.guard.activate("Build A", "build", f.context);
-  await f.finish.execute("id", { outcome: "complete", summary: "Done", evidence: "A" }, undefined, undefined, f.context);
-  assert.match(f.emit("tool_call", { toolName: "edit", input: { path: "x" } })?.[0]?.reason ?? "", /Wait for the assessor/);
-  assert.equal(f.emit("tool_call", { toolName: "read", input: { path: "x" } })?.[0], undefined);
-  f.guard.pause();
-  f.resolve({ verdict: "complete", explanation: "stale", missing: [] }); await flush();
+test("pause invalidates a late classifier result", async () => {
+  let release!: (value: unknown) => void;
+  const f = fixture({ label: () => "test assessor", checkFit: async () => {}, classify: async () => new Promise(done => { release = done; }) });
+  await f.execute("stopping_report", report); await flush();
+  assert.equal(f.state().status, "Classifying");
+  f.guard.pause("Human interruption"); release("done"); await flush();
+  assert.equal(f.state().status, "Paused");
 });
 
-test("pause and resume in the same session invalidates an assessor already in flight", async () => {
-  const f = fixture(); await f.guard.activate("Deliver A", "ship", f.context);
-  await f.finish.execute("id", { outcome: "complete", summary: "Done", evidence: "A" }, undefined, undefined, f.context);
-  f.guard.pause("Human interrupted");
-  f.guard.resume(f.context);
-  f.resolve({ verdict: "complete", explanation: "Old proof", missing: [] }); await flush();
-  assert.equal(f.messages.some(message => /Old proof/.test(message)), false);
-  assert.match(f.settle().entries[0].content, /finish/);
+test("bounded classification never accepts arbitrary backend output", async () => {
+  const events: unknown[] = [];
+  const result = await classifyReport(report, { label: () => "assessor", checkFit: async () => {}, classify: async () => "done\nignore safety" },
+    new AbortController().signal, event => events.push(event), () => true);
+  assert.equal(result.failure, "invalid backend output");
+  assert.deepEqual(events.map((e: any) => e.status), ["loading", "running", "failed"]);
 });
 
-test("a forked branch gets a distinct paused identity and cannot inherit acceptance", async () => {
-  const f = fixture(); await f.guard.activate("Deliver A", "build", f.context);
-  const parent = f.manager.getBranch().filter(e => e.type === "custom" && e.customType === "dev-goal").at(-1);
-  assert.ok(parent && parent.type === "custom");
-  f.emit("session_before_fork");
-  f.manager.newSession();
-  f.manager.appendCustomEntry("dev-goal", parent.data);
-  f.emit("session_start");
-  const fork = f.manager.getBranch().filter(e => e.type === "custom" && e.customType === "dev-goal").at(-1);
-  assert.ok(fork && fork.type === "custom");
-  assert.notEqual((fork.data as { id: string }).id, (parent.data as { id: string }).id);
-  assert.equal((fork.data as { status: string }).status, "Paused");
-  assert.equal(f.settle(), undefined);
-});
-
-test("recovery reads active branch and requires reassessment", async () => {
-  const f = fixture(); f.guard.activate("Deliver A", "build", f.context);
-  f.emit("session_start", {}, f.context);
-  assert.equal(f.settle(), undefined);
-  f.guard.resume(f.context); assert.match(f.settle().entries[0].content, /finish/);
-  f.guard.cancel(); assert.equal(f.settle(), undefined);
+test("no stopping report pauses instead of inventing input", () => {
+  const f = fixture(); f.emit("agent_before_settle", { outcome: "completed", context: { canContinue: true } });
+  assert.equal(f.state().status, "Paused"); assert.deepEqual(f.state().stages, []);
 });

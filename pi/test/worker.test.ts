@@ -90,18 +90,10 @@ test('Reviewer is fresh, read-only, cannot ask directly, and may use bounded Exp
   for(const name of ['bash','edit','write','ask_human','review','git']) assert.ok(!names.includes(name),name);
   assert.ok(names.includes('explore'));
 });
-test('assessor role cannot run without its terminal skill', async t=>{
+test('assessor role cannot be launched as an independent worker', async t=>{
   const f=await fixture(t,(_n,_c,m)=>message(m,[{type:'text',text:'done'}]));
-  await assert.rejects(f.run({cwd:f.cwd,name:'assessor',task:'unscoped'}),/requires the dev-finish skill/);
-});
-test('finish assessor alone can inspect read-only shell and live PR evidence', async t=>{
-  const f=await fixture(t,(_n,_c,m)=>message(m,[{type:'text',text:'done'}]));
-  await f.run({cwd:f.cwd,name:'assessor',task:'terminal assessment',skill:'dev-finish'});
-  const names=required(f.sessions[0],'session').getActiveToolNames();
-  assert.ok(names.includes('bash'));
-  assert.equal(f.calls[0]?.model.id,role('assessor').model);
-  assert.equal(f.hub.list()[0]?.role,'assessor');
-  for(const name of ['edit','write','lsp_fix','ask_human']) assert.ok(!names.includes(name),name);
+  await assert.rejects(f.run({cwd:f.cwd,name:'assessor',task:'unscoped'}),/not a child worker/);
+  assert.equal(f.sessions.length,0);
 });
 test('review transport rejects mismatched, inconsistent, and oversized results', async()=>{
   const base={verdict:'PASS',candidate:'abc',evidence:'proof',summary:'ok',findings:[],blocker:null};
@@ -123,8 +115,8 @@ test('Explorer can verify but cannot edit or delegate recursively', async t=>{
 });
 test('every non-Explorer worker role receives the bounded Explorer primitive', async t=>{
   const f=await fixture(t,(_n,_c,m)=>message(m,[{type:'text',text:'done'}]));
-  const roles=['spec','build','review','assessor','ship'] as const;
-  for(const name of roles) await f.run({cwd:f.cwd,name,task:`${name} task`,...(name==='assessor'?{skill:'dev-finish'}:{})});
+  const roles=['spec','build','review','ship'] as const;
+  for(const name of roles) await f.run({cwd:f.cwd,name,task:`${name} task`});
   assert.equal(f.sessions.length,roles.length);
   for(const session of f.sessions) {
     assert.ok(session.getActiveToolNames().includes('explore'));

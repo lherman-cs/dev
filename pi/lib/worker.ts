@@ -68,7 +68,7 @@ const renderExplorerResult = (result: ExplorerResult): string => {
 const boundExplorerResult = (text: string): string => text.length > explorerResultChars
   ? `${text.slice(0, explorerResultChars - explorerResultMarker.length)}${explorerResultMarker}`
   : text;
-const roleLabels: Partial<Record<RoleName, string>> = { build: "Builder", review: "Reviewer", assessor: "Assessor", explorer: "Explorer", ship: "Shipper" };
+const roleLabels: Partial<Record<RoleName, string>> = { build: "Builder", review: "Reviewer", explorer: "Explorer", ship: "Shipper" };
 const roleLabel = (name: RoleName): string => roleLabels[name] ?? name;
 const gitRoot = (cwd: string): string | undefined => {
   try { return fs.realpathSync(execFileSync("git", ["rev-parse", "--show-toplevel"], { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim()); }
@@ -172,9 +172,10 @@ export function createWorkerRunner(options: RunnerOptions): WorkerRunner {
     const abort = () => { session?.abortCompaction?.(); void session?.abort().catch(error => hub.onError(error)); };
     try {
       signal.throwIfAborted();
+      if (name === "assessor") throw new Error("The assessor is a narrow classification call, not a child worker.");
       const selected = role(name);
       const explorer = name === "explorer";
-      const readonly = explorer || name === "review" || name === "assessor" || (tools && !tools.some(t => ["bash", "write", "edit", "lsp_fix"].includes(t)));
+      const readonly = explorer || name === "review" || (tools && !tools.some(t => ["bash", "write", "edit", "lsp_fix"].includes(t)));
       const owner = ownerCwd();
       if (!readonly && owner && worktreeRoot(cwd) === worktreeRoot(owner)) throw new Error("A writing child must own a different worktree from its parent.");
       const models = runtime || await (modelsPromise ||= ModelRuntime.create().catch(error => { modelsPromise = undefined; throw error; }));
@@ -184,7 +185,6 @@ export function createWorkerRunner(options: RunnerOptions): WorkerRunner {
       if (readonly) snapshot = readOnlySnapshot(cwd);
       const workerCwd = snapshot?.cwd ?? cwd;
       const assignedSkill = explorer ? "dev-explore" : skill;
-      if (name === "assessor" && assignedSkill !== "dev-finish") throw new Error("Assessor requires the dev-finish skill.");
       const settings = settingsFor(cwd, model);
       const loader = new DefaultResourceLoader({ cwd: workerCwd, agentDir: getAgentDir(), settingsManager: settings,
         noExtensions: true, noSkills: true, noPromptTemplates: true, noThemes: true,
@@ -242,8 +242,7 @@ export function createWorkerRunner(options: RunnerOptions): WorkerRunner {
       const allowed = explorer
         ? [...readers, "bash", "web_search", "source_check", "fetch_content", "get_search_content", ...scopedTools.map(tool => tool.name)]
         : name === "review" ? [...readers, ...scopedTools.map(tool => tool.name)]
-        : name === "assessor" ? [...readers, "bash", ...scopedTools.map(tool => tool.name)]
-          : tools || [...readers, ...(!readonly ? ["bash", "edit", "write", "lsp_diagnostics", "lsp_fix", "chrome_devtools_load", "chrome_devtools_list_pages", "chrome_devtools_select_page", "chrome_devtools_navigate", "chrome_devtools_evaluate", "chrome_devtools_screenshot"] : [])];
+            : tools || [...readers, ...(!readonly ? ["bash", "edit", "write", "lsp_diagnostics", "lsp_fix", "chrome_devtools_load", "chrome_devtools_list_pages", "chrome_devtools_select_page", "chrome_devtools_navigate", "chrome_devtools_evaluate", "chrome_devtools_screenshot"] : [])];
       const created = await create({ cwd: workerCwd, model, thinkingLevel: selected.thinking, modelRuntime: models,
         settingsManager: settings, resourceLoader: loader, sessionManager: manager,
         tools: [...allowed, "vcc_recall", ...customTools.map(tool => tool.name)], customTools });
