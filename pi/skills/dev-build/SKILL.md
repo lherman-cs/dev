@@ -1,6 +1,6 @@
 ---
 name: dev-build
-description: Implement a defined request, respecting any applicable approved spec or plan.
+description: Implement a defined request, respecting any applicable approved spec.
 disable-model-invocation: true
 ---
 
@@ -8,7 +8,7 @@ disable-model-invocation: true
 
 Implement the requested outcome to completion, one independently testable part at a time. An approved spec is optional. Follow applicable approved decisions; otherwise derive semantics from the request and repository evidence and resolve ordinary design choices yourself.
 
-- Read `../references/reconcile.md` at entry. Map requested outcomes to existing commits, partial edits and current proof before implementing the next one. A missing spec, plan, earlier phase, or session is not a stop condition.
+- Read `../references/reconcile.md` at entry. Map requested outcomes to existing commits, partial edits and current proof before implementing the next one. A missing spec, earlier phase, or session is not a stop condition.
 - Preserve applicable approved semantics and architecture; adapt local mechanics.
 - Be aggressively minimal: solve only the requested problem, prefer deletion or reuse over addition, native/stdlib over dependencies, direct code over abstractions, and the smallest durable diff that preserves correctness, safety, compatibility, accessibility, and necessary observability. Do not build speculative flexibility or infrastructure.
 - Resolve ordinary implementation choices, debugging, failed checks, conflicting repository state, and necessary adjacent work yourself. Fix root causes. Do not weaken, delete, or bypass checks.
