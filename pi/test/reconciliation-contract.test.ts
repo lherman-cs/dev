@@ -34,6 +34,9 @@ test("three stage contracts keep approval, local review, and history ownership d
   assert.match(skill("dev-build"), /obtain it before implementation/);
   assert.match(skill("dev-build"), /Diagnose uncertain or interrupted writes from live state/);
   assert.match(skill("dev-ship"), /fixed local comparison base and exact candidate scope/);
+  assert.match(skill("dev-ship"), /Use `ask_user_question` for every human decision and review checkpoint/);
+  assert.match(skill("dev-ship"), /Ask one focused question at a time/);
+  assert.match(skill("dev-ship"), /Pause for each answer; do not treat silence as agreement/);
   assert.match(skill("dev-ship"), /Pause for the human's questions, concerns, and review priorities before substantive review/);
   assert.match(skill("dev-ship"), /agreement on the repair direction before material repairs/);
   assert.match(skill("dev-ship"), /taste-only/);
