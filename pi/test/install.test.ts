@@ -10,7 +10,13 @@ test('native package registration preserves auth and unrelated settings', t => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dev-pi-install-'));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   const pkg = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-  const settings = { theme: 'light', defaultThinkingLevel: 'high', packages: [], testUserField: 'keep' };
+  const compaction = {
+    enabled: true,
+    reserveTokens: 16384,
+    keepRecentTokens: 20000,
+    modelOverrides: { 'openai-codex/gpt-6-sol': { reserveTokens: 144000 } },
+  };
+  const settings = { theme: 'light', defaultThinkingLevel: 'high', packages: [], testUserField: 'keep', compaction };
   const auth = '{"custom-provider":{"type":"api_key","key":"NOT_A_REAL_KEY"}}\n';
   fs.writeFileSync(path.join(dir,'settings.json'), JSON.stringify(settings));
   fs.writeFileSync(path.join(dir,'auth.json'), auth);
@@ -22,6 +28,7 @@ test('native package registration preserves auth and unrelated settings', t => {
   const after = readSettings();
   assert.equal(after.theme,settings.theme); assert.equal(after.testUserField,'keep');
   assert.equal(after.defaultThinkingLevel,'high');
+  assert.deepEqual(after.compaction,compaction,'package registration must preserve compaction overrides');
   assert.equal(after.packages.length,1,JSON.stringify(after));
   assert.deepEqual(after.packages, first.packages, 'native normalization must remain idempotent');
   assert.equal(fs.readFileSync(path.join(dir,'auth.json'),'utf8'),auth);
