@@ -231,11 +231,11 @@ export function createWorkerRunner(options: RunnerOptions): WorkerRunner {
           return toolResult(answer === undefined ? "Human cancelled this question; do not infer approval." : answer);
         } });
       }
-      if (schema) customTools.push({ name: "submit_result", label: "Submit result", description: "Submit the final result in the required schema and end this worker run.", parameters: schema,
+      if (schema) customTools.push({ name: "submit_result", label: "Submit result", description: explorer ? "Submit the final result in the required schema and end this Explorer run." : "Submit the final result in the required schema.", parameters: schema,
         async execute(_id: string, args: Static<NonNullable<TShape>>) {
           if (hub.get(id)?.deliveries.some(d => ["sending", "queued"].includes(d.status))) throw new Error("Read the pending human instruction before submitting a new result.");
           if (name === "review" && hub.get(id)?.deliveries.some(d => d.status === "delivered") && args["verdict"] === "pass") throw new Error("Human feedback requires a revised repairs or blocked result, never silent PASS.");
-          value = args; valueEpoch = inputEpoch; return terminalToolResult("Result recorded.");
+          value = args; valueEpoch = inputEpoch; return explorer ? terminalToolResult("Result recorded.") : toolResult("Result recorded.");
         } });
       const allowed = explorer
         ? [...readers, "bash", "web_search", "source_check", "fetch_content", "get_search_content", ...scopedTools.map(tool => tool.name)]
