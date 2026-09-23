@@ -1,12 +1,41 @@
-# Provider used for every role. Model selections below use provider/model:thinking.
+# Provider used for every role. Model selections use provider/model:thinking.
 authProvider = "openai-codex"
 
+# Benchmark Reference: 
+#   https://openai.com/index/introducing-gpt-6-sol-and-luna/#alignment-warning-circumvention
 [roles]
+
+# Role: Align product semantics and resolve consequential ambiguity.
+# Signals: AutomationBench, Agents' Last Exam, factual error.
+# Reason: Astra medium captures most of the judgment advantage without paying the steeper high-effort premium.
 spec = "openai/gpt-6-astra:medium"
-build = "openai/gpt-6-sol:medium"
-review = "openai/gpt-6-sol:high"
-# Independent terminal assessment, separate from candidate review.
-assessor = "openai/gpt-6-sol:high"
-ship = "openai/gpt-6-luna:medium"
-explorer = "openai/gpt-6-luna:medium"
-escalated_builder = "openai/gpt-6-sol:high"
+
+# Role: Implement the requested outcome end-to-end.
+# Signals: FrontierCode, DeepSWE.
+# Reason: Sol high is close to Astra-medium coding quality at substantially lower task cost.
+build = "openai/gpt-6-sol:high"
+
+# Role: Independently find material defects in an exact candidate.
+# Signals: FrontierCode, DeepSWE, coding deception, warning circumvention.
+# Reason: Astra medium is worth the premium for cross-file reasoning, precision, and adherence-sensitive review.
+review = "openai/gpt-6-astra:medium"
+
+# Role: Independently decide whether the agent should stop or continue.
+# Signals: AutomationBench, Agents' Last Exam, factual error, coding deception, warning circumvention.
+# Reason: Astra medium emphasizes reliable terminal judgment and resistance to convenient but unjustified stopping.
+assessor = "openai/gpt-6-astra:medium"
+
+# Role: Repair, validate, rebase, publish, and establish PR readiness.
+# Signals: AutomationBench, Agents' Last Exam, FrontierCode, OSWorld.
+# Reason: Sol medium provides solid agentic and engineering judgment for bounded shipping work without build-level spend.
+ship = "openai/gpt-6-sol:medium"
+
+# Role: Gather narrow, verifiable evidence independently and asynchronously.
+# Signals: Factual error, DeepSWE, FrontierCode.
+# Reason: Luna high buys a meaningful reasoning gain over medium at very low absolute cost for high-volume exploration.
+explorer = "openai/gpt-6-luna:high"
+
+# Role: Resolve implementation problems that exceed the normal Builder.
+# Signals: FrontierCode, DeepSWE, AutomationBench.
+# Reason: Astra high provides a genuine capability escalation for rare hard cases where the additional cost is justified.
+escalated_builder = "openai/gpt-6-astra:high"
