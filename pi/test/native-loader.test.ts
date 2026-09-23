@@ -20,6 +20,8 @@ test('native Pi loads pinned plugins, goal controls, phase aliases and skills wi
   assert.deepEqual(commands.filter(name => name.startsWith('dev-')).sort(), ['dev-build', 'dev-goal', 'dev-ship', 'dev-spec']);
   const tools = loaded.extensions.flatMap(e => [...e.tools.keys()]);
   assert.ok(tools.includes('explore'));
+  assert.ok(!tools.includes('fffind'));
+  assert.ok(!tools.includes('ffgrep'));
   assert.ok(!tools.includes('subagent'));
   const names = loader.getSkills().skills.map(s => s.name);
   for (const skill of ['dev-spec','dev-build','dev-ship','dev-review']) assert.ok(names.includes(skill), names.join(','));

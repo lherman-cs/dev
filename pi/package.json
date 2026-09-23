@@ -11,7 +11,6 @@
   },
   "pi": {
     "extensions": [
-      "./node_modules/@ff-labs/pi-fff/src/index.ts",
       "./node_modules/@narumitw/pi-lsp/dist/index.ts",
       "./node_modules/@narumitw/pi-github-pr/dist/index.ts",
       "./node_modules/@narumitw/pi-chrome-devtools/dist/index.ts",
@@ -32,7 +31,6 @@
     "@earendil-works/pi-ai": "0.87.1",
     "@earendil-works/pi-coding-agent": "0.87.1",
     "@earendil-works/pi-tui": "0.87.1",
-    "@ff-labs/pi-fff": "0.11.0",
     "@juicesharp/rpiv-ask-user-question": "2.10.1",
     "@juicesharp/rpiv-todo": "2.10.1",
     "@narumitw/pi-chrome-devtools": "0.53.4",

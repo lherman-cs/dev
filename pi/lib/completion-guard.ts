@@ -157,7 +157,7 @@ export function registerCompletionGuard(pi: ExtensionAPI, _run?: unknown,
         Array.isArray(questions[0]?.options) && replacementOptions.every(label => questions[0].options.some((o: { label?: string }) => o.label === label))) replacement.questionCallId = event.toolCallId;
     }
     if (!state || !["Paused", "Blocked", "Classifying"].includes(state.status)) return;
-    const reads = ["read", "ffgrep", "fffind", "lsp_diagnostics", "vcc_recall", "ask_user_question", "goal_control"];
+    const reads = ["read", "grep", "find", "ls", "lsp_diagnostics", "vcc_recall", "ask_user_question", "goal_control"];
     if (reads.includes(event.toolName) || (event.toolName === "todo" && ["get", "list"].includes(String(event.input?.["action"])))) return;
     return { block: true, reason: `Goal ${state.id} is ${state.status}. ${state.status === "Classifying" ? "Wait for the classifier or explicitly pause before further work." : "Obtain explicit resume or abandon before work."}` };
   });
