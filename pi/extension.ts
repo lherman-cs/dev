@@ -5,6 +5,7 @@ import { WorkerHistory } from "./lib/worker-history.ts";
 import { registerWorkerHubUI } from "./worker-hub-ui.ts";
 import type { WorkerHistory as WorkerHistoryStore } from "./lib/worker-history.ts";
 import type { PublicPhase } from "./lib/roles.ts";
+import { registerCompletionGuard } from "./lib/completion-guard.ts";
 
 export const explorerOnlyTools = new Set(["web_search", "source_check", "fetch_content", "get_search_content"]);
 type HubUI = ReturnType<typeof registerWorkerHubUI>;
@@ -39,6 +40,7 @@ export default function extension(pi: ExtensionAPI, dependencies: ExtensionDepen
   const run: WorkerRunner = (dependencies.createWorkerRunner || createWorkerRunner)({ hub, getHistory: () => history, ownerCwd: () => ctx?.cwd, askHuman });
   hub.onRelated = (record, text) => run.related(record, text);
   const hubUI: HubUI = (dependencies.registerWorkerHubUI || registerWorkerHubUI)(pi, hub);
+  const guard = registerCompletionGuard(pi, run, () => run.hasActive());
 
   pi.on("session_start", async (_event, nextCtx) => {
     ctx = nextCtx;
@@ -69,9 +71,12 @@ export default function extension(pi: ExtensionAPI, dependencies: ExtensionDepen
   };
   pi.on("session_before_switch", stopForSessionChange);
   pi.on("session_before_fork", stopForSessionChange);
-  pi.on("input", event => {
+  pi.on("input", (event, nextCtx) => {
     const match = /^\/skill:dev-(spec|build|ship)(?:\s|$)/.exec(event.text);
-    if (match?.[1]) setPhase(match[1] as PublicPhase);
+    if (match?.[1]) {
+      setPhase(match[1] as PublicPhase);
+      if ((match[1] === "build" || match[1] === "ship") && nextCtx?.sessionManager) guard.activate(event.text, match[1], nextCtx);
+    }
     return { action: "continue" };
   });
 

@@ -39,9 +39,9 @@ test("three current-session aliases, Agent Hub and isolated tools register witho
   });
   assert.deepEqual([...commands.keys()].sort(), ["dev-build", "dev-ship", "dev-spec"]);
   assert.ok(shortcuts.has("alt+a"));
-  assert.deepEqual(tools.map(tool => tool.name), ["explore", "review"]);
+  assert.deepEqual(tools.map(tool => tool.name), ["finish", "explore", "review"]);
   assert.equal(messages.length, 0);
-  const explore = tools[0]; assert.ok(explore);
+  const explore = tools.find(tool => tool.name === "explore"); assert.ok(explore);
   const toolCall = handlers.get("tool_call"); assert.ok(toolCall);
   for (const toolName of explorerOnlyTools) assert.ok(toolCall({ toolName })?.reason);
   assert.ok(toolCall({ toolName: "review" })?.reason);

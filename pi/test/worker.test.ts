@@ -90,6 +90,13 @@ test('Reviewer is fresh, read-only, cannot ask directly, and may use bounded Exp
   for(const name of ['bash','edit','write','ask_human','review','git']) assert.ok(!names.includes(name),name);
   assert.ok(names.includes('explore'));
 });
+test('finish assessor alone can inspect read-only shell and live PR evidence', async t=>{
+  const f=await fixture(t,(_n,_c,m)=>message(m,[{type:'text',text:'done'}]));
+  await f.run({cwd:f.cwd,name:'review',task:'terminal assessment',skill:'dev-finish'});
+  const names=required(f.sessions[0],'session').getActiveToolNames();
+  assert.ok(names.includes('bash'));
+  for(const name of ['edit','write','lsp_fix','ask_human']) assert.ok(!names.includes(name),name);
+});
 test('review transport rejects mismatched, inconsistent, and oversized results', async()=>{
   const base={verdict:'PASS',candidate:'abc',evidence:'proof',summary:'ok',findings:[],blocker:null};
   const invoke=async (result: unknown) => {

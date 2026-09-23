@@ -240,7 +240,7 @@ export function createWorkerRunner(options: RunnerOptions): WorkerRunner {
       const allowed = explorer
         ? [...readers, "bash", "web_search", "source_check", "fetch_content", "get_search_content", ...scopedTools.map(tool => tool.name)]
         : name === "review"
-          ? [...readers, ...scopedTools.map(tool => tool.name)]
+          ? [...readers, ...(assignedSkill === "dev-finish" ? ["bash"] : []), ...scopedTools.map(tool => tool.name)]
           : tools || [...readers, ...(!readonly ? ["bash", "edit", "write", "lsp_diagnostics", "lsp_fix", "chrome_devtools_load", "chrome_devtools_list_pages", "chrome_devtools_select_page", "chrome_devtools_navigate", "chrome_devtools_evaluate", "chrome_devtools_screenshot"] : [])];
       const created = await create({ cwd: workerCwd, model, thinkingLevel: selected.thinking, modelRuntime: models,
         settingsManager: settings, resourceLoader: loader, sessionManager: manager,

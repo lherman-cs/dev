@@ -17,13 +17,13 @@ test("one lazy reference owns worktree recovery from live evidence", () => {
 });
 
 test("phase contracts allow absent artifacts and reserve only consequential human decisions", () => {
-  assert.match(skill("dev-spec"), /Otherwise a decision-complete spec can finish/);
+  assert.match(skill("dev-spec"), /Finish only when the material decision tree is resolved/);
   assert.match(skill("dev-build"), /An approved spec is optional/);
-  assert.match(skill("dev-build"), /failed or interrupted commit/);
+  assert.match(skill("dev-build"), /Diagnose uncertain or interrupted writes from live state/);
   assert.match(skill("dev-ship"), /sole writing owner/);
   assert.match(skill("dev-ship"), /An optional independent read-only `review`/);
   assert.match(skill("dev-ship"), /Otherwise make the authorized readiness transition yourself/);
   assert.match(skill("dev-ship"), /Never merge in dev-ship/);
-  assert.match(skill("dev-review"), /A missing spec or plan is not itself a blocker/);
+  assert.match(skill("dev-review"), /A missing spec is not itself a blocker/);
   assert.doesNotMatch(skill("dev-ship"), /ship_builder|mandatory reviewer|approved spec, optional plan/i);
 });
