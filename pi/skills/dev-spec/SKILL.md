@@ -1,6 +1,6 @@
 ---
 name: dev-spec
-description: Make project semantics decision-complete and human-aligned before planning or implementation.
+description: Make project semantics decision-complete and explicitly human-approved before implementation.
 disable-model-invocation: true
 ---
 
@@ -15,6 +15,6 @@ Make the requested outcome decision-complete with the least human latency.
 - Ask one focused question at a time through `ask_user_question`, ordered by decision leverage. Include the recommended answer and concise alternatives when useful. Drill into the answer only while meaningful ambiguity remains.
 - Trace enough end-to-end behavior, ownership, callers/callees, and failure paths to ensure decisions are grounded, not hypothetical.
 - Prefer fewer stronger decisions over exhaustive questioning. Skip questions whose answers do not materially affect behavior, architecture, scope, or acceptance.
-- When useful, maintain concise semantic prose in `plans/<project>/spec.md`: behavior, decisions, invariants, constraints, non-goals, risks, and acceptance evidence. Do not design implementation tasks or manage worktrees.
+- When useful, maintain concise semantic prose in `plans/<project>/spec.md`: behavior, decisions, invariants, constraints, non-goals, risks, and acceptance evidence. A persisted spec is optional; approval in conversation suffices when applicability is clear. Do not design implementation tasks or manage worktrees.
 
 Finish only when the material decision tree is resolved and present the resulting semantics for explicit human approval. Revise until aligned; mark `Status: APPROVED` only after explicit approval.

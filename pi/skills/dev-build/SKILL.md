@@ -1,12 +1,12 @@
 ---
 name: dev-build
-description: Implement a defined request, respecting any applicable approved spec.
+description: Implement a human-approved outcome locally, with validation and coherent commits.
 disable-model-invocation: true
 ---
 
 # dev-build
 
-Implement the requested outcome to completion, progressing independent work concurrently where useful. An approved spec is optional. Follow applicable approved decisions; otherwise derive semantics from the request and repository evidence and resolve ordinary design choices yourself.
+Implement the approved outcome to completion, progressing independent work concurrently where useful. An approved spec file is optional, but approval of the outcome must be established, including from an applicable explicit conversational approval. A status marker alone does not suffice. If approval cannot be established, obtain it before implementation. Follow applicable approved decisions and resolve ordinary design choices yourself.
 
 - Read `../references/reconcile.md` at entry. Map required outcomes to existing commits, partial edits, current proof, and remaining work.
 - Preserve applicable approved semantics and architecture; adapt local mechanics.
@@ -16,4 +16,4 @@ Implement the requested outcome to completion, progressing independent work conc
 - For each outcome, validate at the user-visible boundary with appropriate fast, deterministic, stable lower-level checks. Update documentation and independently commit coherent outcomes with a Conventional Commit when possible. Classify and stage only relevant paths. Diagnose uncertain or interrupted writes from live state before retrying or continuing.
 - Before finishing, compare every required outcome and its evidence with the worktree and commits. If work remains, take the next step. Repeated nonproductive failures require a concrete diagnosis and changed approach.
 
-**Endpoint:** The requested implementation and required proof are complete. Pause only for a consequential product, scope, semantics, or authority decision that cannot safely be resolved from the request, approved decisions, repository evidence, and reasonable engineering judgment. Identify the exact missing decision and why autonomous progress is unsafe.
+**Endpoint:** The local implementation and relevant passing validation are complete; ship owns collaborative review and final history refinement. Do not publish or claim review convergence. Pause only for a consequential product, scope, semantics, or authority decision that cannot safely be resolved from the request, approved decisions, repository evidence, and reasonable engineering judgment. Identify the exact missing decision and why autonomous progress is unsafe.

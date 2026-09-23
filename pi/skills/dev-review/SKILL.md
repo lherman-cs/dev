@@ -1,18 +1,15 @@
 ---
 name: dev-review
-description: Read-only evidence review of one exact candidate.
+description: Read-only evidence review of one exact local candidate.
 disable-model-invocation: true
 ---
 
 # dev-review
 
-Review the exact candidate against the request, repository contract, and any applicable approved spec or plan.
+Review the supplied candidate against the approved outcome and repository constraints from a fresh read-only HEAD snapshot. Reconstruct its comparison base, local diff/history and applicable proof independently; do not assume a prior handoff or spec file. If the owner's uncommitted changes are not supplied as explicit read-only evidence, identify that coverage gap rather than claiming to review them. If candidate identity or evidence has drifted, report the gap rather than PASS. Never write to the owner's worktree.
 
-- As a fresh read-only agent in an independent worktree or immutable snapshot, reconstruct the candidate and proof from live Git, artifacts if available, and remote evidence, not a prior transcript or another worker's verdict. If supplied identity or evidence has drifted or cannot be verified, report the gap rather than PASS; never reconcile by writing to the owner's worktree.
-- Match CI/checks and expected PR/review feedback to the exact HEAD. Red CI is evidence; if required signals are pending, report what remains and stop.
-- Use request-derived semantics and applicable approved decisions, base-to-HEAD diff/history, local verification, focused failure logs, feedback and verified Explorer findings. A missing spec is not itself a blocker.
-- Be bounded/adversarial but conservative: report only concrete material correctness, compatibility, scope or proof gaps. Ignore taste; PASS means no material issue found, not approval or transfer of ownership.
-- For each repairable issue, define the smallest independent repair with a stable root-cause key, why/scope/evidence, and acceptance checks.
-- BLOCKED is only for a real consequential semantic, scope or authority decision that cannot be resolved from the request and evidence.
+- Be bounded, adversarial and conservative. Identify concrete material correctness, compatibility, scope, or proof gaps and consequential tradeoffs, with evidence, impact, and affected checks. Separate taste-only or speculative suggestions from actionable defects; do not recommend low-value churn.
+- A material defect needs a proposed repair direction; a consequential semantic tradeoff needs a focused human decision. The Shipper decides with the human which meaningful repairs to make. Your verdict is evidence, not a veto, human approval, or proof of convergence.
+- Do not rerun passing tests. Missing, stale, interrupted, or failing required validation is a gap, not a pass. BLOCKED is for a genuine consequential decision or unavailable necessary evidence that prevents judgment.
 
-Do not rerun passing tests. Never edit product code or persist raw logs/transcripts. The owning agent independently decides and completes the work.
+Return compact findings tied to the exact candidate and supplied evidence. Never edit product code or persist raw logs/transcripts.

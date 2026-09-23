@@ -11,7 +11,7 @@ test('commented roles.toml parses to the runtime role map', () => {
   assert.match(source, /^\[roles\]$/m);
   assert.deepEqual(parse(source), config);
   assert.equal(role('spec').thinking, 'medium');
-  assert.equal(role('assessor').thinking, 'medium');
+  assert.equal(role('assessor').thinking, 'low');
 });
 
 test('Pi catalog contains every configured role model', async () => {

@@ -34,6 +34,9 @@ fn load_roles(package: &Path) -> Result<Roles> {
 }
 
 fn phase_args(config: &Roles, phase: &str, prompt: &[String]) -> Result<Vec<String>> {
+    if !["spec", "build", "ship"].contains(&phase) {
+        bail!("Unknown workflow phase: {phase}");
+    }
     let selection = config
         .roles
         .get(phase)
@@ -148,7 +151,7 @@ mod tests {
     #[test]
     fn role_comments_parse_from_the_shared_toml_file() {
         assert_eq!(roles().roles["spec"], "openai/gpt-6-astra:medium");
-        assert_eq!(roles().roles["assessor"], "openai/gpt-6-sol:high");
+        assert_eq!(roles().roles["assessor"], "openai/gpt-6-astra:low");
     }
     #[test]
     fn every_phase_is_interactive_until_invoked() {
@@ -156,6 +159,18 @@ mod tests {
             let args = phase_args(&roles(), phase, &[]).unwrap();
             assert_eq!(args.len(), 6);
             assert_eq!(&args[..2], &["--provider", "openai-codex"]);
+        }
+    }
+    #[test]
+    fn supporting_roles_are_not_public_phases() {
+        for phase in [
+            "plan",
+            "review",
+            "explorer",
+            "assessor",
+            "escalated_builder",
+        ] {
+            assert!(phase_args(&roles(), phase, &[]).is_err());
         }
     }
     #[test]
@@ -179,10 +194,14 @@ mod tests {
         assert!(resume_args(Some("  ".into())).is_err());
     }
     #[test]
-    fn all_model_and_effort_selections_are_preserved() {
-        for (name, selection) in &roles().roles {
-            let args = phase_args(&roles(), name, &[]).unwrap();
-            assert_eq!(format!("openai/{}:{}", args[3], args[5]), *selection);
+    fn public_model_and_effort_selections_are_preserved() {
+        let config = roles();
+        for name in ["spec", "build", "ship"] {
+            let args = phase_args(&config, name, &[]).unwrap();
+            assert_eq!(
+                format!("openai/{}:{}", args[3], args[5]),
+                config.roles[name]
+            );
         }
     }
 }

@@ -24,7 +24,7 @@ review = "openai/gpt-6-astra:medium"
 # Reason: Use one configured model for a restricted four-label intent decision.
 assessor = "openai/gpt-6-astra:low"
 
-# Role: Repair, validate, rebase, publish, and establish PR readiness.
+# Role: Collaborate on local candidate review, repair, validation, and history refinement.
 # Signals: AutomationBench, Agents' Last Exam, FrontierCode, OSWorld.
 # Reason: Sol medium provides solid agentic and engineering judgment for bounded shipping work without build-level spend.
 ship = "openai/gpt-6-sol:medium"
