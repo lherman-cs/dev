@@ -61,8 +61,8 @@ interface ExplorerResult { status: "FOUND" | "INCONCLUSIVE" | "BLOCKED"; answer:
 const toolResult = (text: string): { content: [{ type: "text"; text: string }]; details: Record<string, never> } => ({ content: [{ type: "text", text }], details: {} });
 const terminalToolResult = (text: string) => ({ ...toolResult(text), terminate: true as const });
 const renderExplorerResult = (result: ExplorerResult): string => {
-  const uncertainty = result.uncertainty ? `\n\nUncertainty:\n${result.uncertainty}` : "";
-  return `${result.status}\n\n${result.answer}\n\nEvidence:\n${result.evidence.map((item: ExplorerResult["evidence"][number]) => `- ${item.claim} (${item.anchor})`).join("\n")}${uncertainty}`;
+  const uncertainty = result.uncertainty ? `\nUncertainty: ${result.uncertainty}` : "";
+  return `${result.status}\n${result.answer}\nEvidence:\n${result.evidence.map((item: ExplorerResult["evidence"][number]) => `- ${item.claim} (${item.anchor})`).join("\n")}${uncertainty}`;
 };
 const boundExplorerResult = (text: string): string => text.length > explorerResultChars
   ? `${text.slice(0, explorerResultChars - explorerResultMarker.length)}${explorerResultMarker}`
@@ -401,13 +401,7 @@ const resultText = (result: Awaited<ReturnType<ToolDefinition["execute"]>>): str
 };
 
 export function renderAsyncWorkerCompletion(completion: AsyncWorkerCompletion): string {
-  const outcome = completion.status === "completed" ? "completed" : "failed";
-  return [
-    `Asynchronous ${completion.role} ${completion.id} ${outcome}.`,
-    `Task: ${completion.task}`,
-    completion.status === "completed" ? "Result:" : "Failure:",
-    completion.result,
-  ].join("\n");
+  return `${completion.role} ${completion.id} ${completion.status}\n${completion.result}`;
 }
 
 function publishDetached(
@@ -440,7 +434,7 @@ export function asyncExploreTool(run: RunWorker, publish: PublishAsyncWorkerComp
     ],
     async execute(callId, args, _signal, onUpdate, ctx) {
       const id = publishDetached("Explorer", args.task, Promise.resolve(foreground.execute(callId, args, undefined, onUpdate, ctx)), publish, track, ownerSessionId?.());
-      return toolResult(`Started asynchronous Explorer ${id}.`);
+      return toolResult(`Explorer ${id} started.`);
     },
   };
 }
@@ -456,7 +450,7 @@ export function asyncReviewTool(run: RunWorker, publish: PublishAsyncWorkerCompl
     ],
     async execute(callId, args, _signal, onUpdate, ctx) {
       const id = publishDetached("Reviewer", args.task, Promise.resolve(foreground.execute(callId, args, undefined, onUpdate, ctx)), publish, undefined, ownerSessionId?.());
-      return toolResult(`Started asynchronous Reviewer ${id}.`);
+      return toolResult(`Reviewer ${id} started.`);
     },
   };
 }
