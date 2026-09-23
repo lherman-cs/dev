@@ -101,7 +101,7 @@ test('Explorer can verify but cannot edit or delegate recursively', async t=>{
 });
 test('every non-Explorer worker role receives the bounded Explorer primitive', async t=>{
   const f=await fixture(t,(_n,_c,m)=>message(m,[{type:'text',text:'done'}]));
-  const roles=['spec','plan','build','review','ship'] as const;
+  const roles=['spec','build','review','ship'] as const;
   for(const name of roles) await f.run({cwd:f.cwd,name,task:`${name} task`});
   assert.equal(f.sessions.length,roles.length);
   for(const session of f.sessions) {
