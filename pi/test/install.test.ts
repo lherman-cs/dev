@@ -14,7 +14,7 @@ test('native package registration preserves auth and unrelated settings', t => {
     enabled: true,
     reserveTokens: 16384,
     keepRecentTokens: 20000,
-    modelOverrides: { 'openai-codex/gpt-6-sol': { reserveTokens: 144000 } },
+    modelOverrides: { 'openai-codex/gpt-6-sol': { reserveTokens: 192000 } },
   };
   const settings = { theme: 'light', defaultThinkingLevel: 'high', packages: [], testUserField: 'keep', compaction };
   const auth = '{"custom-provider":{"type":"api_key","key":"NOT_A_REAL_KEY"}}\n';
