@@ -1,7 +1,7 @@
 {
   "authProvider": "openai-codex",
   "roles": {
-    "spec": "openai/gpt-6-sol:medium",
+    "spec": "openai/gpt-6-astra:high",
     "plan": "openai/gpt-6-sol:high",
     "build": "openai/gpt-6-sol:low",
     "review": "openai/gpt-6-sol:high",
