@@ -141,8 +141,8 @@ test('Main Explorers start concurrently and publish each result as soon as it se
   const signal = new AbortController().signal;
   const first = await tool.execute('one',{task:'scope A'},signal,undefined,{cwd:process.cwd()} as never);
   const second = await tool.execute('two',{task:'scope B'},signal,undefined,{cwd:process.cwd()} as never);
-  assert.match(firstText(first) || '',/Started asynchronous Explorer/);
-  assert.match(firstText(second) || '',/Started asynchronous Explorer/);
+  assert.match(firstText(first) || '',/Explorer .* started/);
+  assert.match(firstText(second) || '',/Explorer .* started/);
   assert.equal(calls.length,2);assert.equal(completions.length,0);
   assert.ok(calls.every(call=>call.signal===undefined),'detached work must not inherit the completed tool call signal');
   required(pending[1],'second worker').resolve({status:'FOUND',answer:'B answer',evidence:[{claim:'B claim',anchor:'b.ts:1'}]});
@@ -158,7 +158,7 @@ test('Main Reviewer failure is delivered asynchronously instead of rejecting its
   const run = (() => new Promise((_resolve, decline)=>{reject=decline;})) as unknown as RunWorker;
   const tool=asyncReviewTool(run,completion=>{completions.push(completion);});
   const receipt=await tool.execute('review',{task:'gate',candidate:'abc',evidence:'proof'},undefined,undefined,{cwd:process.cwd()} as never);
-  assert.match(firstText(receipt) || '',/Started asynchronous Reviewer/);
+  assert.match(firstText(receipt) || '',/Reviewer .* started/);
   reject(new Error('review transport failed'));await new Promise(resolve=>setImmediate(resolve));
   assert.equal(completions.length,1);assert.equal(required(completions[0],'completion').status,'failed');assert.match(required(completions[0],'completion').result,/transport failed/);
 });
@@ -191,9 +191,9 @@ test('a native Builder receives worker-owned Explorer completion asynchronously 
     builderTurns++;
     if(builderTurns===1)return message(model,[{type:'toolCall',id:'explore',name:'explore',arguments:{task:'Locate the repository entry point'}}],'toolUse');
     const serialized=JSON.stringify(context.messages);
-    if(builderTurns===2) { assert.match(serialized,/Started asynchronous Explorer/); return message(model,[{type:'text',text:'Independent work exhausted; awaiting delivery.'}]); }
-    assert.match(serialized,/Asynchronous Explorer .* completed/);
-    assert.match(serialized,/FOUND\\n\\nLocal evidence\\n\\nEvidence/);
+    if(builderTurns===2) { assert.match(serialized,/Explorer .* started/); return message(model,[{type:'text',text:'Independent work exhausted; awaiting delivery.'}]); }
+    assert.match(serialized,/Explorer .* completed/);
+    assert.match(serialized,/FOUND\\nLocal evidence\\nEvidence/);
     return message(model,[{type:'text',text:'done with Local evidence'}]);
   });
   const work=f.run({cwd:f.cwd,name:'build',task:'PRIVATE_PARENT_CONTEXT',skill:'dev-build'});
