@@ -22,7 +22,7 @@ interface ExtensionMock {
 }
 function load(mock: ExtensionMock, dependencies?: Parameters<typeof extension>[1]): void { extension(mock as ExtensionAPI, dependencies); }
 
-test("four current-session aliases, Agent Hub and isolated tools register without work", () => {
+test("three current-session aliases, Agent Hub and isolated tools register without work", () => {
   const commands = new Map<string, Omit<RegisteredCommand, "name" | "sourceInfo">>();
   const handlers = new Map<string, EventHandler>();
   const shortcuts = new Map<string, { handler: (ctx: never) => Promise<void> | void }>();
@@ -37,7 +37,7 @@ test("four current-session aliases, Agent Hub and isolated tools register withou
     getActiveTools: () => ["read"],
     setActiveTools: () => undefined,
   });
-  assert.deepEqual([...commands.keys()].sort(), ["dev-build", "dev-plan", "dev-ship", "dev-spec"]);
+  assert.deepEqual([...commands.keys()].sort(), ["dev-build", "dev-ship", "dev-spec"]);
   assert.ok(shortcuts.has("alt+a"));
   assert.deepEqual(tools.map(tool => tool.name), ["explore", "review"]);
   assert.equal(messages.length, 0);
