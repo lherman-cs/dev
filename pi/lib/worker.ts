@@ -401,7 +401,7 @@ const resultText = (result: Awaited<ReturnType<ToolDefinition["execute"]>>): str
 };
 
 export function renderAsyncWorkerCompletion(completion: AsyncWorkerCompletion): string {
-  return `${completion.role} ${completion.id} ${completion.status}\n${completion.result}`;
+  return `${completion.id} ${completion.status}\n${completion.result}`;
 }
 
 function publishDetached(
