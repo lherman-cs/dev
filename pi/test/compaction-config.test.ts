@@ -11,10 +11,10 @@ const readJson = (file: string): Record<string, any> =>
 
 test("GPT-6 compaction resolves to a 80k trigger with a 20k recent tail", () => {
   const settings = readJson("dotfiles/.pi/agent/settings.json");
-  const compaction = settings.compaction as Record<string, any>;
-  assert.equal(compaction.enabled, true);
-  assert.equal(compaction.reserveTokens, 16384, "non-GPT-6 models keep Pi's ordinary safety reserve");
-  assert.equal(compaction.keepRecentTokens, 20000);
+  const compaction = settings['compaction'] as Record<string, any>;
+  assert.equal(compaction['enabled'], true);
+  assert.equal(compaction['reserveTokens'], 16384, "non-GPT-6 models keep Pi's ordinary safety reserve");
+  assert.equal(compaction['keepRecentTokens'], 20000);
 
   const manager = SettingsManager.inMemory(settings);
   for (const provider of ["openai", "openai-codex"]) {
@@ -29,9 +29,9 @@ test("GPT-6 compaction resolves to a 80k trigger with a 20k recent tail", () => 
 
 test("VCC owns compaction content while Pi owns the threshold", () => {
   const config = readJson("dotfiles/.pi/agent/pi-vcc-config.json");
-  assert.equal(config.overrideDefaultCompaction, true);
-  assert.equal(config.smartKeepTail, true);
-  assert.equal(config.continueAfterThresholdCompact, true);
-  assert.equal(config.debug, false);
+  assert.equal(config['overrideDefaultCompaction'], true);
+  assert.equal(config['smartKeepTail'], true);
+  assert.equal(config['continueAfterThresholdCompact'], true);
+  assert.equal(config['debug'], false);
   assert.equal("globalThreshold" in config, false, "unsupported VCC threshold must not shadow Pi settings");
 });
