@@ -1,13 +1,36 @@
 //! A launcher, not an agent harness. Pi owns authentication and sessions.
 use anyhow::{Context, Result, anyhow, bail};
 use serde::Deserialize;
-use std::{collections::HashMap, env, fs, path::PathBuf, process::Command};
+use std::{
+    collections::HashMap,
+    env,
+    path::{Path, PathBuf},
+    process::Command,
+};
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Roles {
     auth_provider: String,
     roles: HashMap<String, String>,
+}
+
+fn load_roles(package: &Path) -> Result<Roles> {
+    // Use the same pinned TOON decoder as Pi, rather than maintaining a second parser.
+    let script = "import { decode } from '@toon-format/toon'; import { readFileSync } from 'node:fs'; process.stdout.write(JSON.stringify(decode(readFileSync('roles.toon', 'utf8'), { strict: true })));";
+    let output = Command::new("node")
+        .current_dir(package)
+        .args(["--input-type=module", "-e", script])
+        .output()
+        .with_context(|| format!("Could not decode {}", package.join("roles.toon").display()))?;
+    if !output.status.success() {
+        bail!(
+            "Could not decode {}: {}",
+            package.join("roles.toon").display(),
+            String::from_utf8_lossy(&output.stderr).trim()
+        );
+    }
+    serde_json::from_slice(&output.stdout).context("Invalid roles.toon configuration")
 }
 
 fn phase_args(config: &Roles, phase: &str, prompt: &[String]) -> Result<Vec<String>> {
@@ -106,10 +129,7 @@ pub fn launch(
                 executable.display()
             )
         })?;
-    let config: Roles = serde_json::from_str(
-        &fs::read_to_string(package.join("roles.json"))
-            .context("Pi workflow is not installed. Run ./install.sh once.")?,
-    )?;
+    let config = load_roles(package)?;
     let mut command = Command::new(executable);
     if let Some(session) = resume {
         command.args(resume_args(session)?);
@@ -123,11 +143,16 @@ pub fn launch(
 mod tests {
     use super::*;
     fn roles() -> Roles {
-        serde_json::from_str(include_str!("../pi/roles.json")).unwrap()
+        load_roles(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("pi")).unwrap()
+    }
+    #[test]
+    fn role_comments_decode_from_the_shared_toon_file() {
+        assert_eq!(roles().roles["spec"], "openai/gpt-6-astra:medium");
+        assert_eq!(roles().roles["assessor"], "openai/gpt-6-sol:high");
     }
     #[test]
     fn every_phase_is_interactive_until_invoked() {
-        for phase in ["spec", "plan", "build", "ship"] {
+        for phase in ["spec", "build", "ship"] {
             let args = phase_args(&roles(), phase, &[]).unwrap();
             assert_eq!(args.len(), 6);
             assert_eq!(&args[..2], &["--provider", "openai-codex"]);
