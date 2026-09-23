@@ -74,6 +74,15 @@ test('native SDK validates structured result tool instead of scraping model pros
   assert.deepEqual(await f.run({cwd:f.cwd,name:'review',task:'check',schema,skill:'dev-review'}),{verdict:'pass'});
   assert.ok(!required(f.sessions[0],'session').getActiveToolNames().some(name=>name==='edit'||name==='write'));
 });
+test('Explorer submit_result ends the run without a redundant model turn', async t=>{
+  const f=await fixture(t,(n,_c,m)=>{
+    assert.equal(n,1,'Explorer should finish on the submit_result tool call');
+    return message(m,[{type:'toolCall',id:'result',name:'submit_result',arguments:{answer:'found'}}],'toolUse');
+  });
+  const schema={type:'object',required:['answer'],additionalProperties:false,properties:{answer:{type:'string'}}};
+  assert.deepEqual(await f.run({cwd:f.cwd,name:'explorer',task:'find one fact',schema}),{answer:'found'});
+  assert.equal(f.calls.length,1);
+});
 test('Reviewer is fresh, read-only, cannot ask directly, and may use bounded Explorer', async t=>{
   const f=await fixture(t,(_n,_c,m)=>message(m,[{type:'text',text:'done'}]));
   await f.run({cwd:f.cwd,name:'review',task:'candidate',skill:'dev-review',tools:['bash','edit','ask_human']});
@@ -177,7 +186,7 @@ test('a native Builder receives worker-owned Explorer completion asynchronously 
     if(model.id==='gpt-6-luna') {
       assert.ok(!JSON.stringify(context.messages).includes('PRIVATE_PARENT_CONTEXT'));
       if(++explorerTurns===1) { finishExplorer=done=>stream.push({type:'done',reason:'toolUse',message:done}); return; }
-      return message(model,[{type:'text',text:'submitted'}]);
+      assert.fail('Explorer submit_result should terminate without a second model turn');
     }
     builderTurns++;
     if(builderTurns===1)return message(model,[{type:'toolCall',id:'explore',name:'explore',arguments:{task:'Locate the repository entry point'}}],'toolUse');
@@ -193,5 +202,5 @@ test('a native Builder receives worker-owned Explorer completion asynchronously 
   finishExplorer(message(required(f.calls[1],'Explorer call').model,[{type:'toolCall',id:'result',name:'submit_result',arguments:{status:'FOUND',answer:'Local evidence',evidence:[{claim:'Entry point',anchor:'src/main.ts:1'}]}}],'toolUse'));
   assert.equal(await work,'done with Local evidence');
   assert.equal(builderTurns,3);
-  assert.equal(explorerTurns,2);
+  assert.equal(explorerTurns,1);
 });
