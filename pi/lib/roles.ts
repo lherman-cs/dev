@@ -1,5 +1,5 @@
 import fs from "node:fs";
-export type PublicPhase = "spec" | "plan" | "build" | "ship";
+export type PublicPhase = "spec" | "build" | "ship";
 export type RoleName = PublicPhase | "review" | "explorer" | "escalated_builder";
 export type AuthProvider = "openai-codex" | "openai";
 export interface RoleConfig {
@@ -18,7 +18,7 @@ if (!parsed || typeof parsed !== "object" || !("authProvider" in parsed) || !("r
   throw new Error("Invalid roles.json configuration.");
 }
 export const config = parsed as RoleConfig;
-export const phases: readonly PublicPhase[] = ["spec", "plan", "build", "ship"];
+export const phases: readonly PublicPhase[] = ["spec", "build", "ship"];
 
 export function role(name: RoleName): ResolvedRole {
   const match = /^openai\/([^:]+):(low|medium|high)$/.exec(config.roles[name]);
