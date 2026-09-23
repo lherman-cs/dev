@@ -70,12 +70,12 @@ export default function extension(pi: ExtensionAPI, dependencies: ExtensionDepen
   pi.on("session_before_switch", stopForSessionChange);
   pi.on("session_before_fork", stopForSessionChange);
   pi.on("input", event => {
-    const match = /^\/skill:dev-(spec|plan|build|ship)(?:\s|$)/.exec(event.text);
+    const match = /^\/skill:dev-(spec|build|ship)(?:\s|$)/.exec(event.text);
     if (match?.[1]) setPhase(match[1] as PublicPhase);
     return { action: "continue" };
   });
 
-  for (const commandPhase of ["spec", "plan", "build", "ship"] as const) pi.registerCommand(`dev-${commandPhase}`, {
+  for (const commandPhase of ["spec", "build", "ship"] as const) pi.registerCommand(`dev-${commandPhase}`, {
     description: `Invoke dev-${commandPhase} in the current conversation`,
     handler: async (args, nextCtx) => {
       ctx = nextCtx;
