@@ -159,7 +159,9 @@ test("a completed asynchronous Explorer steers Main and triggers progress", asyn
   resolve({ status: "FOUND", answer: "evidence found", evidence: [{ claim: "entry", anchor: "src/main.ts:1" }] });
   await new Promise(done => setImmediate(done));
   assert.equal(messages.length, 1);
-  const [message, options] = messages[0] as [{ customType: string; content: string; details: { status: string } }, { triggerTurn: boolean; deliverAs: string }];
+  const [message, options] = messages[0] as [{ customType: string; content: string; details: { status: string; task: string } }, { triggerTurn: boolean; deliverAs: string }];
   assert.equal(message.customType, "dev-worker-result"); assert.match(message.content, /evidence found/); assert.equal(message.details.status, "completed");
+  assert.ok(!message.content.includes("find evidence"), "model-facing steer should omit the redundant task");
+  assert.equal(message.details.task, "find evidence", "full task stays available as non-steering metadata");
   assert.deepEqual(options, { triggerTurn: true, deliverAs: "steer" });
 });
