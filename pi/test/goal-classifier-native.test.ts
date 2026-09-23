@@ -28,8 +28,7 @@ for (const { label, expected } of cases) test(`native ambiguous report accepts n
       assert.deepEqual(context.tools, []);
       const serialized = (context.messages[0]!.content[0] as { text: string }).text;
       const data = JSON.parse(serialized);
-      assert.deepEqual(Object.keys(data), ["version", "report"]);
-      assert.deepEqual(Object.keys(data.report), ["progress", "remaining", "blocker"]);
+      assert.deepEqual(Object.keys(data), ["progress", "remaining", "blocker"]);
       observed.push(serialized);
     }
     const content: AssistantMessage["content"] = isAssessor ? [{ type: "text", text: label }] : foregroundCalls++ === 0

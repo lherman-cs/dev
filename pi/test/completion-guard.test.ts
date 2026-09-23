@@ -53,7 +53,7 @@ test("report schema rejects missing, extra, whitespace, inconsistent and oversiz
     { ...report, progress: "é".repeat(240), remaining: "é".repeat(240), blocker: "é".repeat(240) }])
     assert.throws(() => validateReport(input), /Invalid stopping report:.*Retry|Invalid stopping report:.*retry/);
   assert.deepEqual(validateReport({ ...report, remaining: "unknown" }), { ...report, remaining: "unknown" });
-  assert.equal(JSON.parse(serializeReport(report)).version, 1);
+  assert.deepEqual(JSON.parse(serializeReport(report)), report);
 });
 
 test("invalid tool report fails before lifecycle or inference, then corrected retry classifies", async () => {
@@ -87,7 +87,7 @@ test("model failure pauses visibly without retry or automatic repair", async () 
   assert.ok(!f.messages.some(m => m.includes("Continue only")));
 });
 
-test("classifier receives only a versioned report and continuation has fixed text", async () => {
+test("classifier receives only the report and continuation has fixed text", async () => {
   let input: StoppingReport | undefined;
   const f = fixture({ label: () => "test assessor", checkFit: async () => {}, classify: async received => { input = received; return "continue"; } });
   await f.execute("stopping_report", { ...report, remaining: "Run integration check" }); await flush();
