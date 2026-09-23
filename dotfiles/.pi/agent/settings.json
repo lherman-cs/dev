@@ -16,22 +16,22 @@
     "keepRecentTokens": 20000,
     "modelOverrides": {
       "openai/gpt-6-astra": {
-        "reserveTokens": 144000
+        "reserveTokens": 192000
       },
       "openai/gpt-6-sol": {
-        "reserveTokens": 144000
+        "reserveTokens": 192000
       },
       "openai/gpt-6-luna": {
-        "reserveTokens": 144000
+        "reserveTokens": 192000
       },
       "openai-codex/gpt-6-astra": {
-        "reserveTokens": 144000
+        "reserveTokens": 192000
       },
       "openai-codex/gpt-6-sol": {
-        "reserveTokens": 144000
+        "reserveTokens": 192000
       },
       "openai-codex/gpt-6-luna": {
-        "reserveTokens": 144000
+        "reserveTokens": 192000
       }
     }
   },
