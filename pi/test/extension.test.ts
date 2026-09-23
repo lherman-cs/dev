@@ -154,7 +154,7 @@ test("a completed asynchronous Explorer steers Main and triggers progress", asyn
   });
   const explore = tools.find(tool => tool.name === "explore"); assert.ok(explore);
   const receipt = await explore.execute("call", { task: "find evidence" }, undefined, undefined, { cwd: process.cwd() } as never);
-  assert.match((receipt.content[0] as { text: string }).text, /Started asynchronous Explorer/);
+  assert.match((receipt.content[0] as { text: string }).text, /Explorer .* started/);
   assert.equal(messages.length, 0);
   resolve({ status: "FOUND", answer: "evidence found", evidence: [{ claim: "entry", anchor: "src/main.ts:1" }] });
   await new Promise(done => setImmediate(done));
