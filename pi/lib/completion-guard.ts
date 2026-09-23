@@ -1,6 +1,8 @@
 import { createHash, randomUUID } from "node:crypto";
 import { execFileSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { Type, type Static } from "@earendil-works/pi-ai";
+import { fileURLToPath } from "node:url";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { RunWorker } from "./worker.ts";
 
@@ -128,7 +130,8 @@ export function registerCompletionGuard(pi: ExtensionAPI, run: RunWorker, hasAsy
       const atEvidence = gitEvidence(toolCtx.cwd);
       const evidenceHash = createHash("sha256").update(atEvidence).digest("hex");
       const tasks = current.tasks.filter(t => current.members.includes(t.id));
-      const prompt = `Independently assess this terminal proposal. Original request (not replaceable by the proposal):\n${current.request}\nInvoked skill: ${current.skill}\nUser clarifications: ${JSON.stringify(current.clarifications)}\nRelevant todo tasks (claims, not proof): ${JSON.stringify(tasks)}\nProposed ${args.outcome}: ${args.summary}\nProposed evidence: ${args.evidence}\n${atEvidence}\nCheck current evidence and the original requirements, including omissions from todos and tests. A blocked verdict requires an actual unavailable consequential input or authority. Return complete, blocked, or missing with concrete reasons. Submit with submit_result.`;
+      const skillText = readFileSync(fileURLToPath(new URL(`../skills/dev-${current.skill}/SKILL.md`, import.meta.url)), "utf8");
+      const prompt = `Independently assess this terminal proposal. Original request (not replaceable by the proposal):\n${current.request}\nInvoked skill contract:\n${skillText}\nUser clarifications: ${JSON.stringify(current.clarifications)}\nRelevant todo tasks (claims, not proof): ${JSON.stringify(tasks)}\nProposed ${args.outcome}: ${args.summary}\nProposed evidence: ${args.evidence}\n${atEvidence}\nCheck current evidence and the original requirements, including omissions from todos and tests. A blocked verdict requires an actual unavailable consequential input or authority. Return complete, blocked, or missing with concrete reasons. Submit with submit_result.`;
       void run({ name: "review", cwd: toolCtx.cwd, task: prompt, skill: "dev-finish", schema: verdictSchema,
         tools: ["read", "grep", "find", "ls"], metadata: { task: "Independent terminal assessment", label: "Finish assessor" } })
         .then((verdict: Verdict) => {

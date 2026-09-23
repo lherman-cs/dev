@@ -8,10 +8,10 @@ function fixture(hasAsyncWork = () => false) {
   const manager = SessionManager.inMemory(process.cwd());
   const context = { cwd: process.cwd(), sessionManager: manager, ui: { notify: () => undefined } } as unknown as ExtensionContext;
   const handlers = new Map<string, Array<(event: any, ctx: ExtensionContext) => any>>();
-  const tools: ToolDefinition[] = [], messages: string[] = [];
+  const tools: ToolDefinition[] = [], messages: string[] = [], assessments: string[] = [];
   let resolve!: (value: unknown) => void;
   let reject!: (reason: unknown) => void;
-  const run = (() => new Promise<unknown>((done, fail) => { resolve = done; reject = fail; })) as RunWorker;
+  const run = ((args: { task: string }) => { assessments.push(args.task); return new Promise<unknown>((done, fail) => { resolve = done; reject = fail; }); }) as RunWorker;
   const pi = {
     on: (name: string, handler: (event: any, ctx: ExtensionContext) => any) => {
       handlers.set(name, [...(handlers.get(name) || []), handler]); return () => undefined;
@@ -24,7 +24,7 @@ function fixture(hasAsyncWork = () => false) {
   const emit = (name: string, event: any = {}, ctx = context) => handlers.get(name)?.map(fn => fn(event, ctx));
   const finish = tools.find(t => t.name === "finish")!;
   const settle = () => emit("agent_before_settle", { outcome: "completed", context: { canContinue: true } })?.[0];
-  return { guard, emit, finish, settle, context, manager, messages,
+  return { guard, emit, finish, settle, context, manager, messages, assessments,
     resolve: (verdict: unknown) => resolve(verdict), reject: (reason: unknown) => reject(reason) };
 }
 const flush = async () => { await new Promise(done => setImmediate(done)); };
@@ -51,6 +51,7 @@ test("unsupported finish returns missing work; accepted finish settles", async (
   const args = { outcome: "complete", summary: "A is done", evidence: "test A" };
   const receipt = await f.finish.execute("id", args, undefined, undefined, f.context);
   assert.match((receipt.content[0] as { text: string }).text, /provisional/);
+  assert.match(f.assessments[0]!, /Endpoint.*requested implementation/);
   f.resolve({ verdict: "missing", explanation: "B has no proof", missing: ["Implement B"] }); await flush();
   assert.match(f.messages.at(-1)!, /B has no proof/);
   assert.ok(f.settle());
