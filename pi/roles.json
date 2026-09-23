@@ -2,10 +2,10 @@
   "authProvider": "openai-codex",
   "roles": {
     "spec": "openai/gpt-6-astra:high",
-    "build": "openai/gpt-6-sol:medium",
-    "review": "openai/gpt-6-sol:high",
+    "build": "openai/gpt-6-sol:high",
+    "review": "openai/gpt-6-astra:low",
     "ship": "openai/gpt-6-luna:medium",
     "explorer": "openai/gpt-6-luna:medium",
-    "escalated_builder": "openai/gpt-6-sol:high"
+    "escalated_builder": "openai/gpt-6-astra:medium"
   }
 }
