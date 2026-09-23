@@ -192,7 +192,7 @@ test('a native Builder receives worker-owned Explorer completion asynchronously 
     if(builderTurns===1)return message(model,[{type:'toolCall',id:'explore',name:'explore',arguments:{task:'Locate the repository entry point'}}],'toolUse');
     const serialized=JSON.stringify(context.messages);
     if(builderTurns===2) { assert.match(serialized,/Explorer .* started/); return message(model,[{type:'text',text:'Independent work exhausted; awaiting delivery.'}]); }
-    assert.match(serialized,/Explorer .* completed/);
+    assert.match(serialized,/explorer:[0-9a-f-]+ completed/);
     assert.match(serialized,/FOUND\\nLocal evidence\\nEvidence/);
     return message(model,[{type:'text',text:'done with Local evidence'}]);
   });
