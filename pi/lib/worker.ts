@@ -1,4 +1,7 @@
+import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
+import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { createAgentSession, DefaultResourceLoader, getAgentDir, ModelRuntime, SessionManager, SettingsManager, type AgentSession, type ToolDefinition } from "@earendil-works/pi-coding-agent";
@@ -14,23 +17,6 @@ const readers = ["read", "grep", "find", "ls"];
 const explorerResultChars = 4000;
 const explorerResultMarker = "\n[Explorer result truncated]";
 const reviewResultChars = 12000;
-const builderResultChars = 12000;
-const builderParameters = Type.Object({
-  task: Type.String({ minLength: 1, maxLength: 12000 }),
-  candidate: Type.String({ minLength: 1, maxLength: 2000 }),
-  evidence: Type.String({ minLength: 1, maxLength: 12000 }),
-}, { additionalProperties: false });
-const builderResultSchema = Type.Object({
-  status: Type.Union([Type.Literal("PREPARED"), Type.Literal("FAILED"), Type.Literal("NEEDS_HUMAN")]),
-  candidate: Type.String({ minLength: 1, maxLength: 2000 }),
-  evidence: Type.String({ minLength: 1, maxLength: 12000 }),
-  resultingIdentity: Type.String({ minLength: 1, maxLength: 2000 }),
-  summary: Type.String({ minLength: 1, maxLength: 4000 }),
-  commits: Type.Array(Type.String({ minLength: 1, maxLength: 500 }), { maxItems: 50 }),
-  localChecks: Type.Array(Type.Object({ name: Type.String({ minLength: 1, maxLength: 200 }), result: Type.String({ minLength: 1, maxLength: 1000 }) }, { additionalProperties: false }), { maxItems: 50 }),
-  repairedFindingKeys: Type.Array(Type.String({ minLength: 1, maxLength: 200 }), { maxItems: 50 }),
-  risks: Type.Array(Type.String({ minLength: 1, maxLength: 1000 }), { maxItems: 30 }),
-}, { additionalProperties: false });
 const exploreParameters = Type.Object({ task: Type.String() });
 const reviewParameters = Type.Object({
   task: Type.String({ minLength: 1, maxLength: 12000 }),
@@ -54,7 +40,8 @@ const reviewResultSchema = Type.Object({
 export type ReviewResult = Static<typeof reviewResultSchema>;
 export interface AsyncWorkerCompletion {
   id: string;
-  role: "Explorer" | "Reviewer" | "Builder";
+  ownerSessionId?: string;
+  role: "Explorer" | "Reviewer";
   task: string;
   status: "completed" | "failed";
   result: string;
@@ -81,6 +68,33 @@ const boundExplorerResult = (text: string): string => text.length > explorerResu
   : text;
 const roleLabels: Partial<Record<RoleName, string>> = { build: "Builder", review: "Reviewer", explorer: "Explorer", ship: "Shipper" };
 const roleLabel = (name: RoleName): string => roleLabels[name] ?? name;
+const gitRoot = (cwd: string): string | undefined => {
+  try { return fs.realpathSync(execFileSync("git", ["rev-parse", "--show-toplevel"], { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim()); }
+  catch { return undefined; }
+};
+const worktreeRoot = (cwd: string): string => gitRoot(cwd) ?? fs.realpathSync(cwd);
+
+/** Read-only agents work from their own HEAD snapshot; stale snapshots never reserve the owner's worktree. */
+export function readOnlySnapshot(cwd: string): { cwd: string; dispose(): void } {
+  const root = gitRoot(cwd);
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "pi-evidence-"));
+  const snapshot = path.join(directory, "worktree");
+  try {
+    if (root) execFileSync("git", ["worktree", "add", "--detach", "--quiet", snapshot, "HEAD"], { cwd: root, stdio: ["ignore", "pipe", "pipe"] });
+    else {
+      const relative = path.relative(fs.realpathSync(cwd), directory);
+      if (relative && relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative)) throw new Error("Cannot snapshot a directory containing the temporary workspace.");
+      fs.cpSync(cwd, snapshot, { recursive: true });
+    }
+  } catch (error) { fs.rmSync(directory, { recursive: true, force: true }); throw error; }
+  let disposed = false;
+  return { cwd: snapshot, dispose() {
+    if (disposed) return;
+    disposed = true;
+    try { if (root) execFileSync("git", ["worktree", "remove", "--force", snapshot], { cwd: root, stdio: ["ignore", "pipe", "pipe"] }); }
+    finally { fs.rmSync(directory, { recursive: true, force: true }); }
+  } };
+}
 
 /** Only behavioral settings cross the worker boundary, never ambient tools/UI. */
 export function workerSettings(cwd: string, model: Parameters<SettingsManager["getCompactionSettings"]>[0]): SettingsManager {
@@ -122,6 +136,7 @@ interface RunnerOptions {
   create?: typeof createAgentSession;
   hub: WorkerHub;
   getHistory?: () => WorkerHistory | undefined;
+  ownerCwd?: () => string | undefined;
   settingsFor?: typeof workerSettings;
   askHuman?: (request: { ownerId: string; question: string; choices?: string[] }, signal?: AbortSignal) => Promise<string | undefined>;
 }
@@ -130,7 +145,7 @@ interface ActiveRun { controller: AbortController }
 // The runner owns sessions. Hub actions call back into this owner rather than
 // inventing a second lifecycle, routing policy, or model-selection mechanism.
 export function createWorkerRunner(options: RunnerOptions): WorkerRunner {
-  const { runtime, create = createAgentSession, hub, getHistory = () => undefined, settingsFor = workerSettings, askHuman } = options;
+  const { runtime, create = createAgentSession, hub, getHistory = () => undefined, ownerCwd = () => undefined, settingsFor = workerSettings, askHuman } = options;
   if (!hub?.register || !hub?.unregister || !hub?.nextId) throw new Error("createWorkerRunner requires a WorkerHub so child sessions cannot be hidden.");
   let modelsPromise: Promise<ModelRuntime> | undefined;
   const activeRuns = new Set<ActiveRun>();
@@ -139,6 +154,7 @@ export function createWorkerRunner(options: RunnerOptions): WorkerRunner {
     const signal = parentSignal ? AbortSignal.any([parentSignal, controller.signal]) : controller.signal;
     const owned = { controller }; activeRuns.add(owned);
     let session: AgentSession | undefined;
+    let snapshot: ReturnType<typeof readOnlySnapshot> | undefined;
     let workerId: string | undefined;
     let unsubscribe: () => void = () => undefined;
     let accepting = false, initialSettled = false;
@@ -155,15 +171,19 @@ export function createWorkerRunner(options: RunnerOptions): WorkerRunner {
     try {
       signal.throwIfAborted();
       const selected = role(name);
+      const explorer = name === "explorer";
+      const readonly = explorer || name === "review" || (tools && !tools.some(t => ["bash", "write", "edit", "lsp_fix"].includes(t)));
+      const owner = ownerCwd();
+      if (!readonly && owner && worktreeRoot(cwd) === worktreeRoot(owner)) throw new Error("A writing child must own a different worktree from its parent.");
       const models = runtime || await (modelsPromise ||= ModelRuntime.create().catch(error => { modelsPromise = undefined; throw error; }));
       const model = models.getModel(selected.provider, selected.model);
       if (!model) throw new Error(`Pi does not list ${selected.provider}/${selected.model}; no model fallback is allowed.`);
       if (!models.hasConfiguredAuth(selected.provider)) throw new Error(`No login for ${selected.provider}. Use Pi /login; no model/provider fallback was attempted.`);
-      const explorer = name === "explorer";
-      const readonly = explorer || name === "review" || (tools && !tools.some(t => ["bash", "write", "edit", "lsp_fix"].includes(t)));
+      if (readonly) snapshot = readOnlySnapshot(cwd);
+      const workerCwd = snapshot?.cwd ?? cwd;
       const assignedSkill = explorer ? "dev-explore" : skill;
       const settings = settingsFor(cwd, model);
-      const loader = new DefaultResourceLoader({ cwd, agentDir: getAgentDir(), settingsManager: settings,
+      const loader = new DefaultResourceLoader({ cwd: workerCwd, agentDir: getAgentDir(), settingsManager: settings,
         noExtensions: true, noSkills: true, noPromptTemplates: true, noThemes: true,
         additionalExtensionPaths: [path.join(packageDir, "node_modules/@sting8k/pi-vcc/index.ts"), path.join(packageDir, "node_modules/pi-web-access/dist/index.js"),
           ...(!readonly ? [path.join(packageDir, "node_modules/@narumitw/pi-lsp/dist/index.ts"), path.join(packageDir, "node_modules/@narumitw/pi-chrome-devtools/dist/index.ts")] : [])],
@@ -176,11 +196,11 @@ export function createWorkerRunner(options: RunnerOptions): WorkerRunner {
       if (assignedSkill && !loader.getSkills().skills.some(s => s.name === assignedSkill)) throw new Error(`Missing worker skill ${assignedSkill}`);
       const id = hub.nextId(name);
       workerId = id;
-      const workerMetadata = { ...metadata, task: metadata.task || task, cwd, readOnly: !!readonly, vcc: true,
+      const workerMetadata = { ...metadata, task: metadata.task || task, cwd, snapshotCwd: snapshot?.cwd, ownerCwd: owner ?? cwd, readOnly: !!readonly, vcc: true,
         continuation: "New read-only investigation; original result remains unchanged" };
       const label = metadata.label || `${roleLabel(name)} · ${(String(metadata.task || task).split("\n", 1)[0] ?? name).slice(0, 100)}`;
       const history = getHistory();
-      const manager = history?.create(cwd, { id, label, role: name, model: selected.model, thinking: selected.thinking, metadata: workerMetadata, startedAt: Date.now() }) || SessionManager.inMemory(cwd);
+      const manager = history?.create(workerCwd, { id, label, role: name, model: selected.model, thinking: selected.thinking, metadata: workerMetadata, startedAt: Date.now() }) || SessionManager.inMemory(workerCwd);
       const childRun: RunWorker = <TChildShape extends TSchema | undefined = undefined>(args: RunArguments<TChildShape>) => execute({ ...args, scopedTools: args.scopedTools ?? scopedTools, signal: AbortSignal.any([signal, args.signal ?? signal]) });
       const publishNestedCompletion: PublishAsyncWorkerCompletion = async completion => {
         if (!session || signal.aborted) return;
@@ -221,7 +241,7 @@ export function createWorkerRunner(options: RunnerOptions): WorkerRunner {
         : name === "review"
           ? [...readers, ...scopedTools.map(tool => tool.name)]
           : tools || [...readers, ...(!readonly ? ["bash", "edit", "write", "lsp_diagnostics", "lsp_fix", "chrome_devtools_load", "chrome_devtools_list_pages", "chrome_devtools_select_page", "chrome_devtools_navigate", "chrome_devtools_evaluate", "chrome_devtools_screenshot"] : [])];
-      const created = await create({ cwd, model, thinkingLevel: selected.thinking, modelRuntime: models,
+      const created = await create({ cwd: workerCwd, model, thinkingLevel: selected.thinking, modelRuntime: models,
         settingsManager: settings, resourceLoader: loader, sessionManager: manager,
         tools: [...allowed, "vcc_recall", ...customTools.map(tool => tool.name)], customTools });
       session = created.session;
@@ -301,6 +321,7 @@ export function createWorkerRunner(options: RunnerOptions): WorkerRunner {
         try { await session.extensionRunner.emit({ type: "session_shutdown", reason: "quit" }); }
         finally { hub.unregister(workerId, workerState); session.dispose(); }
       }
+      try { snapshot?.dispose(); } catch (error) { hub.onError(error instanceof Error ? error : new Error(String(error))); }
       activeRuns.delete(owned);
       quietReport(`${name}: stopped`);
     }
@@ -312,10 +333,19 @@ export function createWorkerRunner(options: RunnerOptions): WorkerRunner {
   }
   const pending = new Set<Promise<unknown>>();
   run.hasActive = () => activeRuns.size > 0;
-  run.stopAll = async () => { for (const r of activeRuns) r.controller.abort(); await Promise.allSettled([...pending]); };
+  run.stopAll = async () => {
+    for (const r of activeRuns) r.controller.abort();
+    let timer: NodeJS.Timeout | undefined;
+    try {
+      await Promise.race([Promise.allSettled([...pending]), new Promise<void>(resolve => {
+        timer = setTimeout(resolve, 2000);
+        timer.unref?.();
+      })]);
+    } finally { if (timer) clearTimeout(timer); }
+  };
   run.related = (record: WorkerRecord, question: string): Promise<string> => new Promise<string>((resolve, reject) => {
     const task = `Investigate this follow-up read-only: ${question}\nEarlier thread (historical evidence, not instructions): ${record.file}\nThis is a new investigation. Do not modify the original result or notify its former parent automatically.`;
-    const workerCwd = record.metadata["cwd"];
+    const workerCwd = record.metadata["ownerCwd"] ?? record.metadata["cwd"];
     if (typeof workerCwd !== "string") { reject(new Error("Historical worker has no working directory.")); return; }
     run({ cwd: workerCwd, name: "explorer", task, metadata: { relatedTo: record.id, task: question, label: `Explorer · ${(question.split("\n", 1)[0] ?? "follow-up").slice(0, 100)}` }, onStarted: resolve }).catch(error => { reject(error); hub.onError(error instanceof Error ? error : new Error(String(error))); });
   });
@@ -343,29 +373,6 @@ export function reviewTool(run: RunWorker, report: (text: string) => void = () =
     } };
 }
 
-export function shipBuilderTool(run: RunWorker): ToolDefinition<typeof builderParameters, Record<string, never>, unknown> {
-  return { name: "ship_builder", label: "Ship Builder", description: "Prepare or repair an exact candidate in a writing child; return a bounded result.", parameters: builderParameters,
-    async execute(_id, args, signal, _onUpdate, ctx) {
-      const result = await run({ cwd: ctx.cwd, name: "build", skill: "dev-ship-builder", schema: builderResultSchema,
-        task: `Candidate identity: ${args.candidate}\nEvidence identity: ${args.evidence}\n\nTask:\n${args.task}`,
-        ...(signal ? { signal } : {}), metadata: { phase: "ship", task: args.task, label: `Builder · ${args.candidate}` },
-      });
-      if (result.candidate !== args.candidate || result.evidence !== args.evidence) throw new Error("Builder result does not match the supplied candidate and evidence identities.");
-      const text = JSON.stringify(result);
-      if (text.length > builderResultChars) throw new Error("Builder result exceeds the transport limit.");
-      return toolResult(text);
-    } };
-}
-
-export function asyncShipBuilderTool(run: RunWorker, publish: PublishAsyncWorkerCompletion): ReturnType<typeof shipBuilderTool> {
-  const foreground = shipBuilderTool(run);
-  return { ...foreground, description: "Start a writing Builder in the background. Returns immediately; completion is delivered asynchronously.",
-    async execute(callId, args, _signal, onUpdate, ctx) {
-      const id = publishDetached("Builder", args.task, Promise.resolve(foreground.execute(callId, args, undefined, onUpdate, ctx)), publish);
-      return toolResult(`Started asynchronous Builder ${id}. Continue independent work; its result will arrive automatically.`);
-    } };
-}
-
 export function exploreTool(run: RunWorker, report: (text: string) => void = () => undefined, parentMetadata: Record<string, unknown> = {}): ToolDefinition<typeof exploreParameters, Record<string, never>, unknown> {
   return { name: "explore", label: "Explorer",
     description: "Delegate one independent, narrowly scoped read-only investigation or verification, especially when it may be materially slow or high-output. Returns compact evidence, not raw output.",
@@ -373,6 +380,7 @@ export function exploreTool(run: RunWorker, report: (text: string) => void = () 
     promptGuidelines: [
       "Delegate read-only evidence gathering when it is reasonably expected to take material time or produce substantial raw output, including broad repository or web research and slow or noisy targeted verification.",
       "Keep quick known-target reads and small low-output checks in the parent when delegation would cost more than it saves.",
+      "The Explorer works in a separate HEAD snapshot, not the owner's dirty worktree; request live uncommitted evidence explicitly or inspect it in the parent.",
       "Keep edits, installs, Git mutation, interactive or privileged work, and project decisions in the parent.",
       "Give each explore call one self-contained scope: state the factual question or command, boundaries, sibling exclusions, and expected evidence.",
       "Use separate calls for independent scopes; run dependent follow-ups only after their prerequisite result.",
@@ -406,12 +414,14 @@ function publishDetached(
   role: AsyncWorkerCompletion["role"], task: string,
   work: Promise<Awaited<ReturnType<ToolDefinition["execute"]>>>, publish: PublishAsyncWorkerCompletion,
   track?: TrackAsyncWorkerCompletion,
+  ownerSessionId?: string,
 ): string {
   const id = `${role.toLowerCase()}:${randomUUID()}`;
   const notify = async (completion: AsyncWorkerCompletion): Promise<void> => { try { await publish(completion); } catch { /* completion remains in Agent Hub history */ } };
+  const origin = ownerSessionId ? { ownerSessionId } : {};
   const completion = work.then(
-    result => notify({ id, role, task, status: "completed", result: resultText(result) }),
-    error => notify({ id, role, task, status: "failed", result: error instanceof Error ? error.message : String(error) }),
+    result => notify({ id, role, task, status: "completed", result: resultText(result), ...origin }),
+    error => notify({ id, role, task, status: "failed", result: error instanceof Error ? error.message : String(error), ...origin }),
   );
   track?.(completion);
   void completion.catch(() => undefined);
@@ -419,7 +429,7 @@ function publishDetached(
 }
 
 /** Detached Explorer adapter shared by Main and worker-owned parent sessions. */
-export function asyncExploreTool(run: RunWorker, publish: PublishAsyncWorkerCompletion, report: (text: string) => void = () => undefined, track?: TrackAsyncWorkerCompletion, parentMetadata: Record<string, unknown> = {}): ReturnType<typeof exploreTool> {
+export function asyncExploreTool(run: RunWorker, publish: PublishAsyncWorkerCompletion, report: (text: string) => void = () => undefined, track?: TrackAsyncWorkerCompletion, parentMetadata: Record<string, unknown> = {}, ownerSessionId?: () => string | undefined): ReturnType<typeof exploreTool> {
   const foreground = exploreTool(run, report, parentMetadata);
   return { ...foreground,
     description: "Start an independent investigation or verification in the background. Returns immediately; the result is delivered asynchronously.",
@@ -429,13 +439,13 @@ export function asyncExploreTool(run: RunWorker, publish: PublishAsyncWorkerComp
       "If a result is required for the next decision, stop after exhausting independent work. Do not poll or repeat the investigation.",
     ],
     async execute(callId, args, _signal, onUpdate, ctx) {
-      const id = publishDetached("Explorer", args.task, Promise.resolve(foreground.execute(callId, args, undefined, onUpdate, ctx)), publish, track);
+      const id = publishDetached("Explorer", args.task, Promise.resolve(foreground.execute(callId, args, undefined, onUpdate, ctx)), publish, track, ownerSessionId?.());
       return toolResult(`Started asynchronous Explorer ${id}. Continue independent work; its result will arrive automatically.`);
     },
   };
 }
 
-export function asyncReviewTool(run: RunWorker, publish: PublishAsyncWorkerCompletion, report: (text: string) => void = () => undefined): ReturnType<typeof reviewTool> {
+export function asyncReviewTool(run: RunWorker, publish: PublishAsyncWorkerCompletion, report: (text: string) => void = () => undefined, ownerSessionId?: () => string | undefined): ReturnType<typeof reviewTool> {
   const foreground = reviewTool(run, report);
   return { ...foreground,
     description: "Start an exact-candidate review in the background. Returns immediately; the verdict is delivered asynchronously.",
@@ -445,7 +455,7 @@ export function asyncReviewTool(run: RunWorker, publish: PublishAsyncWorkerCompl
       "If the verdict gates the next decision, stop after exhausting independent work. Do not poll or launch a duplicate review.",
     ],
     async execute(callId, args, _signal, onUpdate, ctx) {
-      const id = publishDetached("Reviewer", args.task, Promise.resolve(foreground.execute(callId, args, undefined, onUpdate, ctx)), publish);
+      const id = publishDetached("Reviewer", args.task, Promise.resolve(foreground.execute(callId, args, undefined, onUpdate, ctx)), publish, undefined, ownerSessionId?.());
       return toolResult(`Started asynchronous Reviewer ${id}. Continue independent work; its verdict will arrive automatically.`);
     },
   };

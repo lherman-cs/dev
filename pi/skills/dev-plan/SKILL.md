@@ -1,23 +1,20 @@
 ---
 name: dev-plan
-description: Compile an approved spec into small, independently testable implementation outcomes.
+description: Make a decision-complete implementation plan from the request, repository and any applicable spec.
 disable-model-invocation: true
 ---
 
 # dev-plan
 
-Require an explicitly approved spec.
+Plan the requested outcome. An approved spec is useful when available, not a prerequisite.
 
-- Read `../references/reconcile.md` at entry. Compare any draft with the approved spec; a status marker alone does not prove approval.
+- Read `../references/reconcile.md` at entry. Reconstruct required semantics from the request, repository state, conventions, and evidence; follow an applicable approved spec if one exists. Ask only when consequential product semantics, scope, or authority remain unresolved. A status marker alone does not prove approval.
 - Code and Git reality outrank assumptions.
-- Choose the simplest durable design that satisfies the spec and preserves correctness, robustness, scalability, and maintainability. Avoid unrelated cleanup and speculative abstraction.
+- Choose the simplest durable design that satisfies the required semantics and preserves correctness, robustness, scalability, and maintainability. Avoid unrelated cleanup and speculative abstraction.
 - Delete before adding; otherwise reuse existing code, prefer standard/native facilities, then existing dependencies, and add custom code last.
-- Break the work into the smallest coherent independently testable outcomes, explicit enough to serve directly as implementation TODOs, with dependencies only where they materially matter.
-- Resolve every consequential implementation decision the Builder should not need to make: architecture, code touchpoints, existing abstractions to reuse/change/remove, interfaces, ownership, data/control flow, invariants, constraints, risks, and proof.
-- Make each outcome explicit about the required changes and deterministic done criteria so implementation is primarily execution rather than design.
-- Write compact `plans/<project>/plan.md` with the implementation strategy, outcome breakdown, dependencies, material constraints/non-goals, and deterministic proof. Do not duplicate the spec/research or track progress/status.
-- The resolved design and required outcomes are binding. The Builder may adapt sequencing and local mechanics when code reality demands it, but must not silently change approved semantics, architecture, ownership, invariants, or scope; surface any material contradiction instead.
+- Break the work into the smallest coherent independently testable outcomes, with dependencies only where they materially matter.
+- Resolve consequential implementation decisions: architecture, code touchpoints, abstractions to reuse/change/remove, interfaces, ownership, data/control flow, invariants, constraints, risks, and proof.
+- Make each outcome explicit about required changes and deterministic done criteria. When a durable plan is useful or requested, write compact `plans/<project>/plan.md` with strategy, outcomes, dependencies, constraints/non-goals, and proof. Put cross-worktree artifacts in a tracked path rather than assuming ignored `plans/` is shared. Do not use the plan to track progress/status.
+- An applicable approved plan binds the owning agent's architecture and outcomes. Without one, the owning agent resolves implementation design itself and does not invent new product semantics.
 
-Before approval, present the architecture/data flow, important interfaces/invariants, outcome breakdown/dependencies, proof, risks, and intentionally untouched areas through `ask_user_question`. Revise until explicitly approved.
-
-Stop after the approved plan.
+Present the architecture, important decisions, outcomes, proof, risks, and untouched areas. If the human requested approval of the plan, present it through `ask_user_question`, revise on feedback, and mark `Status: APPROVED` only with evidenced explicit approval. Otherwise finish a decision-complete plan without requiring an approval turn.

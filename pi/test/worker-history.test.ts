@@ -59,6 +59,16 @@ test('metadata snapshots are immutable and outside-path/symlink reads are reject
   assert.throws(() => history.open(link), /outside this parent/); assert.throws(() => history.open(other), /outside this parent/);
 });
 
+test('snapshot history requires a read-only worker bound to this parent', t => {
+  const { root, history } = fixture(t);
+  const foreign = fs.mkdtempSync(path.join(os.tmpdir(), 'foreign-worker-'));
+  t.after(() => fs.rmSync(foreign, { recursive: true, force: true }));
+  const spoofed = history.create(foreign, { id: 'spoof', metadata: { readOnly: true, ownerCwd: foreign, snapshotCwd: foreign } });
+  assert.throws(() => history.open(pathOf(spoofed.getSessionFile())), /another worktree/);
+  const writable = history.create(foreign, { id: 'write', metadata: { readOnly: false, ownerCwd: root, snapshotCwd: foreign } });
+  assert.throws(() => history.open(pathOf(writable.getSessionFile())), /another worktree/);
+});
+
 test('damaged files do not hide intact histories; restoration is cancellable', async t => {
   const { root, history, errors } = fixture(t); history.create(root, { id: 'intact' }); fs.writeFileSync(path.join(pathOf(history.root), 'broken.jsonl'), 'not json');
   const hub = new WorkerHub({ history }); t.after(() => hub.dispose()); await history.restore(hub); assert.ok(hub.get('intact')); assert.ok(errors.length);

@@ -1,6 +1,6 @@
 ---
 name: dev-spec
-description: Make project semantics decision-complete and human-approved before planning.
+description: Make project semantics decision-complete from the request and repository evidence.
 disable-model-invocation: true
 ---
 
@@ -9,12 +9,10 @@ disable-model-invocation: true
 Make the requested outcome decision-complete.
 
 - Read `../references/reconcile.md` at entry. Compare any draft with evidenced user intent; a status marker alone does not prove approval.
-- Challenge ambiguity, hidden assumptions, speculative requirements, compatibility expectations, invariants, non-goals, risks, and project boundaries until human and agent are explicitly aligned. Do not merely formalize the initial request.
-- Trace the relevant end-to-end behavior, callers/callees, data ownership, invariants, and failure paths before defining semantics or acceptance evidence.
-- If outcomes are independently mergeable/testable, propose a split; the human decides and manages any extra worktrees.
-- Write semantic prose in ignored `plans/<project>/spec.md`: behavior/interfaces, key decisions and open decisions, invariants, constraints, non-goals, risks, and acceptance evidence.
+- Challenge ambiguity, hidden assumptions, speculative requirements, compatibility expectations, invariants, non-goals, risks, and project boundaries. Resolve ordinary choices using the request, repository state, conventions, and evidence. Ask only about consequential unresolved semantics, scope, or authority.
+- Trace relevant end-to-end behavior, callers/callees, data ownership, invariants, and failure paths before defining semantics or acceptance evidence.
+- If outcomes are independently mergeable/testable, propose a split; the human decides whether to manage additional worktrees.
+- When a durable spec is useful or requested, write semantic prose in `plans/<project>/spec.md`: behavior/interfaces, key decisions and open decisions, invariants, constraints, non-goals, risks, and acceptance evidence. If it must be available in another worktree, place it in a tracked repository path rather than assuming ignored `plans/` travels with Git.
 - Do not design implementation tasks, use TOON for the spec, or create/manage worktrees.
 
-Before approval, present a Markdown review through `ask_user_question` with goal, user-visible behavior, decisions/open decisions, non-goals, risks, acceptance evidence, and any split. Challenge unresolved or weak decisions rather than seeking ceremonial approval. Revise on feedback.
-
-Only explicit human approval may mark `Status: APPROVED`. Stop after the approved spec.
+Present the decisions and evidence, including remaining uncertainty. If human approval was explicitly requested, present the review through `ask_user_question`, revise on feedback, and mark `Status: APPROVED` only with evidenced explicit approval. Otherwise a decision-complete spec can finish without a ceremonial approval gate; do not mark it approved on the agent's own authority.

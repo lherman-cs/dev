@@ -6,27 +6,25 @@ import { fileURLToPath } from "node:url";
 const text = (path: string): string => readFileSync(fileURLToPath(new URL(`../skills/${path}`, import.meta.url)), "utf8");
 const skill = (name: string): string => text(`${name}/SKILL.md`);
 
-test("one lazy reference owns the cross-phase recovery contract", () => {
+test("one lazy reference owns worktree recovery from live evidence", () => {
   const policy = text("references/reconcile.md");
-  for (const name of ["dev-spec", "dev-plan", "dev-build", "dev-ship", "dev-ship-builder"]) {
+  for (const name of ["dev-spec", "dev-plan", "dev-build", "dev-ship"]) {
     assert.match(skill(name), /Read `\.\.\/references\/reconcile\.md` at entry/);
   }
-  for (const requirement of [/no prior session/, /including untracked files/, /Verify uncertain side effects/, /exclusive writing ownership/, /outside the worktree/, /backup location or failure/, /best-effort, not a veto/, /Never sweep ignored files/, /committed history/, /independent remote work/]) {
+  for (const requirement of [/no prior session/, /including untracked files/, /Verify uncertain side effects/, /not a prerequisite/, /outside the worktree/, /backup location or failure/, /best-effort, not a veto/, /Never sweep ignored files/, /committed history/, /independent remote work/]) {
     assert.match(policy, requirement);
   }
 });
 
-test("phase-specific gates remain where they belong", () => {
-  assert.match(skill("dev-spec"), /Only explicit human approval/);
-  assert.match(skill("dev-plan"), /Before approval/);
-  assert.match(skill("dev-build"), /A plan is optional/);
-  assert.match(skill("dev-build"), /NEEDS_REPLAN/);
-  assert.match(skill("dev-ship"), /Never merge/);
-  assert.match(skill("dev-ship"), /Human owns destructive history\/remote recovery/);
-  assert.equal((skill("dev-ship").match(/^- \[ \]/gm) ?? []).length, 5);
-  assert.match(skill("dev-ship"), /Builder resolve ordinary conflicts/);
-  assert.match(skill("dev-ship-builder"), /When delegated a rebase conflict, resolve it/);
-  assert.match(skill("dev-ship-builder"), /material drift or competing ownership/);
-  assert.match(skill("dev-review"), /fresh read-only agent/);
-  assert.match(skill("dev-review"), /rather than PASS/);
+test("phase contracts allow absent artifacts and reserve only consequential human decisions", () => {
+  assert.match(skill("dev-spec"), /Otherwise a decision-complete spec can finish/);
+  assert.match(skill("dev-plan"), /An approved spec is useful when available, not a prerequisite/);
+  assert.match(skill("dev-build"), /An approved spec or plan is optional/);
+  assert.match(skill("dev-build"), /failed or interrupted commit/);
+  assert.match(skill("dev-ship"), /sole writing owner/);
+  assert.match(skill("dev-ship"), /An optional independent read-only `review`/);
+  assert.match(skill("dev-ship"), /Otherwise make the authorized readiness transition yourself/);
+  assert.match(skill("dev-ship"), /Never merge in dev-ship/);
+  assert.match(skill("dev-review"), /A missing spec or plan is not itself a blocker/);
+  assert.doesNotMatch(skill("dev-ship"), /ship_builder|mandatory reviewer|approved spec, optional plan/i);
 });

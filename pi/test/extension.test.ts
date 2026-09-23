@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createJiti } from "jiti";
-import type { ExtensionAPI, RegisteredCommand, ToolDefinition } from "@earendil-works/pi-coding-agent";
+import { SessionManager, type ExtensionAPI, type RegisteredCommand, type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import type { RunWorker } from "../lib/worker.ts";
 import { WorkerHub } from "../lib/worker-hub.ts";
 
@@ -39,14 +39,13 @@ test("four current-session aliases, Agent Hub and isolated tools register withou
   });
   assert.deepEqual([...commands.keys()].sort(), ["dev-build", "dev-plan", "dev-ship", "dev-spec"]);
   assert.ok(shortcuts.has("alt+a"));
-  assert.deepEqual(tools.map(tool => tool.name), ["explore", "review", "ship_builder", "ship_artifacts"]);
+  assert.deepEqual(tools.map(tool => tool.name), ["explore", "review"]);
   assert.equal(messages.length, 0);
   const explore = tools[0]; assert.ok(explore);
   const toolCall = handlers.get("tool_call"); assert.ok(toolCall);
   for (const toolName of explorerOnlyTools) assert.ok(toolCall({ toolName })?.reason);
   assert.ok(toolCall({ toolName: "review" })?.reason);
-  assert.ok(toolCall({ toolName: "ship_builder" })?.reason);
-  assert.ok(toolCall({ toolName: "ship_artifacts" })?.reason);
+  assert.equal(toolCall({ toolName: "edit" }), undefined);
 });
 
 test("review is active only for an explicit dev-ship phase", async () => {
@@ -69,13 +68,66 @@ test("review is active only for an explicit dev-ship phase", async () => {
   });
   const context = { ui: { notify: noop } } as never;
   await commands.get("dev-ship")?.handler("", context);
-  assert.ok(active.includes("review")); assert.ok(active.includes("ship_builder"));
+  assert.ok(active.includes("review"));
   assert.equal(handlers.get("tool_call")?.({ toolName: "review" }), undefined);
   await commands.get("dev-build")?.handler("", context);
-  assert.ok(!active.includes("review")); assert.ok(!active.includes("ship_builder"));
+  assert.ok(!active.includes("review"));
   assert.ok(handlers.get("tool_call")?.({ toolName: "review" })?.reason);
   handlers.get("input")?.({ text: "/skill:dev-ship plan.md" });
   assert.ok(active.includes("review"));
+});
+
+test("session change cancels active evidence work without vetoing or transferring ownership", async () => {
+  let stops = 0;
+  const run = Object.assign(async () => "unused", {
+    hasActive: () => true, stopAll: async () => { stops++; await new Promise(() => undefined); }, related: async () => "unused",
+  });
+  const handlers = new Map<string, (event?: unknown) => Promise<unknown> | unknown>();
+  const noop = () => undefined;
+  load({
+    registerCommand: noop as ExtensionAPI["registerCommand"],
+    registerShortcut: noop as ExtensionAPI["registerShortcut"],
+    registerTool: noop as ExtensionAPI["registerTool"],
+    on: (name, handler) => { handlers.set(name, handler as (event?: unknown) => unknown); return noop; },
+    sendMessage: noop as ExtensionAPI["sendMessage"],
+    sendUserMessage: noop as ExtensionAPI["sendUserMessage"],
+    getActiveTools: () => ["read"],
+    setActiveTools: noop as ExtensionAPI["setActiveTools"],
+  }, { hub: new WorkerHub(), createWorkerRunner: (() => run) as never,
+    registerWorkerHubUI: (() => ({ setContext: noop, dispose: noop })) as never });
+  assert.equal(await handlers.get("session_before_switch")?.(), undefined);
+  assert.equal(await handlers.get("session_before_fork")?.(), undefined);
+  assert.equal(stops, 2);
+  assert.equal(handlers.get("tool_call")?.({ toolName: "edit" }), undefined);
+});
+
+test("late completion from an earlier session cannot steer the new owner", async () => {
+  let resolve!: (value: unknown) => void;
+  const run = Object.assign(() => new Promise(done => { resolve = done; }), {
+    hasActive: () => true, stopAll: async () => undefined, related: async () => "unused",
+  });
+  const handlers = new Map<string, (event: unknown, ctx?: unknown) => Promise<unknown> | unknown>();
+  const tools: RegisteredTool[] = [], messages: unknown[] = [];
+  const noop = () => undefined;
+  load({
+    registerCommand: noop as ExtensionAPI["registerCommand"],
+    registerShortcut: noop as ExtensionAPI["registerShortcut"],
+    registerTool: tool => { tools.push(tool as RegisteredTool); },
+    on: (name, handler) => { handlers.set(name, handler as (event: unknown, ctx?: unknown) => unknown); return noop; },
+    sendMessage: (...args) => { messages.push(args); },
+    sendUserMessage: noop as ExtensionAPI["sendUserMessage"],
+    getActiveTools: () => ["read"],
+    setActiveTools: noop as ExtensionAPI["setActiveTools"],
+  }, { hub: new WorkerHub(), createWorkerRunner: (() => run) as never,
+    registerWorkerHubUI: (() => ({ setContext: noop, dispose: noop })) as never });
+  const context = (sessionManager: SessionManager) => ({ sessionManager, ui: { notify: noop } });
+  await handlers.get("session_start")?.({}, context(SessionManager.inMemory(process.cwd())));
+  const explore = tools.find(tool => tool.name === "explore"); assert.ok(explore);
+  await explore.execute("call", { task: "earlier evidence" }, undefined, undefined, { cwd: process.cwd() } as never);
+  await handlers.get("session_start")?.({}, context(SessionManager.inMemory(process.cwd())));
+  resolve({ status: "FOUND", answer: "stale", evidence: [{ claim: "old", anchor: "README.md:1" }] });
+  await new Promise(done => setImmediate(done));
+  assert.equal(messages.length, 0);
 });
 
 test("a completed asynchronous Explorer steers Main and triggers progress", async () => {

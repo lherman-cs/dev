@@ -1,16 +1,12 @@
-import type { ExtensionAPI, ExtensionContext, SessionManager } from "@earendil-works/pi-coding-agent";
-import { asyncExploreTool, asyncReviewTool, asyncShipBuilderTool, createWorkerRunner, renderAsyncWorkerCompletion, type AsyncWorkerCompletion } from "./lib/worker.ts";
-import { shipArtifactsTool } from "./lib/ship-artifacts-tool.ts";
-import { WorkerHub, isActive } from "./lib/worker-hub.ts";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { asyncExploreTool, asyncReviewTool, createWorkerRunner, renderAsyncWorkerCompletion, type AsyncWorkerCompletion } from "./lib/worker.ts";
+import { WorkerHub } from "./lib/worker-hub.ts";
 import { WorkerHistory } from "./lib/worker-history.ts";
 import { registerWorkerHubUI } from "./worker-hub-ui.ts";
 import type { WorkerHistory as WorkerHistoryStore } from "./lib/worker-history.ts";
-import type { RegisterWorker, WorkerPatch, WorkerState } from "./lib/worker-types.ts";
 import type { PublicPhase } from "./lib/roles.ts";
 
 export const explorerOnlyTools = new Set(["web_search", "source_check", "fetch_content", "get_search_content"]);
-const mainReaders = new Set(["read", "grep", "find", "ls", "explore", "review", "vcc_recall", "ask_user_question"]);
-
 type HubUI = ReturnType<typeof registerWorkerHubUI>;
 type WorkerRunner = ReturnType<typeof createWorkerRunner>;
 interface ExtensionDependencies {
@@ -18,15 +14,6 @@ interface ExtensionDependencies {
   createWorkerRunner?: typeof createWorkerRunner;
   registerWorkerHubUI?: typeof registerWorkerHubUI;
 }
-interface ExternalWorkerRequest {
-  sessionId: string;
-  receive(adapter: {
-    createSessionManager(cwd: string, metadata: Record<string, unknown>): SessionManager;
-    register(record: RegisterWorker): { update(patch: WorkerPatch): void; finish(state?: WorkerState): void };
-  }): void;
-}
-const isExternalWorkerRequest = (value: unknown): value is ExternalWorkerRequest => !!value && typeof value === "object" && typeof (value as Partial<ExternalWorkerRequest>).sessionId === "string" && typeof (value as Partial<ExternalWorkerRequest>).receive === "function";
-
 /** Current-conversation role aliases and isolated read-only child tools. */
 export default function extension(pi: ExtensionAPI, dependencies: ExtensionDependencies = {}): void {
   let ctx: ExtensionContext | undefined, history: WorkerHistoryStore | undefined;
@@ -34,8 +21,8 @@ export default function extension(pi: ExtensionAPI, dependencies: ExtensionDepen
   const setPhase = (next: PublicPhase | undefined): void => {
     phase = next;
     const active = pi.getActiveTools();
-    const tools = active.filter(name => name !== "review" && name !== "ship_builder");
-    if (next === "ship") tools.push("review", "ship_builder");
+    const tools = active.filter(name => name !== "review");
+    if (next === "ship") tools.push("review");
     if (tools.length !== active.length || tools.some((name, index) => name !== active[index])) pi.setActiveTools(tools);
   };
   const lifetime = new AbortController();
@@ -49,10 +36,8 @@ export default function extension(pi: ExtensionAPI, dependencies: ExtensionDepen
       return (response as { answer: string }).answer;
     },
   }, signal);
-  const run: WorkerRunner = (dependencies.createWorkerRunner || createWorkerRunner)({ hub, getHistory: () => history, askHuman });
+  const run: WorkerRunner = (dependencies.createWorkerRunner || createWorkerRunner)({ hub, getHistory: () => history, ownerCwd: () => ctx?.cwd, askHuman });
   hub.onRelated = (record, text) => run.related(record, text);
-  const writesOwned = (): boolean => hub.list().some(r => isActive(r) && !r.metadata["readOnly"]);
-  const ownershipMessage = "Main is read-only while a writing child owns this worktree. Alt+A opens that agent. Wait for it to finish or stop it before editing.";
   const hubUI: HubUI = (dependencies.registerWorkerHubUI || registerWorkerHubUI)(pi, hub);
 
   pi.on("session_start", async (_event, nextCtx) => {
@@ -62,49 +47,28 @@ export default function extension(pi: ExtensionAPI, dependencies: ExtensionDepen
     hub.setHistory(history); hubUI.setContext(ctx);
     await history.restore(hub, lifetime.signal);
   });
-  const unlisten = pi.events?.on("dev:worker-hub", (request: unknown) => {
-    const parentId = ctx?.sessionManager.getSessionId();
-    if (closing || !parentId || !isExternalWorkerRequest(request) || request.sessionId !== parentId) return;
-    const valid = () => { if (closing || ctx?.sessionManager.getSessionId() !== parentId) throw new Error("Parent session changed."); };
-    request.receive({
-      createSessionManager(cwd: string, metadata: Record<string, unknown>) { valid(); if (!history) throw new Error("Worker history is unavailable."); return history.create(cwd, metadata); },
-      register(record: RegisterWorker) {
-        valid();
-        if (!record.id || !record.session) throw new Error("Register an id and an externally-owned AgentSession.");
-        hub.register({ ...record, metadata: { ...record.metadata, external: true } });
-        return { update(patch: WorkerPatch) { valid(); hub.update(record.id, patch); }, finish(state: WorkerState = "completed") { valid(); hub.unregister(record.id, state); } };
-      },
-    });
-  });
-
   const publishWorkerCompletion = (completion: AsyncWorkerCompletion): void => {
-    if (closing) return;
+    if (closing || (completion.ownerSessionId && completion.ownerSessionId !== ctx?.sessionManager.getSessionId())) return;
     const content = renderAsyncWorkerCompletion(completion);
     try {
       pi.sendMessage({ customType: "dev-worker-result", content, display: true, details: completion }, { triggerTurn: true, deliverAs: "steer" });
     } catch (error) { warn(error); }
   };
-  pi.registerTool(asyncExploreTool(run, publishWorkerCompletion));
-  pi.registerTool(asyncReviewTool(run, publishWorkerCompletion));
-  pi.registerTool(asyncShipBuilderTool(run, publishWorkerCompletion));
-  pi.registerTool(shipArtifactsTool());
+  const currentSession = (): string | undefined => ctx?.sessionManager.getSessionId();
+  pi.registerTool(asyncExploreTool(run, publishWorkerCompletion, undefined, undefined, {}, currentSession));
+  pi.registerTool(asyncReviewTool(run, publishWorkerCompletion, undefined, currentSession));
   pi.on("tool_call", event => {
-    if (event.toolName === "ship_artifacts" && phase !== "ship") return { block: true, reason: "Ship artifacts require an explicit dev-ship invocation." };
-    if ((event.toolName === "review" || event.toolName === "ship_builder") && phase !== "ship") return { block: true, reason: "This worker tool is reserved for an explicit dev-ship invocation." };
+    if (event.toolName === "review" && phase !== "ship") return { block: true, reason: "Review is reserved for an explicit dev-ship invocation." };
     if (explorerOnlyTools.has(event.toolName)) return { block: true, reason: `Delegate ${event.toolName} to one or more narrowly scoped explore calls.` };
-    if (writesOwned() && !mainReaders.has(event.toolName)) return { block: true, reason: ownershipMessage };
     return undefined;
   });
-  pi.on("user_bash", () => writesOwned() ? { result: { output: ownershipMessage, exitCode: 1, cancelled: false, truncated: false } } : undefined);
-  const preventSessionChange = (): { cancel: true } | undefined => {
-    if (run.hasActive() || hub.list().some(isActive)) {
-      ctx?.ui.notify("Stop active work before changing the parent session. Histories and drafts will be preserved.", "warning");
-      return { cancel: true };
-    }
-    return undefined;
+  const stopForSessionChange = (): void => {
+    // Workers own disposable read-only snapshots. Request cancellation without
+    // making session navigation depend on an unresponsive child or its cleanup.
+    void run.stopAll().catch(warn);
   };
-  pi.on("session_before_switch", preventSessionChange);
-  pi.on("session_before_fork", preventSessionChange);
+  pi.on("session_before_switch", stopForSessionChange);
+  pi.on("session_before_fork", stopForSessionChange);
   pi.on("input", event => {
     const match = /^\/skill:dev-(spec|plan|build|ship)(?:\s|$)/.exec(event.text);
     if (match?.[1]) setPhase(match[1] as PublicPhase);
@@ -115,7 +79,6 @@ export default function extension(pi: ExtensionAPI, dependencies: ExtensionDepen
     description: `Invoke dev-${commandPhase} in the current conversation`,
     handler: async (args, nextCtx) => {
       ctx = nextCtx;
-      if (writesOwned()) { nextCtx.ui.notify(ownershipMessage, "warning"); return; }
       setPhase(commandPhase);
       hubUI.setContext(nextCtx);
       pi.sendUserMessage(`/skill:dev-${commandPhase}${args ? ` ${args}` : ""}`, { expandPromptTemplates: true });
@@ -123,7 +86,6 @@ export default function extension(pi: ExtensionAPI, dependencies: ExtensionDepen
   });
   pi.on("session_shutdown", async () => {
     closing = true; lifetime.abort();
-    await Promise.allSettled(hub.list().filter(isActive).map(r => hub.abort(r.id)));
-    await run.stopAll(); hub.flush(); unlisten?.(); hubUI.dispose(); hub.dispose();
+    await run.stopAll(); hub.flush(); hubUI.dispose(); hub.dispose();
   });
 }

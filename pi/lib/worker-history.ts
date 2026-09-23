@@ -78,7 +78,15 @@ export class WorkerHistory implements WorkerHistoryStore {
     const realFile = fs.realpathSync(file);
     if (!roots.includes(path.dirname(realFile)) || !realFile.endsWith(".jsonl")) throw new Error("Child transcript is outside this parent session.");
     const manager = SessionManager.open(realFile, path.dirname(realFile));
-    if (path.resolve(manager.getCwd()) !== path.resolve(this.parent.getCwd())) throw new Error("Child transcript belongs to another worktree.");
+    if (path.resolve(manager.getCwd()) !== path.resolve(this.parent.getCwd())) {
+      const metadata = [...manager.getEntries()].reverse().map(entry => customData(entry, WORKER_ENTRY)).map(asMetadata).find((value): value is WorkerMetadata => value !== undefined);
+      const origin = metadata?.metadata;
+      if (origin?.["readOnly"] !== true || typeof origin["ownerCwd"] !== "string" || typeof origin["snapshotCwd"] !== "string"
+        || path.resolve(origin["ownerCwd"]) !== path.resolve(this.parent.getCwd())
+        || path.resolve(origin["snapshotCwd"]) !== path.resolve(manager.getCwd())) {
+        throw new Error("Child transcript belongs to another worktree.");
+      }
+    }
     return manager;
   }
 

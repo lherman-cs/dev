@@ -37,6 +37,11 @@ async function fixture(t: TestContext, answer: Answer) {
   t.after(()=>hub.dispose());
   return {cwd,runtime,run,sessions,calls,hub};
 }
+test('a writing child cannot acquire its parent worktree via a nested cwd', async () => {
+  const run = createWorkerRunner({ hub: new WorkerHub(), ownerCwd: () => process.cwd() });
+  await assert.rejects(run({ cwd: path.join(process.cwd(), 'test'), name: 'build', task: 'write' }), /different worktree/);
+});
+
 test('worker runner requires the native session hub boundary',()=>{
   assert.throws(()=>createWorkerRunner({hub: undefined as never}),/requires a WorkerHub/);
 });
