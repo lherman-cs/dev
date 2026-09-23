@@ -65,6 +65,13 @@ export function registerCompletionGuard(pi: ExtensionAPI, run: RunWorker, hasAsy
   let lastGap = "";
   let acceptedEvidence = "";
   const save = () => { if (state) pi.appendEntry(entryType, state); };
+  const deliver = (text: string) => {
+    try { pi.sendMessage({ customType: "dev-finish-result", content: text, display: true }, { triggerTurn: true, deliverAs: "steer" }); }
+    catch (error) {
+      if (state) { delete state.accepted; state.paused = `Assessment delivery failed: ${String(error)}`; save(); }
+      ctx?.ui.notify(`Incomplete pause: ${state?.paused ?? String(error)}`, "warning");
+    }
+  };
   const restore = (next: ExtensionContext) => {
     ctx = next; pending = undefined; stagnant = 0; assessmentFailures = 0; lastWork = ""; lastGap = ""; acceptedEvidence = "";
     const entry = next.sessionManager.getBranch().reverse().find(e => e.type === "custom" && e.customType === entryType);
@@ -138,26 +145,26 @@ export function registerCompletionGuard(pi: ExtensionAPI, run: RunWorker, hasAsy
           if (pending !== token || state?.id !== current.id || state.session !== current.session || state.paused || ctx?.sessionManager.getSessionId() !== current.session) return;
           pending = undefined;
           if (state.revision !== atRevision || createHash("sha256").update(gitEvidence(toolCtx.cwd)).digest("hex") !== evidenceHash) {
-            pi.sendMessage({ customType: "dev-finish-result", content: "Finish assessment superseded by newer work or instructions. Reconcile and submit a fresh finish proposal.", display: true }, { triggerTurn: true, deliverAs: "steer" });
+            deliver("Finish assessment superseded by newer work or instructions. Reconcile and submit a fresh finish proposal.");
             return;
           } // New evidence or instructions superseded this result.
           if (verdict.verdict === args.outcome && verdict.missing.length === 0) {
             state.accepted = args.outcome; acceptedEvidence = evidenceHash;
             state.interrupted = false; assessmentFailures = 0; save();
-            pi.sendMessage({ customType: "dev-finish-result", content: `Independent finish confirmed: ${verdict.explanation}`, display: true }, { triggerTurn: true, deliverAs: "steer" });
+            deliver(`Independent finish confirmed: ${verdict.explanation}`);
           } else {
             const gap = JSON.stringify([args, verdict.verdict, verdict.missing]);
             state.interrupted = false; state.revision = ++revision;
             if (gap === lastGap) state.paused = `Repeated identical finish gap without intervening work: ${verdict.explanation}`;
             lastGap = gap; stagnant = 0; save();
-            pi.sendMessage({ customType: "dev-finish-result", content: state.paused ? `Incomplete pause: ${state.paused}` : `Finish not accepted. ${verdict.explanation}\n${verdict.missing.join("\n")}`, display: true }, { triggerTurn: true, deliverAs: "steer" });
+            deliver(state.paused ? `Incomplete pause: ${state.paused}` : `Finish not accepted. ${verdict.explanation}\n${verdict.missing.join("\n")}`);
           }
         }).catch(error => {
           if (pending !== token || state?.id !== current.id || ctx?.sessionManager.getSessionId() !== current.session) return;
           pending = undefined; state.revision = ++revision;
           if (++assessmentFailures >= 2) state.paused = `Independent assessment unavailable after bounded retries: ${String(error)}`;
           save();
-          pi.sendMessage({ customType: "dev-finish-result", content: state.paused ? `Incomplete pause: ${state.paused}` : `Finish assessment failed; not accepted: ${String(error)}. Reconcile and retry.`, display: true }, { triggerTurn: true, deliverAs: "steer" });
+          deliver(state.paused ? `Incomplete pause: ${state.paused}` : `Finish assessment failed; not accepted: ${String(error)}. Reconcile and retry.`);
         });
       return { content: [{ type: "text" as const, text: "Terminal outcome proposed; independent assessment is pending. This is provisional, not acceptance." }], details: { token } };
     },

@@ -4,7 +4,7 @@ import { SessionManager, type ExtensionAPI, type ExtensionContext, type ToolDefi
 import { registerCompletionGuard } from "../lib/completion-guard.ts";
 import type { RunWorker } from "../lib/worker.ts";
 
-function fixture(hasAsyncWork = () => false) {
+function fixture(hasAsyncWork = () => false, deliveryFails = false) {
   const manager = SessionManager.inMemory(process.cwd());
   const context = { cwd: process.cwd(), sessionManager: manager, ui: { notify: () => undefined } } as unknown as ExtensionContext;
   const handlers = new Map<string, Array<(event: any, ctx: ExtensionContext) => any>>();
@@ -18,7 +18,7 @@ function fixture(hasAsyncWork = () => false) {
     },
     registerTool: (tool: ToolDefinition) => { tools.push(tool); },
     appendEntry: (name: string, data: unknown) => { manager.appendCustomEntry(name, data); },
-    sendMessage: (message: { content: string }) => { messages.push(message.content); },
+    sendMessage: (message: { content: string }) => { if (deliveryFails) throw new Error("queue unavailable"); messages.push(message.content); },
   } as unknown as ExtensionAPI;
   const guard = registerCompletionGuard(pi, run, hasAsyncWork);
   const emit = (name: string, event: any = {}, ctx = context) => handlers.get(name)?.map(fn => fn(event, ctx));
@@ -84,6 +84,16 @@ test("an unsupported blocker never settles, and repeated assessment failures pau
   f.reject(new Error("transport down")); await flush();
   assert.match(f.messages.at(-1)!, /Incomplete pause/);
   assert.equal(f.settle(), undefined);
+});
+
+test("failed assessment delivery cannot silently certify completion", async () => {
+  const f = fixture(() => false, true); f.guard.activate("Complete A", "build", f.context);
+  await f.finish.execute("id", { outcome: "complete", summary: "Done", evidence: "test A" }, undefined, undefined, f.context);
+  f.resolve({ verdict: "complete", explanation: "verified", missing: [] }); await flush();
+  assert.equal(f.messages.length, 0);
+  assert.equal(f.settle(), undefined);
+  const record = f.manager.getBranch().filter(e => e.type === "custom" && e.customType === "dev-completion-guard").at(-1);
+  assert.match(String(record?.type === "custom" && (record.data as { paused?: string }).paused), /delivery failed/i);
 });
 
 test("repeated identical missing work without progress pauses instead of retrying forever", async () => {
