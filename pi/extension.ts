@@ -71,6 +71,7 @@ export default function extension(pi: ExtensionAPI, dependencies: ExtensionDepen
   };
   pi.on("session_before_switch", stopForSessionChange);
   pi.on("session_before_fork", stopForSessionChange);
+  pi.on("session_before_tree", stopForSessionChange);
   pi.on("input", async (event, nextCtx) => {
     const match = /^\/skill:dev-(spec|build|ship)(?:\s|$)/.exec(event.text);
     if (!match?.[1]) return { action: "continue" };
@@ -78,7 +79,7 @@ export default function extension(pi: ExtensionAPI, dependencies: ExtensionDepen
     if (next !== "spec" && event.source !== "extension" && nextCtx?.sessionManager) {
       const request = event.text.slice(match[0].length).trim();
       if (!request) { nextCtx.ui.notify(`Provide a request: /skill:dev-${next} <request>`, "warning"); return { action: "handled" }; }
-      const activated = await guard.activate(request, next, nextCtx, true);
+      const activated = await guard.activate(request, next, nextCtx);
       if (!activated) return { action: "handled" }; // Do not execute an unauthorized replacement.
     }
     setPhase(next);
@@ -90,7 +91,7 @@ export default function extension(pi: ExtensionAPI, dependencies: ExtensionDepen
     handler: async (args, nextCtx) => {
       ctx = nextCtx;
       if (commandPhase !== "spec" && !args.trim()) { nextCtx.ui.notify(`Provide a request: /dev-${commandPhase} <request>`, "warning"); return; }
-      if (commandPhase !== "spec" && !await guard.activate(args.trim(), commandPhase, nextCtx, true)) return;
+      if (commandPhase !== "spec" && !await guard.activate(args.trim(), commandPhase, nextCtx)) return;
       setPhase(commandPhase);
       hubUI.setContext(nextCtx);
       pi.sendUserMessage(`/skill:dev-${commandPhase}${args ? ` ${args}` : ""}`, { expandPromptTemplates: true });

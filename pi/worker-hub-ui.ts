@@ -543,7 +543,10 @@ export function registerWorkerHubUI(pi: ExtensionAPI, hub: WorkerHub, options: H
   let state = createHubViewState();
   const seen = new Map<string, string>();
   const widget = () => {
-    if (!ctx?.hasUI || disposed) return;
+    if (disposed || !ctx) return;
+    // A delayed worker update can outlive the Pi session that supplied this context.
+    try { if (!ctx.hasUI) return; }
+    catch { ctx = undefined; return; }
     ctx.ui.setWidget("agent-hub", (_tui: TUI, theme: Theme) => ({
       render: (width: number) => {
         return compactWorkerLines(hub.list()).map(t => theme.fg("muted", truncateToWidth(t, width)));

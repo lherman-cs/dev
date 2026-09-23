@@ -151,7 +151,7 @@ function candidate(cwd: string, references: string[] = []): { hash: string; disp
 
 /** One session-branch goal; todo remains the only step-level store and UI. */
 export function registerCompletionGuard(pi: ExtensionAPI, run: RunWorker, hasAsyncWork: () => boolean): {
-  activate(request: string, skill: "build" | "ship" | undefined, ctx: ExtensionContext, explicitReplacement?: boolean): Promise<boolean>;
+  activate(request: string, skill: "build" | "ship" | undefined, ctx: ExtensionContext, explicitReplacement?: boolean): boolean;
   pause(reason?: string): void;
   cancel(): void;
   resume(ctx: ExtensionContext): void;
@@ -162,6 +162,9 @@ export function registerCompletionGuard(pi: ExtensionAPI, run: RunWorker, hasAsy
   let state: State | undefined;
   let ctx: ExtensionContext | undefined;
   let pending: { token: string; timer: ReturnType<typeof setTimeout> } | undefined;
+  let replacement: { id: string; session: string; generation: number; request: string; skill: "build" | "ship" | undefined;
+    questionCallId?: string; decision?: string } | undefined;
+  const replacementOptions = ["Replace goal", "Refine existing goal", "Keep current goal"];
   let stagnant = 0, failures = 0, lastGap = "", lastProgress = "", humanControlInput = false;
   const save = () => { if (state) pi.appendEntry(entryType, structuredClone(state)); };
   const header = () => {
@@ -184,6 +187,7 @@ export function registerCompletionGuard(pi: ExtensionAPI, run: RunWorker, hasAsy
     if (state) { state.generation++; delete state.acceptedEvidence; delete state.accepted; }
   };
   const pause = (reason = "Interrupted by the human") => {
+    replacement = undefined;
     if (!state || !unfinished(state) || state.status === "Paused") return;
     invalidate(); transition("Paused", reason, "human or interruption");
   };
@@ -209,7 +213,7 @@ export function registerCompletionGuard(pi: ExtensionAPI, run: RunWorker, hasAsy
   };
   const restore = (next: ExtensionContext) => {
     if (pending) clearTimeout(pending.timer);
-    pending = undefined; ctx = next; stagnant = 0; failures = 0; lastGap = ""; lastProgress = ""; humanControlInput = false;
+    pending = undefined; replacement = undefined; ctx = next; stagnant = 0; failures = 0; lastGap = ""; lastProgress = ""; humanControlInput = false;
     const entry = next.sessionManager.getBranch().reverse().find(e => e.type === "custom" && e.customType === entryType);
     state = entry && entry.type === "custom" && isState(entry.data) ? { ...entry.data, members: [...entry.data.members], transitions: [...entry.data.transitions] } : undefined;
     const forked = !!state && state.session !== next.sessionManager.getSessionId();
@@ -220,18 +224,24 @@ export function registerCompletionGuard(pi: ExtensionAPI, run: RunWorker, hasAsy
   pi.on("session_start", (_event, next) => restore(next));
   pi.on("session_before_switch", () => pause("Session navigation interrupted execution"));
   pi.on("session_before_fork", () => pause("Fork interrupted execution; the fork restores paused"));
+  pi.on("session_before_tree", () => pause("Session tree navigation interrupted execution"));
+  pi.on("session_tree", (_event, next) => restore(next));
   pi.on("agent_end", event => {
     humanControlInput = false;
     const last = [...event.messages].reverse().find(message => message.role === "assistant");
     if (last?.role === "assistant" && last.stopReason === "aborted") pause("Turn interrupted (Escape or cancellation)");
   });
-  const activate = async (request: string, skill: "build" | "ship" | undefined, next: ExtensionContext, explicitReplacement = false): Promise<boolean> => {
+  const activate = (request: string, skill: "build" | "ship" | undefined, next: ExtensionContext, explicitReplacement = false): boolean => {
     ctx = next;
     if (state && unfinished(state)) {
       if (state.request === request && state.skill === skill) return state.status === "Active"; // Alias delivery must never unpause an interrupted goal.
-      const answer = explicitReplacement ? "Replace old goal" : next.hasUI ? await next.ui.select("Replace unfinished goal?", ["Replace old goal", "Refine existing goal", "Keep existing goal"]) : undefined;
-      if (answer === "Refine existing goal") { state.clarifications.push(request); state.revision++; save(); show(next); return false; }
-      if (answer !== "Replace old goal") { pause("New request not authorized as replacement; resolve intent before proceeding"); return false; }
+      if (!explicitReplacement) {
+        pause(`New request may refine or replace '${state.request}'; awaiting human choice for '${request}'`);
+        replacement = { id: state.id, session: state.session, generation: state.generation, request, skill };
+        try { pi.sendMessage({ customType: "dev-goal-decision", content: `Goal '${state.request}' remains paused. New request '${request}' may replace or refine it. Ask the human via ask_user_question with exactly one question, header 'Goal intent', and options '${replacementOptions.join("', '")}'. Do not execute either goal until the answer is received. A dismissed question keeps the old obligation paused.`, display: true }, { triggerTurn: true, deliverAs: "steer" }); }
+        catch (error) { replacement = undefined; transition("Paused", `Cannot deliver goal decision: ${String(error)}`, "guard"); }
+        return false;
+      }
       abandon();
     }
     const todo = branchTasks(next);
@@ -279,12 +289,24 @@ export function registerCompletionGuard(pi: ExtensionAPI, run: RunWorker, hasAsy
     return { message: { customType: "dev-goal-control", content: `Goal ${state.id} is ${state.status}: ${state.reason}. Do not perform goal work until the human explicitly resumes or abandons it via goal_control or /dev-goal. Clarifications are not implicit authorization.`, display: true } };
   });
   pi.on("tool_call", event => {
+    if (replacement && event.toolName === "ask_user_question" && !replacement.questionCallId) {
+      const questions = event.input?.["questions"];
+      if (Array.isArray(questions) && questions.length === 1 && questions[0]?.header === "Goal intent" &&
+        Array.isArray(questions[0]?.options) && replacementOptions.every(label => questions[0].options.some((o: { label?: string }) => o.label === label)))
+        replacement.questionCallId = event.toolCallId;
+    }
     if (!state || !["Paused", "Blocked", "Checking completion"].includes(state.status)) return;
     const reads = ["read", "ffgrep", "fffind", "lsp_diagnostics", "vcc_recall", "ask_user_question", "goal_control"];
     if (reads.includes(event.toolName) || (event.toolName === "todo" && ["get", "list"].includes(String(event.input?.["action"])))) return;
     return { block: true, reason: `Goal ${state.id} is ${state.status}. ${state.status === "Checking completion" ? "Wait for the assessor or explicitly pause/abandon before further work." : "Obtain explicit resume or abandon via /dev-goal or goal_control before work."}` };
   });
   pi.on("tool_result", event => {
+    if (replacement && event.toolName === "ask_user_question" && event.toolCallId === replacement.questionCallId) {
+      const details = event.details as { answers?: { answer?: string }[]; cancelled?: boolean } | undefined;
+      const answer = !event.isError && !details?.cancelled && details?.answers?.length === 1 ? details.answers[0]?.answer : undefined;
+      replacement.decision = answer && replacementOptions.includes(answer) ? answer : "dismissed";
+      return;
+    }
     if (!state || (state.status !== "Active" && state.status !== "Checking completion") || event.isError || event.toolName === "finish" || event.toolName === "goal_control") return;
     if (event.toolName === "todo") {
       const data = snapshot(event.details);
@@ -366,6 +388,21 @@ export function registerCompletionGuard(pi: ExtensionAPI, run: RunWorker, hasAsy
         });
       return { content: [{ type: "text" as const, text: "Terminal proposal is provisional, pending independent assessment; not yet complete." }], details: { token } };
     },
+  });
+  pi.on("agent_settled", () => {
+    const choice = replacement;
+    if (!choice?.decision || !state || !ctx || state.id !== choice.id || state.session !== choice.session ||
+      state.generation !== choice.generation || state.status !== "Paused" || ctx.sessionManager.getSessionId() !== choice.session) return;
+    replacement = undefined;
+    if (choice.decision === "Replace goal") {
+      if (activate(choice.request, choice.skill, ctx, true))
+        pi.sendUserMessage(choice.skill ? `/skill:dev-${choice.skill} ${choice.request}` : choice.request,
+          { expandPromptTemplates: !!choice.skill });
+    } else if (choice.decision === "Refine existing goal") {
+      state.clarifications.push(choice.request); state.revision++; save();
+      resume(ctx);
+    } else transition("Paused", choice.decision === "dismissed" ? "Goal decision dismissed; old obligation preserved" :
+      "Kept old obligation; explicit resume required", "human decision");
   });
   pi.on("agent_before_settle", event => {
     if (event.outcome === "aborted") { pause("Turn interrupted (Escape or cancellation)"); return; }
