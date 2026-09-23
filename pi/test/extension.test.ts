@@ -17,6 +17,7 @@ interface ExtensionMock {
   on: ExtensionAPI["on"];
   sendMessage: ExtensionAPI["sendMessage"];
   sendUserMessage: ExtensionAPI["sendUserMessage"];
+  appendEntry?: ExtensionAPI["appendEntry"];
   getActiveTools: ExtensionAPI["getActiveTools"];
   setActiveTools: ExtensionAPI["setActiveTools"];
 }
@@ -37,9 +38,9 @@ test("three current-session aliases, Agent Hub and isolated tools register witho
     getActiveTools: () => ["read"],
     setActiveTools: () => undefined,
   });
-  assert.deepEqual([...commands.keys()].sort(), ["dev-build", "dev-ship", "dev-spec"]);
+  assert.deepEqual([...commands.keys()].sort(), ["dev-build", "dev-goal", "dev-ship", "dev-spec"]);
   assert.ok(shortcuts.has("alt+a"));
-  assert.deepEqual(tools.map(tool => tool.name), ["finish", "explore", "review"]);
+  assert.deepEqual(tools.map(tool => tool.name), ["goal_control", "finish", "explore", "review"]);
   assert.equal(messages.length, 0);
   const explore = tools.find(tool => tool.name === "explore"); assert.ok(explore);
   const toolCall = handlers.get("tool_call"); assert.ok(toolCall);
@@ -60,17 +61,20 @@ test("review is active only for an explicit dev-ship phase", async () => {
     on: (name, handler) => { handlers.set(name, handler as unknown as EventHandler); return noop; },
     sendMessage: noop as ExtensionAPI["sendMessage"],
     sendUserMessage: noop as ExtensionAPI["sendUserMessage"],
+    appendEntry: noop,
     getActiveTools: () => [...active],
     setActiveTools: tools => { active = [...tools]; },
   }, {
     hub: new WorkerHub(),
     registerWorkerHubUI: (() => ({ setContext: noop, dispose: noop })) as never,
   });
-  const context = { ui: { notify: noop } } as never;
-  await commands.get("dev-ship")?.handler("", context);
+  const manager = SessionManager.inMemory(process.cwd());
+  const context = { cwd: process.cwd(), hasUI: false, sessionManager: manager, ui: { notify: noop, setWidget: noop } } as never;
+  await commands.get("dev-ship")?.handler("Ship request", context);
   assert.ok(active.includes("review"));
   assert.equal(handlers.get("tool_call")?.({ toolName: "review" }), undefined);
-  await commands.get("dev-build")?.handler("", context);
+  await commands.get("dev-goal")?.handler("abandon", context);
+  await commands.get("dev-build")?.handler("Build request", context);
   assert.ok(!active.includes("review"));
   assert.ok(handlers.get("tool_call")?.({ toolName: "review" })?.reason);
   handlers.get("input")?.({ text: "/skill:dev-ship plan.md" });

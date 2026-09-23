@@ -71,12 +71,17 @@ export default function extension(pi: ExtensionAPI, dependencies: ExtensionDepen
   };
   pi.on("session_before_switch", stopForSessionChange);
   pi.on("session_before_fork", stopForSessionChange);
-  pi.on("input", (event, nextCtx) => {
+  pi.on("input", async (event, nextCtx) => {
     const match = /^\/skill:dev-(spec|build|ship)(?:\s|$)/.exec(event.text);
-    if (match?.[1]) {
-      setPhase(match[1] as PublicPhase);
-      if ((match[1] === "build" || match[1] === "ship") && nextCtx?.sessionManager) guard.activate(event.text, match[1], nextCtx);
+    if (!match?.[1]) return { action: "continue" };
+    const next = match[1] as PublicPhase;
+    if (next !== "spec" && event.source !== "extension" && nextCtx?.sessionManager) {
+      const request = event.text.slice(match[0].length).trim();
+      if (!request) { nextCtx.ui.notify(`Provide a request: /skill:dev-${next} <request>`, "warning"); return { action: "handled" }; }
+      const activated = await guard.activate(request, next, nextCtx, true);
+      if (!activated) return { action: "handled" }; // Do not execute an unauthorized replacement.
     }
+    setPhase(next);
     return { action: "continue" };
   });
 
@@ -84,13 +89,33 @@ export default function extension(pi: ExtensionAPI, dependencies: ExtensionDepen
     description: `Invoke dev-${commandPhase} in the current conversation`,
     handler: async (args, nextCtx) => {
       ctx = nextCtx;
+      if (commandPhase !== "spec" && !args.trim()) { nextCtx.ui.notify(`Provide a request: /dev-${commandPhase} <request>`, "warning"); return; }
+      if (commandPhase !== "spec" && !await guard.activate(args.trim(), commandPhase, nextCtx, true)) return;
       setPhase(commandPhase);
       hubUI.setContext(nextCtx);
       pi.sendUserMessage(`/skill:dev-${commandPhase}${args ? ` ${args}` : ""}`, { expandPromptTemplates: true });
     },
   });
+  pi.registerCommand("dev-goal", {
+    description: "Inspect or control the current goal: start <request>, pause, resume, abandon",
+    handler: async (args, nextCtx) => {
+      const [action, ...rest] = args.trim().split(/\s+/);
+      if (action === "start") {
+        const request = rest.join(" ") || (nextCtx.hasUI ? await nextCtx.ui.input("Goal request") : undefined);
+        if (!request) { nextCtx.ui.notify("Provide a goal request: /dev-goal start <request>", "warning"); return; }
+        setPhase(undefined);
+        if (await guard.activate(request, undefined, nextCtx, true)) pi.sendUserMessage(request);
+        return;
+      }
+      if (action === "pause") guard.pause();
+      else if (action === "resume") guard.resume(nextCtx);
+      else if (action === "abandon") guard.abandon();
+      else if (action && action !== "show") { nextCtx.ui.notify("Use /dev-goal [start <request>|pause|resume|abandon]", "warning"); return; }
+      guard.show(nextCtx);
+    },
+  });
   pi.on("session_shutdown", async () => {
-    closing = true; lifetime.abort();
+    guard.shutdown(); closing = true; lifetime.abort();
     await run.stopAll(); hub.flush(); hubUI.dispose(); hub.dispose();
   });
 }

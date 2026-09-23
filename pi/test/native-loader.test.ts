@@ -6,7 +6,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DefaultResourceLoader, SettingsManager } from '@earendil-works/pi-coding-agent';
 
-test('native Pi loads pinned plugins, three aliases and skills without errors', async t => {
+test('native Pi loads pinned plugins, goal controls, phase aliases and skills without errors', async t => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dev-pi-loader-'));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   const pkg = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -17,7 +17,7 @@ test('native Pi loads pinned plugins, three aliases and skills without errors', 
   const loaded = loader.getExtensions();
   assert.deepEqual(loaded.errors, [], JSON.stringify(loaded.errors));
   const commands = loaded.extensions.flatMap(e => [...e.commands.keys()]);
-  assert.deepEqual(commands.filter(name => name.startsWith('dev-')).sort(), ['dev-build', 'dev-ship', 'dev-spec']);
+  assert.deepEqual(commands.filter(name => name.startsWith('dev-')).sort(), ['dev-build', 'dev-goal', 'dev-ship', 'dev-spec']);
   const tools = loaded.extensions.flatMap(e => [...e.tools.keys()]);
   assert.ok(tools.includes('explore'));
   assert.ok(!tools.includes('subagent'));
