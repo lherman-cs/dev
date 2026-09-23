@@ -12,7 +12,7 @@ Pins below were checked against the published package source and entrypoints. Th
 | `@narumitw/pi-usage` | 0.60.10 | Published usage/auth request paths validate effective provider origins before sending credentials to official usage endpoints. No account/reset actions are added by our workflow. |
 | `pi-web-access` | 0.30.0 | Published fetch/search routing. Queries go to search providers; selected URLs/content can leave the machine. Browser-cookie access and hosted fetch fallbacks remain upstream opt-ins; we do not enable them. |
 | `pi-mcp-adapter` | 2.34.0 | Published entrypoint/configuration. No MCP servers, commands, credentials, or auto-connect rules are shipped by this repository. User-configured servers can execute commands and access data. |
-| `@toon-format/toon` | 4.1.1 | Official decoder for the commented `roles.toon` configuration; decoded in strict mode. Only full-line `#` comments are supported. |
+| `smol-toml` | 1.8.0 | TOML parser for the commented `roles.toml` configuration, shared by Pi and the launcher. |
 | `@juicesharp/rpiv-todo` | 2.10.1 | Existing requested task/progress interaction. |
 | `@juicesharp/rpiv-ask-user-question` | 2.10.1 | Existing requested structured choices and Markdown previews for interactive Spec/Plan. Code-owned final gates use Pi dialogs without another model call. |
 

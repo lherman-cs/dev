@@ -16,21 +16,21 @@ struct Roles {
 }
 
 fn load_roles(package: &Path) -> Result<Roles> {
-    // Use the same pinned TOON decoder as Pi, rather than maintaining a second parser.
-    let script = "import { decode } from '@toon-format/toon'; import { readFileSync } from 'node:fs'; process.stdout.write(JSON.stringify(decode(readFileSync('roles.toon', 'utf8'), { strict: true })));";
+    // Use the same pinned TOML parser as Pi, rather than maintaining a second parser.
+    let script = "import { parse } from 'smol-toml'; import { readFileSync } from 'node:fs'; process.stdout.write(JSON.stringify(parse(readFileSync('roles.toml', 'utf8'))));";
     let output = Command::new("node")
         .current_dir(package)
         .args(["--input-type=module", "-e", script])
         .output()
-        .with_context(|| format!("Could not decode {}", package.join("roles.toon").display()))?;
+        .with_context(|| format!("Could not parse {}", package.join("roles.toml").display()))?;
     if !output.status.success() {
         bail!(
-            "Could not decode {}: {}",
-            package.join("roles.toon").display(),
+            "Could not parse {}: {}",
+            package.join("roles.toml").display(),
             String::from_utf8_lossy(&output.stderr).trim()
         );
     }
-    serde_json::from_slice(&output.stdout).context("Invalid roles.toon configuration")
+    serde_json::from_slice(&output.stdout).context("Invalid roles.toml configuration")
 }
 
 fn phase_args(config: &Roles, phase: &str, prompt: &[String]) -> Result<Vec<String>> {
@@ -146,7 +146,7 @@ mod tests {
         load_roles(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("pi")).unwrap()
     }
     #[test]
-    fn role_comments_decode_from_the_shared_toon_file() {
+    fn role_comments_parse_from_the_shared_toml_file() {
         assert_eq!(roles().roles["spec"], "openai/gpt-6-astra:medium");
         assert_eq!(roles().roles["assessor"], "openai/gpt-6-sol:high");
     }

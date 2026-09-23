@@ -14,7 +14,7 @@ Instruction ownership:
 - `pi/skills/dev-*/SKILL.md`: reusable role-specific authority, outputs, and stop conditions.
 - `pi/extension.ts` and `pi/lib/*.ts`: current-session alias dispatch; child-session capability boundaries; transport validation; tiny contracts for non-reusable internal workers.
 - Approved Markdown specs and plans: one task's scope and acceptance checks.
-- `pi/roles.toon`: exact roles and explicit subscription/API authentication transport.
+- `pi/roles.toml`: exact roles and explicit subscription/API authentication transport.
 - `pi/package.json` and lockfile: pinned requested plugins, not a second harness.
 - `WORKFLOW.md`: documentation, not another prompt-policy source.
 
