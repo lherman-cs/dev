@@ -197,6 +197,23 @@ test("paused work is read-only until explicit resume; canContinue false pauses w
   assert.ok(f.emit("tool_call", { toolName: "edit", input: {} })?.[0]?.block);
 });
 
+test("side questions do not silently expand scope; explicit human clarification does", async () => {
+  const f = fixture(); await f.guard.activate("Build A", "build", f.context);
+  f.emit("input", { source: "interactive", text: "What is the weather?" });
+  const records = () => f.manager.getBranch().filter(e => e.type === "custom" && e.customType === "dev-goal")
+    .map(e => e.type === "custom" ? e.data as { status: string; clarifications: string[] } : undefined);
+  assert.deepEqual(records().at(-1)?.clarifications, []);
+  assert.equal(records().at(-1)?.status, "Paused");
+  f.emit("input", { source: "interactive", text: "Also support B" });
+  await f.control.execute("id", { action: "clarify", reason: "Also support B" }, undefined, undefined, f.context);
+  assert.deepEqual(records().at(-1)?.clarifications, ["Also support B"]);
+  assert.equal(records().at(-1)?.status, "Paused");
+  f.emit("input", { source: "interactive", text: "Resume" });
+  await f.control.execute("id", { action: "resume" }, undefined, undefined, f.context);
+  await f.finish.execute("id", { outcome: "complete", summary: "A and B done", evidence: "tests" }, undefined, undefined, f.context);
+  assert.match(f.assessments[0]!.task, /Also support B/);
+});
+
 test("todo reset cannot reattribute a reused id to an earlier goal task", async () => {
   const f = fixture(); await f.guard.activate("Complete original case", "build", f.context);
   f.emit("tool_result", { toolName: "todo", input: { action: "create" }, details: { tasks: [{ id: 1, subject: "original", status: "pending" }], nextId: 2 } });
