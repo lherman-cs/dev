@@ -4,8 +4,5 @@
   "continueAfterThresholdCompact": true,
   "debug": false,
   "skipForProviders": [],
-  "skipCustomTypes": [],
-  "globalThreshold": {
-    "compactAtTokens": 80000
-  }
+  "skipCustomTypes": []
 }
