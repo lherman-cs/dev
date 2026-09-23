@@ -53,4 +53,16 @@ test('actual installer registers once, retires only owned plumbing and preserves
   assert.equal(settings.testUserField,'keep');assert.equal(settings.packages.length,1);
   assert.ok(!fs.existsSync(path.join(agent,'extensions/dev-workflow.ts')));
   assert.ok(fs.existsSync(path.join(agent,'dev-workflow-backup')));
+  const installed = path.join(agent, 'dev-workflow');
+  for (const reference of ['reconcile.md', 'engineering.md']) {
+    assert.ok(fs.existsSync(path.join(installed, 'references', reference)), `missing installed reference ${reference}`);
+  }
+  for (const name of ['dev-spec', 'dev-build', 'dev-ship', 'dev-review', 'dev-explore']) {
+    const skillDir = path.join(installed, 'skills', name);
+    const skill = fs.readFileSync(path.join(skillDir, 'SKILL.md'), 'utf8');
+    for (const match of skill.matchAll(/Read `((?:\.\.\/)+references\/[^`]+)`/g)) {
+      const relative = match[1]!;
+      assert.ok(fs.existsSync(path.resolve(skillDir, relative)), `${name} cannot read ${relative}`);
+    }
+  }
 });

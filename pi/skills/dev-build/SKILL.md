@@ -8,8 +8,8 @@ disable-model-invocation: true
 
 Implement the approved outcome to completion, progressing independent work concurrently where useful. An approved spec file is optional, but approval of the outcome must be established, including from an applicable explicit conversational approval. A status marker alone does not suffice. If approval cannot be established, obtain it before implementation. Follow applicable approved decisions and resolve ordinary design choices yourself.
 
-- Read `../references/reconcile.md` at entry. Map required outcomes to existing commits, partial edits, current proof, and remaining work.
-- Read `../references/engineering.md` at entry.
+- Read `../../references/reconcile.md` at entry. Map required outcomes to existing commits, partial edits, current proof, and remaining work.
+- Read `../../references/engineering.md` at entry.
 - Preserve applicable approved semantics and architecture; adapt local mechanics.
 - Progress independent implementation work concurrently where safe. Delegate long-running or evidence-heavy read-only work to Explorer asynchronously, and continue other unblocked implementation while it runs.
 - Resolve ordinary implementation choices, debugging, failed checks, conflicting repository state, and necessary adjacent work yourself. Fix root causes. Do not weaken, delete, or bypass checks.

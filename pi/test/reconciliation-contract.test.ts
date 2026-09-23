@@ -3,13 +3,13 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-const text = (path: string): string => readFileSync(fileURLToPath(new URL(`../skills/${path}`, import.meta.url)), "utf8");
-const skill = (name: string): string => text(`${name}/SKILL.md`);
+const text = (path: string): string => readFileSync(fileURLToPath(new URL(`../${path}`, import.meta.url)), "utf8");
+const skill = (name: string): string => text(`skills/${name}/SKILL.md`);
 
 test("one lazy reference owns worktree recovery from live evidence", () => {
   const policy = text("references/reconcile.md");
   for (const name of ["dev-spec", "dev-build", "dev-ship"]) {
-    assert.match(skill(name), /Read `\.\.\/references\/reconcile\.md` at entry/);
+    assert.match(skill(name), /Read `\.\.\/\.\.\/references\/reconcile\.md` at entry/);
   }
   for (const requirement of [/no prior session/, /including untracked files/, /Verify uncertain side effects/, /not a prerequisite/, /outside the worktree/, /backup location or failure/, /best-effort, not a veto/, /Never sweep ignored files/, /committed history/, /independent remote work/]) {
     assert.match(policy, requirement);
@@ -19,7 +19,7 @@ test("one lazy reference owns worktree recovery from live evidence", () => {
 test("one lazy engineering reference owns minimal-change guidance for every role", () => {
   const policy = text("references/engineering.md");
   for (const name of ["dev-spec", "dev-build", "dev-ship", "dev-review", "dev-explore"]) {
-    assert.match(skill(name), /Read `\.\.\/references\/engineering\.md`/);
+    assert.match(skill(name), /Read `\.\.\/\.\.\/references\/engineering\.md`/);
     assert.doesNotMatch(skill(name), /Be aggressively minimal|smallest durable diff/);
   }
   for (const requirement of [/requested problem/, /deletion or reuse/, /standard-library/, /direct code/, /smallest durable change/, /correctness, safety, compatibility, accessibility, and necessary observability/, /speculative flexibility/]) {
