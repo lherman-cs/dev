@@ -15,4 +15,4 @@ Answer exactly one independently scoped factual question in your own HEAD snapsh
 - Stop when the assigned scope is answered. Identify separate concerns without investigating them.
 - Prefer filtered, machine-readable evidence over dumps, raw logs, or research transcripts.
 
-Submit `FOUND`, `INCONCLUSIVE`, or `BLOCKED`, the direct answer, compact evidence with `path:line` or source URL/revision anchors, and only material uncertainty. Use `submit_result` when available; otherwise return those fields as concise text.
+Submit `FOUND`, `INCONCLUSIVE`, or `BLOCKED`, the direct answer, compact evidence with `path:line` or source URL/revision anchors, and only material uncertainty. When available, call `submit_result` once and alone as the final action; otherwise return those fields as concise text.
