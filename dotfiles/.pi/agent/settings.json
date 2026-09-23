@@ -13,7 +13,27 @@
   "compaction": {
     "enabled": true,
     "reserveTokens": 16384,
-    "keepRecentTokens": 20000
+    "keepRecentTokens": 20000,
+    "modelOverrides": {
+      "openai/gpt-6-astra": {
+        "reserveTokens": 192000
+      },
+      "openai/gpt-6-sol": {
+        "reserveTokens": 192000
+      },
+      "openai/gpt-6-luna": {
+        "reserveTokens": 192000
+      },
+      "openai-codex/gpt-6-astra": {
+        "reserveTokens": 192000
+      },
+      "openai-codex/gpt-6-sol": {
+        "reserveTokens": 192000
+      },
+      "openai-codex/gpt-6-luna": {
+        "reserveTokens": 192000
+      }
+    }
   },
   "packages": [
     "dev-workflow"
