@@ -180,8 +180,6 @@ enum Commands {
 enum AgentAction {
     /// Open the Specifier role, or run /dev-spec immediately when a prompt is given
     Spec { prompt: Vec<String> },
-    /// Open the Planner role, or run /dev-plan immediately when a prompt is given
-    Plan { prompt: Vec<String> },
     /// Open the Builder role, or run /dev-build immediately when a prompt is given
     Build { prompt: Vec<String> },
     /// Open the Shipper role, or run /dev-ship immediately when a prompt is given
@@ -1675,7 +1673,6 @@ fn cmd_agent(action: Option<AgentAction>) -> Result<()> {
     match action {
         None => agent::launch(None, vec![], None),
         Some(AgentAction::Spec { prompt }) => agent::launch(Some("spec"), prompt, None),
-        Some(AgentAction::Plan { prompt }) => agent::launch(Some("plan"), prompt, None),
         Some(AgentAction::Build { prompt }) => agent::launch(Some("build"), prompt, None),
         Some(AgentAction::Ship { prompt }) => agent::launch(Some("ship"), prompt, None),
         Some(AgentAction::Stats { session }) => agent_stats::run(session),
