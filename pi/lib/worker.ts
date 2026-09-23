@@ -59,6 +59,7 @@ const explorerResultSchema = Type.Object({
 }, { additionalProperties: false });
 interface ExplorerResult { status: "FOUND" | "INCONCLUSIVE" | "BLOCKED"; answer: string; evidence: Array<{ claim: string; anchor: string }>; uncertainty?: string }
 const toolResult = (text: string): { content: [{ type: "text"; text: string }]; details: Record<string, never> } => ({ content: [{ type: "text", text }], details: {} });
+const terminalToolResult = (text: string) => ({ ...toolResult(text), terminate: true as const });
 const renderExplorerResult = (result: ExplorerResult): string => {
   const uncertainty = result.uncertainty ? `\n\nUncertainty:\n${result.uncertainty}` : "";
   return `${result.status}\n\n${result.answer}\n\nEvidence:\n${result.evidence.map((item: ExplorerResult["evidence"][number]) => `- ${item.claim} (${item.anchor})`).join("\n")}${uncertainty}`;
@@ -230,11 +231,11 @@ export function createWorkerRunner(options: RunnerOptions): WorkerRunner {
           return toolResult(answer === undefined ? "Human cancelled this question; do not infer approval." : answer);
         } });
       }
-      if (schema) customTools.push({ name: "submit_result", label: "Submit result", description: "Submit the final result in the required schema.", parameters: schema,
+      if (schema) customTools.push({ name: "submit_result", label: "Submit result", description: "Submit the final result in the required schema and end this worker run.", parameters: schema,
         async execute(_id: string, args: Static<NonNullable<TShape>>) {
           if (hub.get(id)?.deliveries.some(d => ["sending", "queued"].includes(d.status))) throw new Error("Read the pending human instruction before submitting a new result.");
           if (name === "review" && hub.get(id)?.deliveries.some(d => d.status === "delivered") && args["verdict"] === "pass") throw new Error("Human feedback requires a revised repairs or blocked result, never silent PASS.");
-          value = args; valueEpoch = inputEpoch; return toolResult("Result recorded.");
+          value = args; valueEpoch = inputEpoch; return terminalToolResult("Result recorded.");
         } });
       const allowed = explorer
         ? [...readers, "bash", "web_search", "source_check", "fetch_content", "get_search_content", ...scopedTools.map(tool => tool.name)]
@@ -406,8 +407,7 @@ export function renderAsyncWorkerCompletion(completion: AsyncWorkerCompletion): 
     `Task: ${completion.task}`,
     completion.status === "completed" ? "Result:" : "Failure:",
     completion.result,
-    "Use this result now if it unblocks the current work. Other asynchronous workers may still be running.",
-  ].join("\n\n");
+  ].join("\n");
 }
 
 function publishDetached(
@@ -440,7 +440,7 @@ export function asyncExploreTool(run: RunWorker, publish: PublishAsyncWorkerComp
     ],
     async execute(callId, args, _signal, onUpdate, ctx) {
       const id = publishDetached("Explorer", args.task, Promise.resolve(foreground.execute(callId, args, undefined, onUpdate, ctx)), publish, track, ownerSessionId?.());
-      return toolResult(`Started asynchronous Explorer ${id}. Continue independent work; its result will arrive automatically.`);
+      return toolResult(`Started asynchronous Explorer ${id}.`);
     },
   };
 }
@@ -456,7 +456,7 @@ export function asyncReviewTool(run: RunWorker, publish: PublishAsyncWorkerCompl
     ],
     async execute(callId, args, _signal, onUpdate, ctx) {
       const id = publishDetached("Reviewer", args.task, Promise.resolve(foreground.execute(callId, args, undefined, onUpdate, ctx)), publish, undefined, ownerSessionId?.());
-      return toolResult(`Started asynchronous Reviewer ${id}. Continue independent work; its verdict will arrive automatically.`);
+      return toolResult(`Started asynchronous Reviewer ${id}.`);
     },
   };
 }
