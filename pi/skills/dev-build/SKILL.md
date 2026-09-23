@@ -1,16 +1,19 @@
 ---
 name: dev-build
-description: Implement a defined request, respecting any applicable approved spec or plan.
+description: Implement a defined request, respecting any applicable approved spec.
 disable-model-invocation: true
 ---
 
 # dev-build
 
-Implement the requested outcome to completion, one independently testable part at a time. An approved spec or plan is optional. Follow applicable approved decisions; otherwise derive semantics from the request and repository evidence and resolve ordinary design choices yourself.
+Implement the requested outcome to completion, progressing independent work concurrently where useful. An approved spec is optional. Follow applicable approved decisions; otherwise derive semantics from the request and repository evidence and resolve ordinary design choices yourself.
 
-- Read `../references/reconcile.md` at entry. Map requested outcomes to existing commits, partial edits and current proof before implementing the next one. A missing spec, plan, earlier phase, or session is not a stop condition.
-- Preserve applicable approved semantics and architecture; adapt local mechanics. Ask about consequential missing product decisions, not routine implementation design.
-- Resolve ordinary implementation choices, debugging, and failed checks yourself. Prefer the smallest durable design; fix root causes and preserve compatibility, data safety, accessibility, and necessary observability. Do not weaken, delete, or bypass checks.
-- For each outcome, validate at the user-visible boundary with appropriate fast, deterministic, stable lower-level checks. Update documentation and independently commit coherent outcomes with a Conventional Commit when possible. Classify and stage only relevant paths. Diagnose a failed or interrupted commit, observe whether it took effect, and retry or continue useful work; do not mistake an attempted commit for completed work.
-- Before finishing, compare every required outcome and its evidence with the worktree and commits. If work remains, take the next step, not a partial-status exit, even after compaction or difficulty. Verify the terminal state from live evidence.
-- Pause only for an unresolved consequential product/scope/authority decision, unavailable required evidence after feasible retries, or an applicable approved plan contradicted by code reality. Ask a precise question for a decision; report `NEEDS_REPLAN` with evidence only when an actually binding plan must change. Repeated nonproductive failures require a concrete diagnosis and changed approach, not an endless identical retry.
+- Read `../references/reconcile.md` at entry. Map required outcomes to existing commits, partial edits, current proof, and remaining work.
+- Preserve applicable approved semantics and architecture; adapt local mechanics.
+- Progress independent implementation work concurrently where safe. Delegate long-running or evidence-heavy read-only work to Explorer asynchronously, and continue other unblocked implementation while it runs.
+- Be aggressively minimal: solve only the requested problem, prefer deletion or reuse over addition, native/stdlib over dependencies, direct code over abstractions, and the smallest durable diff that preserves correctness, safety, compatibility, accessibility, and necessary observability. Do not build speculative flexibility or infrastructure.
+- Resolve ordinary implementation choices, debugging, failed checks, conflicting repository state, and necessary adjacent work yourself. Fix root causes. Do not weaken, delete, or bypass checks.
+- For each outcome, validate at the user-visible boundary with appropriate fast, deterministic, stable lower-level checks. Update documentation and independently commit coherent outcomes with a Conventional Commit when possible. Classify and stage only relevant paths. Diagnose uncertain or interrupted writes from live state before retrying or continuing.
+- Before finishing, compare every required outcome and its evidence with the worktree and commits. If work remains, take the next step. Repeated nonproductive failures require a concrete diagnosis and changed approach.
+
+**Stop condition:** Continue by default. Stop only when you judge that completing the requested outcome requires a consequential product, scope, semantics, or authority decision that cannot be safely resolved from the request, applicable approved decisions, repository evidence, and reasonable engineering judgment. Ask one precise question stating the decision required, why it is consequential, and why proceeding autonomously would be unsafe.
