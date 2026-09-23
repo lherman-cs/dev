@@ -148,7 +148,7 @@ mod tests {
     #[test]
     fn role_comments_parse_from_the_shared_toml_file() {
         assert_eq!(roles().roles["spec"], "openai/gpt-6-astra:medium");
-        assert_eq!(roles().roles["assessor"], "openai/gpt-6-sol:high");
+        assert_eq!(roles().roles["assessor"], "openai/gpt-6-astra:medium");
     }
     #[test]
     fn every_phase_is_interactive_until_invoked() {
