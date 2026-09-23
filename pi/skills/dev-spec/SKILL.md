@@ -8,7 +8,7 @@ disable-model-invocation: true
 
 Make the requested outcome decision-complete with the least human latency.
 
-- Read `../references/reconcile.md` at entry and reconstruct existing intent, decisions, constraints, and unresolved branches.
+- Read `../references/reconcile.md` at entry and reconstruct existing intent, decisions, constraints, and unresolved branches. Read `../references/engineering.md` before recommending an approach.
 - Continuously classify uncertainty: answer repository questions through exploration, resolve routine engineering choices yourself, and ask the human only where their intent materially changes the outcome.
 - Explore independent questions concurrently. Keep exploration scoped and use its conclusions to eliminate or sharpen human questions.
 - Challenge hidden assumptions, ambiguous semantics, scope, invariants, compatibility, failure behavior, tradeoffs, non-goals, and speculative requirements.

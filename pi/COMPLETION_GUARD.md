@@ -1,6 +1,6 @@
 # Completion guard
 
-`/dev-build`, `/dev-ship`, their `/skill:dev-*` equivalents, and `/dev-goal start` activate a session-native goal. The original request and direct human clarifications define its scope. Todo remains the foreground's step-level checklist, not classifier input.
+`/dev-build` and `/skill:dev-build` automatically activate a session-native goal. `/dev-goal start` activates one explicitly; spec and ship do not activate goals. The original request and direct human clarifications define its scope. Todo remains the foreground's step-level checklist, not classifier input.
 
 The foreground can declare a terminal `complete` or `blocked` outcome via `finish` (summary and evidence are foreground assertions). These dispositions settle directly, without independent correctness certification. The foreground remains responsible for the invoked skill's verification, review, and human gates. `continue_goal` explicitly states that work remains and schedules a fixed continuation without classification.
 

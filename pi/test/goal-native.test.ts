@@ -10,7 +10,7 @@ import { role } from "../lib/roles.ts";
 
 const pkg = resolve(import.meta.dirname, "..");
 
-test("native command and skill entry paths activate once; plain chat and spec do not", { timeout: 20000 }, async t => {
+test("only build entry paths activate automatically; explicit goals remain available", { timeout: 20000 }, async t => {
   const cwd = mkdtempSync(join(tmpdir(), "goal-native-"));
   t.after(() => rmSync(cwd, { recursive: true, force: true }));
   const settings = SettingsManager.inMemory({ packages: [pkg] });
@@ -32,26 +32,37 @@ test("native command and skill entry paths activate once; plain chat and spec do
   const { session } = await createAgentSession({ cwd, agentDir: cwd, model: getModel("openai", "gpt-4o-mini"),
     modelRuntime: runtime, resourceLoader: loader, settingsManager: settings, sessionManager: manager });
   t.after(() => session.dispose());
+  const settle = async () => { await new Promise(done => setImmediate(done)); await session.waitForIdle(); };
   const records = () => manager.getBranch().filter(entry => entry.type === "custom" && entry.customType === "dev-goal")
     .map(entry => entry.type === "custom" ? entry.data as { id: string; request: string; skill?: string; status: string } : undefined).filter(Boolean);
   await session.prompt("An ordinary question");
   assert.equal(records().length, 0);
   await session.prompt("/skill:dev-spec Example spec");
+  await session.prompt("/dev-spec Another spec"); await settle();
+  await session.prompt("/skill:dev-ship Review candidate C"); await settle();
+  await session.prompt("/dev-ship Review candidate D"); await settle();
   assert.equal(records().length, 0);
   await session.prompt("/dev-build Implement case A");
-  await new Promise(done => setImmediate(done)); await session.waitForIdle();
+  await settle();
   const first = records()[0]!;
   assert.equal(first.request, "Implement case A"); assert.equal(first.skill, "build");
   assert.equal(records().filter(entry => entry?.id !== first.id).length, 0);
   assert.equal(records().at(-1)?.status, "Paused");
   await session.prompt("/dev-goal abandon");
   await session.prompt("/dev-goal start Standalone goal B");
-  await new Promise(done => setImmediate(done)); await session.waitForIdle();
+  await settle();
   assert.equal(records().at(-1)?.request, "Standalone goal B");
   assert.equal(records().at(-1)?.skill, undefined); assert.notEqual(records().at(-1)?.id, first.id);
   await session.prompt("/dev-goal abandon");
-  await session.prompt("/skill:dev-ship Ship case C"); await session.waitForIdle();
-  assert.equal(records().at(-1)?.request, "Ship case C"); assert.equal(records().at(-1)?.skill, "ship");
+  const count = records().length;
+  await session.prompt("/skill:dev-ship Ship case C"); await settle();
+  await session.prompt("/dev-ship Ship case D"); await settle();
+  assert.equal(records().length, count);
+  await session.prompt("/skill:dev-build Implement case E");
+  await settle();
+  assert.equal(records().at(-1)?.request, "Implement case E");
+  assert.equal(records().at(-1)?.skill, "build");
+  assert.equal(records().length, count + 2, "direct skill input activates once, then records its pause");
 });
 
 test("native explicit finish settles without an assessor call", { timeout: 20000 }, async t => {

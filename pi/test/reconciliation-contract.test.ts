@@ -16,6 +16,17 @@ test("one lazy reference owns worktree recovery from live evidence", () => {
   }
 });
 
+test("one lazy engineering reference owns minimal-change guidance for every role", () => {
+  const policy = text("references/engineering.md");
+  for (const name of ["dev-spec", "dev-build", "dev-ship", "dev-review", "dev-explore"]) {
+    assert.match(skill(name), /Read `\.\.\/references\/engineering\.md`/);
+    assert.doesNotMatch(skill(name), /Be aggressively minimal|smallest durable diff/);
+  }
+  for (const requirement of [/requested problem/, /deletion or reuse/, /standard-library/, /direct code/, /smallest durable change/, /correctness, safety, compatibility, accessibility, and necessary observability/, /speculative flexibility/]) {
+    assert.match(policy, requirement);
+  }
+});
+
 test("three stage contracts keep approval, local review, and history ownership distinct", () => {
   assert.match(skill("dev-spec"), /explicit human approval/);
   assert.match(skill("dev-build"), /approval of the outcome must be established/);

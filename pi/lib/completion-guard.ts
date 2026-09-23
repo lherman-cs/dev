@@ -113,7 +113,7 @@ export function registerCompletionGuard(pi: ExtensionAPI, _run?: unknown,
   };
   pi.on("input", event => {
     if (event.source !== "interactive" && event.source !== "rpc") return;
-    if (!state || !unfinished(state) || /^\/skill:dev-(build|ship)(?:\s|$)/.test(event.text)) return;
+    if (!state || !unfinished(state) || /^\/skill:dev-build(?:\s|$)/.test(event.text)) return;
     if (state.status === "Active" || state.status === "Classifying") pause("New human input: resolve whether this refines, pauses or replaces the obligation");
     humanControlInput = true;
   });
