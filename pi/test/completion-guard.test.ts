@@ -8,10 +8,10 @@ function fixture(hasAsyncWork = () => false, deliveryFails = false) {
   const manager = SessionManager.inMemory(process.cwd());
   const context = { cwd: process.cwd(), sessionManager: manager, ui: { notify: () => undefined } } as unknown as ExtensionContext;
   const handlers = new Map<string, Array<(event: any, ctx: ExtensionContext) => any>>();
-  const tools: ToolDefinition[] = [], messages: string[] = [], assessments: string[] = [];
+  const tools: ToolDefinition[] = [], messages: string[] = [], assessments: Array<{ name: string; task: string }> = [];
   let resolve!: (value: unknown) => void;
   let reject!: (reason: unknown) => void;
-  const run = ((args: { task: string }) => { assessments.push(args.task); return new Promise<unknown>((done, fail) => { resolve = done; reject = fail; }); }) as RunWorker;
+  const run = ((args: { name: string; task: string }) => { assessments.push(args); return new Promise<unknown>((done, fail) => { resolve = done; reject = fail; }); }) as RunWorker;
   const pi = {
     on: (name: string, handler: (event: any, ctx: ExtensionContext) => any) => {
       handlers.set(name, [...(handlers.get(name) || []), handler]); return () => undefined;
@@ -51,7 +51,8 @@ test("unsupported finish returns missing work; accepted finish settles", async (
   const args = { outcome: "complete", summary: "A is done", evidence: "test A" };
   const receipt = await f.finish.execute("id", args, undefined, undefined, f.context);
   assert.match((receipt.content[0] as { text: string }).text, /provisional/);
-  assert.match(f.assessments[0]!, /Endpoint.*requested implementation/);
+  assert.equal(f.assessments[0]?.name, "assessor");
+  assert.match(f.assessments[0]!.task, /Endpoint.*requested implementation/);
   f.resolve({ verdict: "missing", explanation: "B has no proof", missing: ["Implement B"] }); await flush();
   assert.match(f.messages.at(-1)!, /B has no proof/);
   assert.ok(f.settle());

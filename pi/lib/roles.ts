@@ -1,6 +1,6 @@
 import fs from "node:fs";
 export type PublicPhase = "spec" | "build" | "ship";
-export type RoleName = PublicPhase | "review" | "explorer" | "escalated_builder";
+export type RoleName = PublicPhase | "review" | "assessor" | "explorer" | "escalated_builder";
 export type AuthProvider = "openai-codex" | "openai";
 export interface RoleConfig {
   authProvider: AuthProvider;
