@@ -6,6 +6,7 @@ import { registerWorkerHubUI } from "./worker-hub-ui.ts";
 import type { WorkerHistory as WorkerHistoryStore } from "./lib/worker-history.ts";
 import type { PublicPhase } from "./lib/roles.ts";
 import { registerCompletionGuard } from "./lib/completion-guard.ts";
+import { createVerifierTool } from "./lib/verifier.ts";
 
 export const explorerOnlyTools = new Set(["web_search", "source_check", "fetch_content", "get_search_content"]);
 type HubUI = ReturnType<typeof registerWorkerHubUI>;
@@ -59,6 +60,9 @@ export default function extension(pi: ExtensionAPI, dependencies: ExtensionDepen
     } catch (error) { guard.workerDeliveryFailed(owner, error); warn(error); }
   };
   const currentSession = (): string | undefined => ctx?.sessionManager.getSessionId();
+  const verifier = createVerifierTool(publishWorkerCompletion, { ownerSessionId: currentSession,
+    ownerGoal: guard.workerOwner, started: guard.workerStarted });
+  pi.registerTool(verifier.tool);
   pi.registerTool(asyncExploreTool(run, publishWorkerCompletion, undefined, undefined, {}, currentSession,
     guard.workerOwner, guard.workerStarted));
   pi.registerTool(asyncReviewTool(run, publishWorkerCompletion, undefined, currentSession,
@@ -71,6 +75,7 @@ export default function extension(pi: ExtensionAPI, dependencies: ExtensionDepen
   const stopForSessionChange = (): void => {
     // Workers own disposable read-only snapshots. Request cancellation without
     // making session navigation depend on an unresponsive child or its cleanup.
+    verifier.cancelAll();
     void run.stopAll().catch(warn);
   };
   pi.on("session_before_switch", stopForSessionChange);
@@ -119,7 +124,7 @@ export default function extension(pi: ExtensionAPI, dependencies: ExtensionDepen
     },
   });
   pi.on("session_shutdown", async () => {
-    guard.shutdown(); closing = true; lifetime.abort();
+    guard.shutdown(); closing = true; lifetime.abort(); verifier.cancelAll();
     await run.stopAll(); hub.flush(); hubUI.dispose(); hub.dispose();
   });
 }

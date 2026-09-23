@@ -11,6 +11,7 @@ import { role, type RoleName } from "./roles.ts";
 import type { WorkerHistory } from "./worker-history.ts";
 import type { WorkerHub } from "./worker-hub.ts";
 import type { WorkerRecord, WorkerSession, WorkerState } from "./worker-types.ts";
+import { createVerifierTool } from "./verifier.ts";
 
 const packageDir = fileURLToPath(new URL("../", import.meta.url));
 const readers = ["read", "grep", "find", "ls"];
@@ -42,7 +43,7 @@ export interface AsyncWorkerCompletion {
   id: string;
   ownerSessionId?: string;
   ownerGoal?: string;
-  role: "Explorer" | "Reviewer";
+  role: "Explorer" | "Reviewer" | "Verifier";
   task: string;
   status: "completed" | "failed";
   result: string;
@@ -221,7 +222,9 @@ export function createWorkerRunner(options: RunnerOptions): WorkerRunner {
           throw error;
         }
       };
-      const customTools: ToolDefinition[] = [...scopedTools, ...(explorer ? [] : [asyncExploreTool(childRun, publishNestedCompletion, quietReport, trackDetachedCompletion, { parentId: id, owner: metadata.owner, phase: metadata.phase }) as unknown as ToolDefinition])];
+      const verifier = !explorer && name !== "review" ? createVerifierTool(publishNestedCompletion, { track: trackDetachedCompletion, ownerCwd: () => cwd }) : undefined;
+      signal.addEventListener("abort", () => verifier?.cancelAll(), { once: true });
+      const customTools: ToolDefinition[] = [...scopedTools, ...(explorer ? [] : [asyncExploreTool(childRun, publishNestedCompletion, quietReport, trackDetachedCompletion, { parentId: id, owner: metadata.owner, phase: metadata.phase }) as unknown as ToolDefinition, ...(verifier ? [verifier.tool] : [])])];
       if (askHuman && !readonly && metadata.phase !== "ship") {
         const askSchema = Type.Object({ question: Type.String(), choices: Type.Optional(Type.Array(Type.String())) });
         customTools.push({ name: "ask_human", label: "Ask human", description: "Ask a bounded question and wait for the human to respond explicitly in Main.",
@@ -354,7 +357,7 @@ export function createWorkerRunner(options: RunnerOptions): WorkerRunner {
   return run;
 }
 
-// Universal, bounded investigation and verification; not an arbitrary subagent tool.
+// Bounded investigation and exact-candidate review; verification uses a dedicated executor.
 export function reviewTool(run: RunWorker, report: (text: string) => void = () => undefined): ToolDefinition<typeof reviewParameters, Record<string, never>, unknown> {
   return { name: "review", label: "Reviewer",
     description: "Review one exact candidate in a fresh, read-only Reviewer session.",
@@ -377,12 +380,12 @@ export function reviewTool(run: RunWorker, report: (text: string) => void = () =
 
 export function exploreTool(run: RunWorker, report: (text: string) => void = () => undefined, parentMetadata: Record<string, unknown> = {}): ToolDefinition<typeof exploreParameters, Record<string, never>, unknown> {
   return { name: "explore", label: "Explorer",
-    description: "Delegate one independent, narrowly scoped read-only investigation or verification, especially when it may be materially slow or high-output. Returns compact evidence, not raw output.",
-    promptSnippet: "Delegate a narrow codebase, web, or other evidence-heavy investigation or verification to an independent Explorer",
+    description: "Delegate one independent, narrowly scoped read-only investigation, especially when it may be materially slow or high-output. Returns compact evidence, not raw output.",
+    promptSnippet: "Delegate a narrow codebase, web, or other evidence-heavy investigation to an independent Explorer",
     promptGuidelines: [
-      "Delegate read-only evidence gathering when it is reasonably expected to take material time or produce substantial raw output, including broad repository or web research and slow or noisy targeted verification.",
-      "Keep quick known-target reads and small low-output checks in the parent when delegation would cost more than it saves.",
-      "The Explorer works in a separate HEAD snapshot, not the owner's dirty worktree; request live uncommitted evidence explicitly or inspect it in the parent.",
+      "Delegate read-only evidence gathering when it is reasonably expected to take material time or produce substantial raw output, including broad repository or web research.",
+      "Keep quick known-target reads in the parent when delegation would cost more than it saves.",
+      "The Explorer works in a separate HEAD snapshot, not the owner's dirty worktree; request live uncommitted investigative evidence explicitly or inspect it in the parent.",
       "Keep edits, installs, Git mutation, interactive or privileged work, and project decisions in the parent.",
       "Give each explore call one self-contained scope: state the factual question or command, boundaries, sibling exclusions, and expected evidence.",
       "Use separate calls for independent scopes; run dependent follow-ups only after their prerequisite result.",
@@ -431,7 +434,7 @@ export function asyncExploreTool(run: RunWorker, publish: PublishAsyncWorkerComp
   ownerGoal?: () => string, started?: (id: string, ownerGoal: string) => void): ReturnType<typeof exploreTool> {
   const foreground = exploreTool(run, report, parentMetadata);
   return { ...foreground,
-    description: "Start an independent investigation or verification in the background. Returns immediately; the result is delivered asynchronously.",
+    description: "Start an independent investigation in the background. Returns immediately; the result is delivered asynchronously.",
     promptGuidelines: [
       ...(foreground.promptGuidelines || []),
       "Start independent investigations without waiting. Continue useful work; each result will arrive automatically and trigger progress.",

@@ -40,7 +40,7 @@ test("three current-session aliases, Agent Hub and isolated tools register witho
   });
   assert.deepEqual([...commands.keys()].sort(), ["dev-build", "dev-goal", "dev-ship", "dev-spec"]);
   assert.ok(shortcuts.has("alt+a"));
-  assert.deepEqual(tools.map(tool => tool.name), ["goal_control", "continue_goal", "finish", "stopping_report", "explore", "review"]);
+  assert.deepEqual(tools.map(tool => tool.name), ["goal_control", "continue_goal", "finish", "stopping_report", "verify", "explore", "review"]);
   assert.equal(messages.length, 0);
   const explore = tools.find(tool => tool.name === "explore"); assert.ok(explore);
   const toolCall = handlers.get("tool_call"); assert.ok(toolCall);
@@ -164,6 +164,34 @@ test("failed Explorer delivery pauses the active goal instead of silently settli
   const goals = manager.getBranch().filter(entry => entry.type === "custom" && entry.customType === "dev-goal");
   assert.equal((goals.at(-1) as { data: { status: string; reason: string } }).data.status, "Paused");
   assert.match((goals.at(-1) as { data: { status: string; reason: string } }).data.reason, /delivery failed/);
+});
+
+test("Verifier delivers actual execution evidence through the Main session lifecycle", async () => {
+  const tools: RegisteredTool[] = [], messages: unknown[][] = [];
+  const noop = () => undefined;
+  load({
+    registerCommand: noop as ExtensionAPI["registerCommand"],
+    registerShortcut: noop as ExtensionAPI["registerShortcut"],
+    registerTool: tool => { tools.push(tool as unknown as RegisteredTool); },
+    on: (() => noop) as ExtensionAPI["on"],
+    sendMessage: (...args) => { messages.push(args); },
+    sendUserMessage: noop as ExtensionAPI["sendUserMessage"],
+    getActiveTools: () => ["read"], setActiveTools: noop as ExtensionAPI["setActiveTools"],
+  }, { hub: new WorkerHub(), registerWorkerHubUI: (() => ({ setContext: noop, dispose: noop })) as never });
+  const verify = tools.find(tool => tool.name === "verify"); assert.ok(verify);
+  const delivered = new Promise<void>(resolve => {
+    const send = messages.push.bind(messages);
+    messages.push = (...args) => { const result = send(...args); resolve(); return result; };
+  });
+  const receipt = await verify.execute("call", { commands: ["node -e 'console.log(\"verified\")'"] }, undefined, undefined, { cwd: process.cwd() } as never);
+  assert.match((receipt.content[0] as { text: string }).text, /started/);
+  assert.equal(messages.length, 0);
+  await delivered;
+  const [message, options] = messages[0] as [{ content: string; details: { role: string; status: string } }, { triggerTurn: boolean; deliverAs: string }];
+  assert.equal(message.details.role, "Verifier");
+  assert.equal(message.details.status, "completed");
+  assert.match(message.content, /verified|passed/);
+  assert.deepEqual(options, { triggerTurn: true, deliverAs: "steer" });
 });
 
 test("a completed asynchronous Explorer steers Main and triggers progress", async () => {

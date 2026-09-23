@@ -106,11 +106,11 @@ test('review transport rejects mismatched, inconsistent, and oversized results',
   await assert.rejects(invoke({...base,summary:'x'.repeat(13000)}),/transport limit/);
   const ok=await invoke(base); assert.equal(required(ok.content[0],'content').type,'text');
 });
-test('Explorer can verify but cannot edit or delegate recursively', async t=>{
+test('Explorer can investigate but has no Verifier, edit or recursive delegation' , async t=>{
   const f=await fixture(t,(_n,_c,m)=>message(m,[{type:'text',text:'Conclusion: found it'}]));
   await f.run({cwd:f.cwd,name:'explorer',task:'find it',tools:['edit','explore']});
   const names=required(f.sessions[0],'session').getActiveToolNames();
-  for(const name of ['explore','subagent','edit','write','lsp_fix','install','git']) assert.ok(!names.includes(name),name);
+  for(const name of ['verify','explore','subagent','edit','write','lsp_fix','install','git']) assert.ok(!names.includes(name),name);
   for(const name of ['bash','web_search','source_check','fetch_content','get_search_content']) assert.ok(names.includes(name),name);
 });
 test('every non-Explorer worker role receives the bounded Explorer primitive', async t=>{
@@ -120,6 +120,7 @@ test('every non-Explorer worker role receives the bounded Explorer primitive', a
   assert.equal(f.sessions.length,roles.length);
   for(const session of f.sessions) {
     assert.ok(session.getActiveToolNames().includes('explore'));
+    assert.equal(session.getActiveToolNames().includes('verify'), session !== f.sessions[2]);
     for(const name of ['web_search','source_check','fetch_content','get_search_content']) assert.ok(!session.getActiveToolNames().includes(name),name);
   }
 });

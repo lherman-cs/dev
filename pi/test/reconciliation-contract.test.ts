@@ -50,6 +50,17 @@ test("three stage contracts keep approval, local review, and history ownership d
   assert.doesNotMatch(skill("dev-ship"), /PR readiness|mandatory reviewer|ship_builder/i);
 });
 
+test("Verifier owns operation routing while Explorer retains only investigative delegation", () => {
+  const verifier = text("lib/verifier.ts"), explorer = text("lib/worker.ts");
+  assert.match(verifier, /Send every test, build, lint check, benchmark, and acceptance gate to verify regardless of expected duration or output size/);
+  assert.match(verifier, /actual owner worktree/);
+  assert.match(explorer, /Delegate read-only evidence gathering when it is reasonably expected to take material time/);
+  assert.doesNotMatch(explorer, /slow or noisy targeted verification/);
+  assert.doesNotMatch(skill("dev-explore"), /You may run targeted tests/);
+  assert.match(skill("dev-explore"), /do not launch verification commands/);
+  assert.doesNotMatch(skill("dev-build"), /slow or noisy targeted verification/);
+});
+
 test("documentation advertises only the local three-stage workflow", () => {
   const docs = ["../../README.md", "../../WORKFLOW.md"].map(path => readFileSync(fileURLToPath(new URL(path, import.meta.url)), "utf8"));
   for (const doc of docs) {

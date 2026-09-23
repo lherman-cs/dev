@@ -117,9 +117,9 @@ export function registerCompletionGuard(pi: ExtensionAPI, _run?: unknown,
     if (state.status === "Active" || state.status === "Classifying") pause("New human input: resolve whether this refines, pauses or replaces the obligation");
     humanControlInput = true;
   });
-  const workerStarted = (id: string, owner: string) => {
+  const workerStarted = (id: string, owner: string, timeoutMs = 120_000) => {
     if (!owner || owner !== workerOwner()) return;
-    const timer = setTimeout(() => { if (workerWaits.get(id)?.owner === owner && owner === workerOwner()) pause(`Ordinary worker ${id} stalled; inspect Agent Hub before resuming`); }, 120_000);
+    const timer = setTimeout(() => { if (workerWaits.get(id)?.owner === owner && owner === workerOwner()) pause(`Asynchronous work ${id} stalled; inspect retained evidence before resuming`); }, timeoutMs);
     timer.unref(); workerWaits.set(id, { owner, timer });
   };
   const workerFinished = (id: string, owner: string) => { const wait = workerWaits.get(id);
