@@ -24,7 +24,7 @@ function fixture(hasAsyncWork = () => false, deliveryFails = false, cwd = proces
     appendEntry: (name: string, data: unknown) => { manager.appendCustomEntry(name, data); },
     sendMessage: (message: { content: string }) => { if (deliveryFails) throw new Error("queue unavailable"); messages.push(message.content); },
   } as unknown as ExtensionAPI;
-  const guard = registerCompletionGuard(pi, run, hasAsyncWork);
+  const guard = registerCompletionGuard(pi, run);
   const emit = (name: string, event: any = {}, ctx = context) => handlers.get(name)?.map(fn => fn(event, ctx));
   const finish = tools.find(t => t.name === "finish")!, control = tools.find(t => t.name === "goal_control")!;
   const settle = () => emit("agent_before_settle", { outcome: "completed", context: { canContinue: true } })?.[0];
@@ -47,12 +47,29 @@ test("partial milestones continue without assessing; closed todos request one fi
   assert.match(f.settle().entries[0].content, /Submit finish/);
 });
 
-test("known async evidence does not create polling turns or allow premature finish", async () => {
-  let busy = true; const f = fixture(() => busy);
+test("only current-goal asynchronous evidence suppresses settlement and premature finish", async () => {
+  const f = fixture(() => true);
   f.guard.activate("Complete A", "build", f.context);
+  const owner = f.guard.workerOwner();
+  f.guard.workerStarted("explorer:1", owner);
   assert.equal(f.settle(), undefined);
   await assert.rejects(f.finish.execute("id", { outcome: "complete", summary: "Done", evidence: "A" }, undefined, undefined, f.context), /asynchronous evidence/);
-  busy = false;
+  assert.equal(f.guard.workerFinished("explorer:1", owner), true);
+  assert.match(f.settle().entries[0].content, /finish/);
+});
+
+test("paused and replaced goals cannot inherit late worker completions", () => {
+  const f = fixture(); f.guard.activate("Original A", "build", f.context);
+  const old = f.guard.workerOwner();
+  f.guard.workerStarted("explorer:old", old);
+  f.guard.pause("Interrupted");
+  f.guard.resume(f.context);
+  assert.equal(f.guard.workerFinished("explorer:old", old), false);
+  const fresh = f.guard.workerOwner();
+  assert.notEqual(fresh, old);
+  f.guard.workerStarted("reviewer:fresh", fresh);
+  assert.equal(f.settle(), undefined);
+  assert.equal(f.guard.workerFinished("reviewer:fresh", fresh), true);
   assert.match(f.settle().entries[0].content, /finish/);
 });
 

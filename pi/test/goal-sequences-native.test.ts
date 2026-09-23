@@ -30,7 +30,7 @@ const askIntent = () => tool("ask_user_question", { questions: [{ question: "Doe
   ] }] });
 
 async function fixture(t: TestContext, answer: (model: Model, call: number, context: string, done: (content: Content) => void) => Content | undefined,
-  { git = false, questionAnswer }: { git?: boolean; questionAnswer?: "Replace goal" | "Refine existing goal" | "Keep current goal" | "dismissed" } = {}) {
+  { git = false, questionAnswer, workerTools = false }: { git?: boolean; questionAnswer?: "Replace goal" | "Refine existing goal" | "Keep current goal" | "dismissed"; workerTools?: boolean } = {}) {
   const cwd = mkdtempSync(join(tmpdir(), "goal-sequence-"));
   if (git) {
     execFileSync("git", ["init", "-q", cwd]);
@@ -58,7 +58,7 @@ async function fixture(t: TestContext, answer: (model: Model, call: number, cont
   const manager = SessionManager.inMemory(cwd);
   const { session } = await createAgentSession({ cwd, agentDir: cwd, model: getModel("openai", "gpt-4o-mini"),
     modelRuntime: runtime, resourceLoader: loader, settingsManager: settings, sessionManager: manager,
-    tools: ["finish", "goal_control", "ask_user_question", "bash"],
+    tools: ["finish", "goal_control", "ask_user_question", "bash", ...(workerTools ? ["explore", "review"] : [])],
     ...(questionAnswer ? { customTools: [{ name: "ask_user_question", label: "Question fixture", description: "Deterministic human choice",
       parameters: Type.Object({ questions: Type.Array(Type.Any()) }),
       execute: async (_id: string, args: { questions: { question: string }[] }) => ({
@@ -165,6 +165,32 @@ test("native side question and quoted cancellation preserve scope; direct resume
   await f.session.waitForIdle();
   assert.equal(f.history().at(-1)?.id, id);
   assert.equal(f.history().at(-1)?.status, "Abandoned");
+});
+
+test("native Explorer result is a tracked dependency and wakes a guarded Main turn", { timeout: 20000 }, async t => {
+  let doneWorker!: (content: Content) => void, ready!: () => void;
+  const workerReady = new Promise<void>(resolve => { ready = resolve; });
+  let started = false;
+  const f = await fixture(t, (model, _n, context, done) => {
+    if (model.id === role("explorer").model) { doneWorker = done; ready(); return undefined; }
+    if (!started) { started = true; return tool("explore", { task: "Find evidence for A" }); }
+    return text(context.includes("A exists") ? "Received Explorer evidence" : "Waiting for Explorer evidence");
+  }, { workerTools: true, git: true });
+  await f.session.prompt("/dev-build Complete A");
+  await workerReady;
+  assert.equal(f.history().at(-1)?.status, "Active");
+  await f.session.waitForIdle();
+  doneWorker(tool("submit_result", { status: "FOUND", answer: "A exists", evidence: [{ claim: "A", anchor: "a.ts:1" }] }));
+  for (let i = 0; i < 100 && !f.events.some(e => e.type === "message_end" && e.message.role === "custom" &&
+    e.message.customType === "dev-worker-result"); i++) await new Promise(done => setTimeout(done, 5));
+  for (let i = 0; i < 100 && !f.events.some(e => e.type === "message_end" && e.message.role === "assistant" &&
+    e.message.content.some(part => part.type === "text" && part.text.includes("Received Explorer evidence"))); i++) await new Promise(done => setTimeout(done, 5));
+  await f.session.waitForIdle();
+  assert.ok(f.events.some(e => e.type === "message_end" && e.message.role === "custom" &&
+    e.message.customType === "dev-worker-result"));
+  assert.ok(f.events.some(e => e.type === "message_end" && e.message.role === "assistant" &&
+    e.message.content.some(part => part.type === "text" && part.text.includes("Received Explorer evidence"))));
+  assert.notEqual(f.history().at(-1)?.status, "Completed");
 });
 
 test("native late assessor cannot certify after pause and resume in the same session", { timeout: 20000 }, async t => {

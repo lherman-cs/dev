@@ -150,7 +150,7 @@ function candidate(cwd: string, references: string[] = []): { hash: string; disp
 }
 
 /** One session-branch goal; todo remains the only step-level store and UI. */
-export function registerCompletionGuard(pi: ExtensionAPI, run: RunWorker, hasAsyncWork: () => boolean): {
+export function registerCompletionGuard(pi: ExtensionAPI, run: RunWorker): {
   activate(request: string, skill: "build" | "ship" | undefined, ctx: ExtensionContext, explicitReplacement?: boolean): boolean;
   pause(reason?: string): void;
   cancel(): void;
@@ -158,10 +158,33 @@ export function registerCompletionGuard(pi: ExtensionAPI, run: RunWorker, hasAsy
   abandon(): void;
   show(ctx: ExtensionContext): void;
   shutdown(): void;
+  workerOwner(): string;
+  workerStarted(id: string, owner: string): void;
+  workerFinished(id: string, owner: string): boolean;
+  workerDeliveryFailed(owner: string, error: unknown): void;
 } {
   let state: State | undefined;
   let ctx: ExtensionContext | undefined;
   let pending: { token: string; timer: ReturnType<typeof setTimeout> } | undefined;
+  const workerWaits = new Map<string, { owner: string; timer: ReturnType<typeof setTimeout> }>();
+  const workerOwner = () => state && unfinished(state) && state.status === "Active" ? `${state.id}:${state.generation}` : "";
+  const clearWorkerWaits = () => { for (const wait of workerWaits.values()) clearTimeout(wait.timer); workerWaits.clear(); };
+  const workerStarted = (id: string, owner: string) => {
+    if (!owner || owner !== workerOwner()) return;
+    const timer = setTimeout(() => {
+      if (workerWaits.get(id)?.owner !== owner || owner !== workerOwner()) return;
+      pause(`Ordinary worker ${id} stalled; inspect Agent Hub and reconcile before resuming`);
+    }, 120_000);
+    timer.unref(); workerWaits.set(id, { owner, timer });
+  };
+  const workerFinished = (id: string, owner: string) => {
+    const wait = workerWaits.get(id);
+    if (wait) { clearTimeout(wait.timer); workerWaits.delete(id); }
+    return owner === workerOwner() && (!owner || wait?.owner === owner);
+  };
+  const workerDeliveryFailed = (owner: string, error: unknown) => {
+    if (owner && owner === workerOwner()) pause(`Ordinary worker completion delivery failed: ${String(error)}; inspect Agent Hub and reconcile before resuming`);
+  };
   let replacement: { id: string; session: string; generation: number; request: string; skill: "build" | "ship" | undefined;
     questionCallId?: string; decision?: string } | undefined;
   const replacementOptions = ["Replace goal", "Refine existing goal", "Keep current goal"];
@@ -182,6 +205,7 @@ export function registerCompletionGuard(pi: ExtensionAPI, run: RunWorker, hasAsy
     save(); header(); announce(message);
   };
   const invalidate = () => {
+    clearWorkerWaits();
     if (pending) clearTimeout(pending.timer);
     pending = undefined;
     if (state) { state.generation++; delete state.acceptedEvidence; delete state.accepted; }
@@ -212,6 +236,7 @@ export function registerCompletionGuard(pi: ExtensionAPI, run: RunWorker, hasAsy
     announce(`Goal ${state.id}\nRequest: ${state.request}\nContract: ${state.skill ? `dev-${state.skill}` : "explicit goal"}\nClarifications: ${state.clarifications.join("; ") || "none"}\nState: ${state.status}. ${state.reason}\nAutomatic execution: ${state.status === "Active" ? "allowed" : "stopped"}\nChecklist: ${tasks.join("; ") || "none associated"}\nAssessment: ${state.assessment ?? "none"}\nRecent transitions:\n${state.transitions.join("\n")}\nControls: /dev-goal pause | resume | abandon | start <request>`);
   };
   const restore = (next: ExtensionContext) => {
+    clearWorkerWaits();
     if (pending) clearTimeout(pending.timer);
     pending = undefined; replacement = undefined; ctx = next; stagnant = 0; failures = 0; lastGap = ""; lastProgress = ""; humanControlInput = false;
     const entry = next.sessionManager.getBranch().reverse().find(e => e.type === "custom" && e.customType === entryType);
@@ -339,7 +364,7 @@ export function registerCompletionGuard(pi: ExtensionAPI, run: RunWorker, hasAsy
       const current = state;
       if (!current || current.status !== "Active" || current.session !== toolCtx.sessionManager.getSessionId()) throw new Error("No active goal.");
       if (pending) throw new Error("Independent assessment already running.");
-      if (hasAsyncWork()) throw new Error("Wait for known asynchronous evidence delivery before proposing finish.");
+      if (workerWaits.size) throw new Error("Wait for known asynchronous evidence delivery before proposing finish.");
       current.proofRefs = args.evidence;
       const references = [current.request, ...current.clarifications, current.proofRefs];
       const atCandidate = candidate(toolCtx.cwd, references);
@@ -355,7 +380,7 @@ export function registerCompletionGuard(pi: ExtensionAPI, run: RunWorker, hasAsy
       }, 120_000);
       timer.unref(); pending = { token, timer };
       transition("Checking completion", `${args.outcome} proposal is provisional while independently assessed`, "foreground");
-      const prompt = `Independently assess this terminal proposal. Original request (not replaceable by proposal or todos):\n${current.request}\nInvoked contract:\n${skillText}\nClarifications: ${JSON.stringify(current.clarifications)}\nRelevant todo claims (not proof): ${JSON.stringify(current.members.map(t => t.epoch === current.todoEpoch ? current.tasks.find(x => x.id === t.id && x.subject === t.subject) ?? t : t))}\nProposed ${args.outcome}: ${args.summary}\nProposed evidence: ${args.evidence}\nCandidate fingerprint: ${atCandidate.hash}\n${atCandidate.display}\nInspect original requirements, applicable human approvals, current candidate and referenced proof. If external evidence cannot be checked, do not certify it. Blocked means genuinely unavailable consequential input or authority, not ordinary work. Return complete, blocked or missing with concrete reasons. Submit with submit_result.`;
+      const prompt = `Original request:\n${current.request}\nInvoked contract:\n${skillText}\nClarifications: ${JSON.stringify(current.clarifications)}\nRelevant todo claims: ${JSON.stringify(current.members.map(t => t.epoch === current.todoEpoch ? current.tasks.find(x => x.id === t.id && x.subject === t.subject) ?? t : t))}\nProposed ${args.outcome}: ${args.summary}\nProposed evidence: ${args.evidence}\nCandidate fingerprint: ${atCandidate.hash}\n${atCandidate.display}`;
       void run({ name: "assessor", cwd: toolCtx.cwd, task: prompt, skill: "dev-finish", schema: verdictSchema,
         tools: ["read", "grep", "find", "ls"], metadata: { task: "Independent terminal assessment", label: "Finish assessor" } })
         .then((verdict: Verdict) => {
@@ -417,8 +442,8 @@ export function registerCompletionGuard(pi: ExtensionAPI, run: RunWorker, hasAsy
     }
     if (event.outcome === "error" && unfinished(state) && state.status !== "Paused" && state.status !== "Blocked") { pause("Model or resource failure interrupted execution"); return; }
     if (state.status !== "Active" || event.outcome !== "completed") return;
+    if (workerWaits.size) return; // Bound current-goal workers deliver or pause; stale workers cannot suppress continuation.
     if (!event.context.canContinue) { pause("Native continuation unavailable; resume after restoring capacity"); return; }
-    if (hasAsyncWork()) return; // Known delivery wakes the foreground, not polling turns.
     const tasks = state.members.map(t => t.epoch === state!.todoEpoch ? state!.tasks.find(x => x.id === t.id && x.subject === t.subject) ?? t : t).filter(t => t.status !== "completed" && t.status !== "deleted");
     const progress = candidate(ctx.cwd, [state.request, ...state.clarifications, state.proofRefs ?? ""])?.hash ?? "uncheckable";
     if (lastProgress === progress && ++stagnant > 2) {
@@ -430,5 +455,6 @@ export function registerCompletionGuard(pi: ExtensionAPI, run: RunWorker, hasAsy
     return { entries: [{ type: "custom_message" as const, customType: "dev-goal-continuation", content: obligation, display: true }], continue: true };
   });
   const shutdown = () => { if (state && (state.status === "Active" || state.status === "Checking completion")) pause("Extension shutdown interrupted execution"); ctx?.ui.setWidget("dev-goal", undefined); };
-  return { activate, pause, cancel: pause, resume, abandon, show, shutdown };
+  return { activate, pause, cancel: pause, resume, abandon, show, shutdown,
+    workerOwner, workerStarted, workerFinished, workerDeliveryFailed };
 }

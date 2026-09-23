@@ -40,7 +40,7 @@ export default function extension(pi: ExtensionAPI, dependencies: ExtensionDepen
   const run: WorkerRunner = (dependencies.createWorkerRunner || createWorkerRunner)({ hub, getHistory: () => history, ownerCwd: () => ctx?.cwd, askHuman });
   hub.onRelated = (record, text) => run.related(record, text);
   const hubUI: HubUI = (dependencies.registerWorkerHubUI || registerWorkerHubUI)(pi, hub);
-  const guard = registerCompletionGuard(pi, run, () => run.hasActive());
+  const guard = registerCompletionGuard(pi, run);
 
   pi.on("session_start", async (_event, nextCtx) => {
     ctx = nextCtx;
@@ -51,14 +51,18 @@ export default function extension(pi: ExtensionAPI, dependencies: ExtensionDepen
   });
   const publishWorkerCompletion = (completion: AsyncWorkerCompletion): void => {
     if (closing || (completion.ownerSessionId && completion.ownerSessionId !== ctx?.sessionManager.getSessionId())) return;
+    const owner = completion.ownerGoal ?? "";
+    if (!guard.workerFinished(completion.id, owner)) return;
     const content = renderAsyncWorkerCompletion(completion);
     try {
       pi.sendMessage({ customType: "dev-worker-result", content, display: true, details: completion }, { triggerTurn: true, deliverAs: "steer" });
-    } catch (error) { warn(error); }
+    } catch (error) { guard.workerDeliveryFailed(owner, error); warn(error); }
   };
   const currentSession = (): string | undefined => ctx?.sessionManager.getSessionId();
-  pi.registerTool(asyncExploreTool(run, publishWorkerCompletion, undefined, undefined, {}, currentSession));
-  pi.registerTool(asyncReviewTool(run, publishWorkerCompletion, undefined, currentSession));
+  pi.registerTool(asyncExploreTool(run, publishWorkerCompletion, undefined, undefined, {}, currentSession,
+    guard.workerOwner, guard.workerStarted));
+  pi.registerTool(asyncReviewTool(run, publishWorkerCompletion, undefined, currentSession,
+    guard.workerOwner, guard.workerStarted));
   pi.on("tool_call", event => {
     if (event.toolName === "review" && phase !== "ship") return { block: true, reason: "Review is reserved for an explicit dev-ship invocation." };
     if (explorerOnlyTools.has(event.toolName)) return { block: true, reason: `Delegate ${event.toolName} to one or more narrowly scoped explore calls.` };

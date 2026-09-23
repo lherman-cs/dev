@@ -41,6 +41,7 @@ export type ReviewResult = Static<typeof reviewResultSchema>;
 export interface AsyncWorkerCompletion {
   id: string;
   ownerSessionId?: string;
+  ownerGoal?: string;
   role: "Explorer" | "Reviewer";
   task: string;
   status: "completed" | "failed";
@@ -410,10 +411,13 @@ function publishDetached(
   work: Promise<Awaited<ReturnType<ToolDefinition["execute"]>>>, publish: PublishAsyncWorkerCompletion,
   track?: TrackAsyncWorkerCompletion,
   ownerSessionId?: string,
+  ownerGoal = "",
+  started?: (id: string, ownerGoal: string) => void,
 ): string {
   const id = `${role.toLowerCase()}:${randomUUID()}`;
+  started?.(id, ownerGoal);
   const notify = async (completion: AsyncWorkerCompletion): Promise<void> => { try { await publish(completion); } catch { /* completion remains in Agent Hub history */ } };
-  const origin = ownerSessionId ? { ownerSessionId } : {};
+  const origin = { ...(ownerSessionId ? { ownerSessionId } : {}), ownerGoal };
   const completion = work.then(
     result => notify({ id, role, task, status: "completed", result: resultText(result), ...origin }),
     error => notify({ id, role, task, status: "failed", result: error instanceof Error ? error.message : String(error), ...origin }),
@@ -424,7 +428,8 @@ function publishDetached(
 }
 
 /** Detached Explorer adapter shared by Main and worker-owned parent sessions. */
-export function asyncExploreTool(run: RunWorker, publish: PublishAsyncWorkerCompletion, report: (text: string) => void = () => undefined, track?: TrackAsyncWorkerCompletion, parentMetadata: Record<string, unknown> = {}, ownerSessionId?: () => string | undefined): ReturnType<typeof exploreTool> {
+export function asyncExploreTool(run: RunWorker, publish: PublishAsyncWorkerCompletion, report: (text: string) => void = () => undefined, track?: TrackAsyncWorkerCompletion, parentMetadata: Record<string, unknown> = {}, ownerSessionId?: () => string | undefined,
+  ownerGoal?: () => string, started?: (id: string, ownerGoal: string) => void): ReturnType<typeof exploreTool> {
   const foreground = exploreTool(run, report, parentMetadata);
   return { ...foreground,
     description: "Start an independent investigation or verification in the background. Returns immediately; the result is delivered asynchronously.",
@@ -434,13 +439,15 @@ export function asyncExploreTool(run: RunWorker, publish: PublishAsyncWorkerComp
       "If a result is required for the next decision, stop after exhausting independent work. Do not poll or repeat the investigation.",
     ],
     async execute(callId, args, _signal, onUpdate, ctx) {
-      const id = publishDetached("Explorer", args.task, Promise.resolve(foreground.execute(callId, args, undefined, onUpdate, ctx)), publish, track, ownerSessionId?.());
+      const id = publishDetached("Explorer", args.task, Promise.resolve(foreground.execute(callId, args, undefined, onUpdate, ctx)), publish, track, ownerSessionId?.(), ownerGoal?.() ?? "", started);
       return toolResult(`Explorer ${id} started.`);
     },
   };
 }
 
-export function asyncReviewTool(run: RunWorker, publish: PublishAsyncWorkerCompletion, report: (text: string) => void = () => undefined, ownerSessionId?: () => string | undefined): ReturnType<typeof reviewTool> {
+export function asyncReviewTool(run: RunWorker, publish: PublishAsyncWorkerCompletion, report: (text: string) => void = () => undefined,
+  ownerSessionId?: () => string | undefined, ownerGoal?: () => string,
+  started?: (id: string, ownerGoal: string) => void): ReturnType<typeof reviewTool> {
   const foreground = reviewTool(run, report);
   return { ...foreground,
     description: "Start an exact-candidate review in the background. Returns immediately; the verdict is delivered asynchronously.",
@@ -450,7 +457,7 @@ export function asyncReviewTool(run: RunWorker, publish: PublishAsyncWorkerCompl
       "If the verdict gates the next decision, stop after exhausting independent work. Do not poll or launch a duplicate review.",
     ],
     async execute(callId, args, _signal, onUpdate, ctx) {
-      const id = publishDetached("Reviewer", args.task, Promise.resolve(foreground.execute(callId, args, undefined, onUpdate, ctx)), publish, undefined, ownerSessionId?.());
+      const id = publishDetached("Reviewer", args.task, Promise.resolve(foreground.execute(callId, args, undefined, onUpdate, ctx)), publish, undefined, ownerSessionId?.(), ownerGoal?.() ?? "", started);
       return toolResult(`Reviewer ${id} started.`);
     },
   };
