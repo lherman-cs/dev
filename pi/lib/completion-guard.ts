@@ -15,7 +15,7 @@ type ReviewAttempt = { id: string; purpose: ReviewRequest["purpose"]; candidate:
   status: "reserved" | "started" | "completed" | "failed"; reservedAt: number; workerId?: string; endedAt?: number; result?: string;
   dispositions?: Record<string, FindingDisposition> };
 type ReviewLedger = { broad?: ReviewAttempt; repairAudit?: ReviewAttempt };
-type State = { id: string; session: string; request: string; skill: "build" | "ship" | undefined; clarifications: string[];
+type State = { id: string; session: string; request: string; skill: "spec" | "build" | "review" | "ship" | undefined; clarifications: string[];
   status: Lifecycle; reason: string; generation: number; baseline: number[]; members: Member[]; tasks: Task[]; todoEpoch: number;
   nextId: number | undefined; transitions: string[]; stages: StageEvent[]; outcome?: string; reviews?: ReviewLedger };
 const unfinished = (s: State) => s.status !== "Completed" && s.status !== "Abandoned";
@@ -74,7 +74,7 @@ export function registerCompletionGuard(pi: ExtensionAPI, _run?: unknown,
   };
   const show = (next: ExtensionContext) => {
     ctx = next;
-    if (!state) { announce("No current goal. Use /dev-goal start <request>, /dev-build or /dev-ship."); return; }
+    if (!state) { announce("No current goal. Use /dev-goal start <request>, /dev-spec, /dev-build, or /dev-review."); return; }
     const tasks = state.members.map(t => { const live = t.epoch === state!.todoEpoch ? state!.tasks.find(x => x.id === t.id && x.subject === t.subject) : undefined;
       return `${t.id}: ${t.subject} (${live?.status ?? "historical; not current"}, claim only)`; });
     const stages = state.stages.map(e => `${e.label}: ${e.status}${e.disposition ? ` ${e.disposition}` : ""}${e.code ? ` (${e.code})` : ""} at ${new Date(e.at).toISOString()} (${e.elapsedMs}ms)`).join("\n");
@@ -102,10 +102,10 @@ export function registerCompletionGuard(pi: ExtensionAPI, _run?: unknown,
   pi.on("session_tree", (_event, next) => restore(next));
   pi.on("agent_end", event => { humanControlInput = false; const last = [...event.messages].reverse().find(m => m.role === "assistant");
     if (last?.role === "assistant" && last.stopReason === "aborted") pause("Turn interrupted (Escape or cancellation)"); });
-  let replacement: { id: string; session: string; generation: number; request: string; skill: "build" | "ship" | undefined; questionCallId?: string; decision?: string } | undefined;
+  let replacement: { id: string; session: string; generation: number; request: string; skill: "spec" | "build" | "review" | "ship" | undefined; questionCallId?: string; decision?: string } | undefined;
   const replacementOptions = ["Replace goal", "Refine existing goal", "Keep current goal"];
   let stagnant = 0, continuationScheduled = false;
-  const activate = (request: string, skill: "build" | "ship" | undefined, next: ExtensionContext, explicitReplacement = false): boolean => {
+  const activate = (request: string, skill: "spec" | "build" | "review" | "ship" | undefined, next: ExtensionContext, explicitReplacement = false): boolean => {
     ctx = next;
     if (state && unfinished(state)) {
       if (state.request === request && state.skill === skill) return state.status === "Active";
@@ -128,9 +128,10 @@ export function registerCompletionGuard(pi: ExtensionAPI, _run?: unknown,
   };
   pi.on("input", event => {
     if (event.source !== "interactive" && event.source !== "rpc") return;
-    if (!state || !unfinished(state) || /^\/skill:dev-build(?:\s|$)/.test(event.text)) return;
-    if (state.status === "Active" || state.status === "Classifying") pause("New human input: resolve whether this refines, pauses or replaces the obligation");
+    if (!state || !unfinished(state) || /^\/skill:dev-(?:spec|build|review)(?:\s|$)/.test(event.text)) return;
     humanControlInput = true;
+    if ((state.skill === "spec" || state.skill === "review") && state.status === "Active") return;
+    if (state.status === "Active" || state.status === "Classifying") pause("New human input: resolve whether this refines, pauses or replaces the obligation");
   });
   const workerStarted = (id: string, owner: string, timeoutMs = 120_000) => {
     if (!owner || owner !== workerOwner()) return;
@@ -321,6 +322,7 @@ export function registerCompletionGuard(pi: ExtensionAPI, _run?: unknown,
     if (event.outcome === "error" && unfinished(state) && state.status !== "Paused" && state.status !== "Blocked") { pause("Model or resource failure interrupted execution"); return; }
     if (state.status !== "Active" || event.outcome !== "completed") return;
     if (workerWaits.size) return;
+    if (state.skill === "spec" || state.skill === "review") return;
     if (continuationScheduled) { continuationScheduled = false; return; }
     if (!event.context.canContinue) { pause("Native continuation unavailable; resume after restoring capacity"); return; }
     // A normal stop without an explicit outcome or a valid report cannot be classified by fabricating input.
