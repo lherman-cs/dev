@@ -95,16 +95,19 @@ test('assessor role cannot be launched as an independent worker', async t=>{
   await assert.rejects(f.run({cwd:f.cwd,name:'assessor',task:'unscoped'}),/not a child worker/);
   assert.equal(f.sessions.length,0);
 });
-test('review transport rejects mismatched, inconsistent, and oversized results', async()=>{
-  const base={verdict:'PASS',candidate:'abc',evidence:'proof',summary:'ok',findings:[],blocker:null};
+test('review transport rejects mismatched, incomplete, inconsistent, and oversized results', async()=>{
+  const base={purpose:'broad',verdict:'PASS',candidate:'abc',evidence:'proof for abc',focus:['identity'],
+    coverage:[{focus:'identity',status:'examined',evidence:'src/id.ts:1'}],summary:'ok',findings:[],blocker:null};
   const invoke=async (result: unknown) => {
     const run: RunWorker=async()=>result as never;
-    return reviewTool(run).execute('id',{task:'review',candidate:'abc',evidence:'proof'},undefined,undefined,{cwd:process.cwd()} as never);
+    return reviewTool(run).execute('id',{purpose:'broad',task:'review',candidate:'abc',evidence:'proof for abc',focus:['identity']},undefined,undefined,{cwd:process.cwd()} as never);
   };
   await assert.rejects(invoke({...base,candidate:'other'}),/does not match/);
+  await assert.rejects(invoke({...base,coverage:[]}),/account/);
+  await assert.rejects(invoke({...base,coverage:[{focus:'identity',status:'unexamined',evidence:'budget exhausted'}]}),/inconsistent/);
   await assert.rejects(invoke({...base,findings:[{key:'x'}]}),/inconsistent/);
   await assert.rejects(invoke({...base,summary:'x'.repeat(13000)}),/transport limit/);
-  const ok=await invoke(base); assert.equal(required(ok.content[0],'content').type,'text');
+  const ok=await invoke(base as never); assert.equal(required(ok.content[0],'content').type,'text');
 });
 test('Explorer can investigate but has no Verifier, edit or recursive delegation' , async t=>{
   const f=await fixture(t,(_n,_c,m)=>message(m,[{type:'text',text:'Conclusion: found it'}]));
@@ -163,7 +166,7 @@ test('Main Reviewer failure is delivered asynchronously instead of rejecting its
   let reject!: (error: Error) => void;const completions: AsyncWorkerCompletion[]=[];
   const run = (() => new Promise((_resolve, decline)=>{reject=decline;})) as unknown as RunWorker;
   const tool=asyncReviewTool(run,completion=>{completions.push(completion);});
-  const receipt=await tool.execute('review',{task:'gate',candidate:'abc',evidence:'proof'},undefined,undefined,{cwd:process.cwd()} as never);
+  const receipt=await tool.execute('review',{purpose:'broad',task:'gate',candidate:'abc',evidence:'proof for abc',focus:['identity']},undefined,undefined,{cwd:process.cwd()} as never);
   assert.match(firstText(receipt) || '',/^reviewer:[0-9a-f-]+$/);
   reject(new Error('review transport failed'));await new Promise(resolve=>setImmediate(resolve));
   assert.equal(completions.length,1);assert.equal(required(completions[0],'completion').status,'failed');assert.match(required(completions[0],'completion').result,/transport failed/);

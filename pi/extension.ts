@@ -78,11 +78,14 @@ export default function extension(pi: ExtensionAPI, dependencies: ExtensionDepen
   pi.registerTool(asyncExploreTool(run, publishWorkerCompletion, undefined, undefined, {}, currentSession,
     guard.workerOwner, guard.workerStarted));
   pi.registerTool(asyncReviewTool(run, publishWorkerCompletion, undefined, currentSession,
-    guard.workerOwner, guard.workerStarted));
+    guard.workerOwner, guard.workerStarted, guard.reviewGate));
   pi.on("tool_call", event => {
     if (event.toolName === "review" && phase !== "ship") return { block: true, reason: "Review is reserved for an explicit dev-ship invocation." };
     if (explorerOnlyTools.has(event.toolName)) return { block: true, reason: `Delegate ${event.toolName} to one or more narrowly scoped explore calls.` };
     return undefined;
+  });
+  pi.on("tool_result", event => {
+    if (!event.isError && event.toolName === "goal_control" && event.input?.["action"] === "resume") setPhase(guard.currentSkill());
   });
   const stopForSessionChange = (): void => {
     // Workers own disposable read-only snapshots. Request cancellation without
@@ -100,7 +103,7 @@ export default function extension(pi: ExtensionAPI, dependencies: ExtensionDepen
     if (next !== "spec" && event.source !== "extension" && nextCtx?.sessionManager) {
       const request = event.text.slice(match[0].length).trim();
       if (!request) { nextCtx.ui.notify(`Provide a request: /skill:dev-${next} <request>`, "warning"); return { action: "handled" }; }
-      if (next === "build" && !await guard.activate(request, next, nextCtx)) return { action: "handled" }; // Do not execute an unauthorized replacement.
+      if (!await guard.activate(request, next, nextCtx)) return { action: "handled" }; // Do not execute an unauthorized replacement.
     }
     setPhase(next);
     return { action: "continue" };
@@ -111,7 +114,7 @@ export default function extension(pi: ExtensionAPI, dependencies: ExtensionDepen
     handler: async (args, nextCtx) => {
       ctx = nextCtx;
       if (commandPhase !== "spec" && !args.trim()) { nextCtx.ui.notify(`Provide a request: /dev-${commandPhase} <request>`, "warning"); return; }
-      if (commandPhase === "build" && !await guard.activate(args.trim(), commandPhase, nextCtx)) return;
+      if (commandPhase !== "spec" && !await guard.activate(args.trim(), commandPhase, nextCtx)) return;
       setPhase(commandPhase);
       hubUI.setContext(nextCtx);
       pi.sendUserMessage(`/skill:dev-${commandPhase}${args ? ` ${args}` : ""}`, { expandPromptTemplates: true });
@@ -129,7 +132,7 @@ export default function extension(pi: ExtensionAPI, dependencies: ExtensionDepen
         return;
       }
       if (action === "pause") guard.pause();
-      else if (action === "resume") guard.resume(nextCtx);
+      else if (action === "resume") { guard.resume(nextCtx); setPhase(guard.currentSkill()); }
       else if (action === "abandon") guard.abandon();
       else if (action && action !== "show") { nextCtx.ui.notify("Use /dev-goal [start <request>|pause|resume|abandon]", "warning"); return; }
       guard.show(nextCtx);

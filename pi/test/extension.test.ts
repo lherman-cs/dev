@@ -1,9 +1,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { execFileSync } from "node:child_process";
 import { createJiti } from "jiti";
 import { SessionManager, type ExtensionAPI, type RegisteredCommand, type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import type { RunWorker } from "../lib/worker.ts";
 import { WorkerHub } from "../lib/worker-hub.ts";
+import { candidateFingerprint } from "../lib/verifier.ts";
 
 type ExtensionModule = Pick<typeof import("../extension.ts"), "default" | "explorerOnlyTools">;
 type RegisteredTool = Pick<ToolDefinition, "name" | "execute">;
@@ -79,6 +84,69 @@ test("review is active only for an explicit dev-ship phase", async () => {
   assert.ok(handlers.get("tool_call")?.({ toolName: "review" })?.reason);
   handlers.get("input")?.({ text: "/skill:dev-ship plan.md" });
   assert.ok(active.includes("review"));
+});
+
+test("one broad review and one repair audit are durably bounded per ship effort", async t => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "review-ledger-"));
+  t.after(() => fs.rmSync(cwd, { recursive: true, force: true }));
+  execFileSync("git", ["init", "-q"], { cwd });
+  fs.writeFileSync(path.join(cwd, "candidate.txt"), "candidate\n");
+  execFileSync("git", ["add", "."], { cwd });
+  execFileSync("git", ["-c", "user.name=Test", "-c", "user.email=test@example.test", "commit", "-qm", "initial"], { cwd });
+  const candidate = candidateFingerprint(cwd), manager = SessionManager.inMemory(cwd);
+  let calls = 0;
+  const run = Object.assign(async (args: Parameters<RunWorker>[0]) => {
+    calls++;
+    args.onStarted?.(`worker-${calls}`);
+    const purpose = args.metadata?.["purpose"] as "broad" | "repair-audit";
+    const focus = args.metadata?.["focus"] as string[];
+    return { purpose, verdict: "PASS", candidate, evidence: `verified ${candidate}`, focus,
+      coverage: focus.map(item => ({ focus: item, status: "examined", evidence: "candidate.txt:1" })), summary: "covered", findings: [], blocker: null };
+  }, { hasActive: () => false, stopAll: async () => undefined, related: async () => "unused" });
+  const tools: RegisteredTool[] = [], commands = new Map<string, Omit<RegisteredCommand, "name" | "sourceInfo">>();
+  const noop = () => undefined;
+  load({
+    registerCommand: (name, command) => { commands.set(name, command); },
+    registerShortcut: noop as ExtensionAPI["registerShortcut"],
+    registerTool: tool => { tools.push(tool as RegisteredTool); },
+    on: (() => noop) as ExtensionAPI["on"],
+    sendMessage: noop as ExtensionAPI["sendMessage"], sendUserMessage: noop as ExtensionAPI["sendUserMessage"],
+    appendEntry: (name, data) => manager.appendCustomEntry(name, data),
+    getActiveTools: () => ["read"], setActiveTools: noop as ExtensionAPI["setActiveTools"],
+  }, { hub: new WorkerHub(), createWorkerRunner: (() => run) as never,
+    registerWorkerHubUI: (() => ({ setContext: noop, dispose: noop })) as never });
+  const context = { cwd, hasUI: false, sessionManager: manager, ui: { notify: noop, setWidget: noop } } as never;
+  await commands.get("dev-ship")!.handler("Ship this candidate", context);
+  const review = tools.find(tool => tool.name === "review")!;
+  const request = { task: "Review all agreed behavior", candidate, evidence: `verified ${candidate}` };
+  await assert.rejects(review.execute("bad-preflight", { ...request, evidence: "stale proof", purpose: "broad", focus: ["whole outcome"] }, undefined, undefined, context), /must identify/);
+  await review.execute("broad", { ...request, purpose: "broad", focus: ["whole outcome", "identity safety"] }, undefined, undefined, context);
+  await new Promise(resolve => setImmediate(resolve));
+  await assert.rejects(review.execute("duplicate", { ...request, purpose: "broad", focus: ["whole outcome"] }, undefined, undefined, context), /already completed/);
+
+  const restoredTools: RegisteredTool[] = [], restoredCommands = new Map<string, Omit<RegisteredCommand, "name" | "sourceInfo">>();
+  const restoredHandlers = new Map<string, Array<(event: unknown, context: unknown) => Promise<unknown> | unknown>>();
+  load({
+    registerCommand: (name, command) => { restoredCommands.set(name, command); },
+    registerShortcut: noop as ExtensionAPI["registerShortcut"],
+    registerTool: tool => { restoredTools.push(tool as RegisteredTool); },
+    on: (name, handler) => { const list = restoredHandlers.get(name) ?? []; list.push(handler as (event: unknown, context: unknown) => unknown); restoredHandlers.set(name, list); return noop; },
+    sendMessage: noop as ExtensionAPI["sendMessage"], sendUserMessage: noop as ExtensionAPI["sendUserMessage"],
+    appendEntry: (name, data) => manager.appendCustomEntry(name, data),
+    getActiveTools: () => ["read"], setActiveTools: noop as ExtensionAPI["setActiveTools"],
+  }, { hub: new WorkerHub(), createWorkerRunner: (() => run) as never,
+    registerWorkerHubUI: (() => ({ setContext: noop, dispose: noop })) as never });
+  for (const handler of restoredHandlers.get("session_start") ?? []) await handler({}, context);
+  await restoredCommands.get("dev-goal")!.handler("resume", context);
+  const restoredReview = restoredTools.find(tool => tool.name === "review")!;
+  await assert.rejects(restoredReview.execute("restored-duplicate", { ...request, purpose: "broad", focus: ["whole outcome"] }, undefined, undefined, context), /already completed/);
+  await restoredReview.execute("audit", { ...request, purpose: "repair-audit", focus: ["finding F1", "affected invariant"] }, undefined, undefined, context);
+  await new Promise(resolve => setImmediate(resolve));
+  await assert.rejects(restoredReview.execute("duplicate-audit", { ...request, purpose: "repair-audit", focus: ["finding F1"] }, undefined, undefined, context), /already completed/);
+  assert.equal(calls, 2);
+  const state = manager.getBranch().filter(entry => entry.type === "custom" && entry.customType === "dev-goal").at(-1);
+  const reviews = state?.type === "custom" ? (state.data as { reviews: { broad: { status: string }; repairAudit: { status: string } } }).reviews : undefined;
+  assert.equal(reviews?.broad.status, "completed"); assert.equal(reviews?.repairAudit.status, "completed");
 });
 
 test("session change cancels active evidence work without vetoing or transferring ownership", async () => {

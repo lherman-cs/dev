@@ -47,18 +47,19 @@ test("three stage contracts keep approval, local review, and history ownership d
     /Fix clear in-scope defects directly/, /Discuss consequential changes .* before implementing them/,
     /report material changes to behavior, risk, evidence, or the assessment/,
     /Reopen an earlier decision only when new evidence or changes materially affect its premise/,
-    /one independent read-only `review` on the stable agreed candidate/,
-    /meaningful findings and their resolution into the assessment/,
-    /reopen only the relevant human discussion/, /Do not automatically launch another reviewer/,
-    /obtain human permission first/, /A resumed session alone does not justify repeating a reviewer launch/,
-    /Material repairs invalidate affected evidence/, /consolidated brief for the actual resulting candidate/,
+    /single broad `review` on the stable agreed candidate/,
+    /one batched result/, /concrete closure checks/, /discloses unexamined coverage/,
+    /The Shipper owns routine finding closure/, /one repair audit only/,
+    /obtain human permission first/, /cannot create an audit loop/, /durable review receipts/, /A resumed session alone does not justify repeating a reviewer launch/,
+    /Material repairs invalidate affected validation/, /consolidated brief for the actual resulting candidate/,
     /Explicitly ask the human whether review is complete/, /Do not infer convergence from silence/,
     /Only then create a recoverable pre-cleanup reference/, /verify tree equivalence/,
     /History-only changes preserving the reviewed tree do not require another human approval/,
     /Do not fetch, push, mutate remote review state, or merge/,
   ]) assert.match(ship, requirement);
   assert.doesNotMatch(ship, /topic at a time|walkthrough pauses|`ask_user_question`|re-review interactions/);
-  assert.match(skill("dev-review"), /uncommitted changes are not supplied/);
+  assert.match(skill("dev-review"), /immutable read-only snapshot/);
+  assert.match(skill("dev-review"), /settled uncommitted candidate content/);
   assert.match(text("references/reconcile.md"), /except for dev-ship's explicitly bounded cleanup/);
   assert.doesNotMatch(skill("dev-ship"), /PR readiness|mandatory reviewer|ship_builder/i);
 });
@@ -78,16 +79,19 @@ test("user-wide input preference has one owner and skills retain phase decisions
   assert.match(skill("dev-ship"), /Explicitly ask the human whether review is complete/);
 });
 
-test("ship documentation describes living review and one stable independent review", () => {
+test("ship documentation describes living review and the bounded hybrid review protocol", () => {
   const workflow = readFileSync(fileURLToPath(new URL("../../WORKFLOW.md", import.meta.url)), "utf8");
   const readme = readFileSync(fileURLToPath(new URL("../../README.md", import.meta.url)), "utf8");
   assert.match(workflow, /compact, decision-ready assessment/);
   assert.match(workflow, /tracking unresolved concerns/);
   assert.match(workflow, /present the consolidated assessment and seek explicit human confirmation/);
-  assert.match(workflow, /invoke it once after discussion and known repairs settle/);
-  assert.match(workflow, /without an automatic second review/);
-  assert.match(workflow, /obtaining human permission/);
-  assert.match(workflow, /reuse review evidence still applicable/);
+  assert.match(workflow, /one broad-review slot and one repair-audit slot/);
+  assert.match(workflow, /one batch of findings with closure checks/);
+  assert.match(workflow, /Repairs do not automatically relaunch review/);
+  assert.match(workflow, /obtains human permission/);
+  assert.match(workflow, /cannot trigger another audit/);
+  assert.match(workflow, /persist with the ship effort across session recovery/);
+  assert.match(workflow, /five-minute deadline/);
   assert.match(readme, /concise, decision-ready assessment/);
   assert.match(readme, /discussion follows the human's questions rather than a fixed tour/);
   assert.doesNotMatch(readme, /Shipper may request read-only review/);

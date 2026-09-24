@@ -11,34 +11,53 @@ import { role, type RoleName } from "./roles.ts";
 import type { WorkerHistory } from "./worker-history.ts";
 import type { WorkerHub } from "./worker-hub.ts";
 import type { WorkerRecord, WorkerSession, WorkerState } from "./worker-types.ts";
-import { createVerifierTool } from "./verifier.ts";
+import { candidateFingerprint, createVerifierTool } from "./verifier.ts";
 
 const packageDir = fileURLToPath(new URL("../", import.meta.url));
 const readers = ["read", "grep", "find", "ls"];
 const explorerResultChars = 4000;
 const explorerResultMarker = "\n[Explorer result truncated]";
 const reviewResultChars = 12000;
+const reviewTimeoutMs = 300_000;
 const exploreParameters = Type.Object({ task: Type.String() });
+const reviewPurpose = Type.Union([Type.Literal("broad"), Type.Literal("repair-audit")]);
 const reviewParameters = Type.Object({
+  purpose: reviewPurpose,
   task: Type.String({ minLength: 1, maxLength: 12000 }),
   candidate: Type.String({ minLength: 1, maxLength: 2000 }),
   evidence: Type.String({ minLength: 1, maxLength: 12000 }),
+  focus: Type.Array(Type.String({ minLength: 1, maxLength: 500 }), { minItems: 1, maxItems: 20 }),
 }, { additionalProperties: false });
 const reviewResultSchema = Type.Object({
+  purpose: reviewPurpose,
   verdict: Type.Union([Type.Literal("PASS"), Type.Literal("REPAIRS"), Type.Literal("BLOCKED")]),
   candidate: Type.String({ minLength: 1, maxLength: 2000 }),
   evidence: Type.String({ minLength: 1, maxLength: 12000 }),
+  focus: Type.Array(Type.String({ minLength: 1, maxLength: 500 }), { minItems: 1, maxItems: 20 }),
+  coverage: Type.Array(Type.Object({
+    focus: Type.String({ minLength: 1, maxLength: 500 }),
+    status: Type.Union([Type.Literal("examined"), Type.Literal("finding"), Type.Literal("unexamined")]),
+    evidence: Type.String({ minLength: 1, maxLength: 2000 }),
+  }, { additionalProperties: false }), { minItems: 1, maxItems: 20 }),
   summary: Type.String({ minLength: 1, maxLength: 4000 }),
   findings: Type.Array(Type.Object({
     key: Type.String({ minLength: 1, maxLength: 200 }),
     title: Type.String({ minLength: 1, maxLength: 500 }),
     problem: Type.String({ minLength: 1, maxLength: 4000 }),
     evidence: Type.Array(Type.String({ minLength: 1, maxLength: 1000 }), { maxItems: 20 }),
-    acceptance_checks: Type.Array(Type.String({ minLength: 1, maxLength: 1000 }), { maxItems: 20 }),
+    acceptance_checks: Type.Array(Type.String({ minLength: 1, maxLength: 1000 }), { minItems: 1, maxItems: 20 }),
   }, { additionalProperties: false }), { maxItems: 30 }),
   blocker: Type.Union([Type.String({ minLength: 1, maxLength: 4000 }), Type.Null()]),
 }, { additionalProperties: false });
+export type ReviewRequest = Static<typeof reviewParameters>;
 export type ReviewResult = Static<typeof reviewResultSchema>;
+export interface ReviewReservation { effort: string; purpose: ReviewRequest["purpose"]; id: string }
+export interface ReviewLaunchGate {
+  reserve(request: ReviewRequest): ReviewReservation;
+  started(reservation: ReviewReservation, workerId: string): void;
+  completed(reservation: ReviewReservation, status: "completed" | "failed", result: string): void;
+  release(reservation: ReviewReservation): void;
+}
 export interface AsyncWorkerCompletion {
   id: string;
   ownerSessionId?: string;
@@ -77,19 +96,39 @@ const gitRoot = (cwd: string): string | undefined => {
 };
 const worktreeRoot = (cwd: string): string => gitRoot(cwd) ?? fs.realpathSync(cwd);
 
-/** Read-only agents work from their own HEAD snapshot; stale snapshots never reserve the owner's worktree. */
-export function readOnlySnapshot(cwd: string): { cwd: string; dispose(): void } {
+/** Read-only agents get an immutable snapshot. Reviews include the exact dirty, non-ignored candidate. */
+export function readOnlySnapshot(cwd: string, expectedCandidate?: string): { cwd: string; dispose(): void } {
   const root = gitRoot(cwd);
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "pi-evidence-"));
   const snapshot = path.join(directory, "worktree");
   try {
-    if (root) execFileSync("git", ["worktree", "add", "--detach", "--quiet", snapshot, "HEAD"], { cwd: root, stdio: ["ignore", "pipe", "pipe"] });
-    else {
+    if (root) {
+      if (expectedCandidate && candidateFingerprint(root) !== expectedCandidate) throw new Error("Review candidate does not match the current owner worktree. Refresh candidate and evidence before review.");
+      execFileSync("git", ["worktree", "add", "--detach", "--quiet", snapshot, "HEAD"], { cwd: root, stdio: ["ignore", "pipe", "pipe"] });
+      if (expectedCandidate) {
+        const paths = execFileSync("git", ["ls-files", "-z", "--cached", "--others", "--exclude-standard"], { cwd: root, maxBuffer: 64 * 1024 * 1024 })
+          .toString("utf8").split("\0").filter(Boolean);
+        for (const relative of paths) {
+          const source = path.resolve(root, relative), target = path.resolve(snapshot, relative);
+          if ((!source.startsWith(`${root}${path.sep}`) && source !== root) || (!target.startsWith(`${snapshot}${path.sep}`) && target !== snapshot)) throw new Error("Candidate contains an unsafe path.");
+          fs.rmSync(target, { recursive: true, force: true });
+          if (!fs.existsSync(source) && !fs.lstatSync(source, { throwIfNoEntry: false })) continue;
+          fs.mkdirSync(path.dirname(target), { recursive: true });
+          fs.cpSync(source, target, { recursive: true, preserveTimestamps: true, verbatimSymlinks: true });
+        }
+        if (candidateFingerprint(root) !== expectedCandidate || candidateFingerprint(snapshot) !== expectedCandidate) throw new Error("Review candidate changed while its snapshot was being created. Retry with refreshed candidate and evidence.");
+      }
+    } else {
       const relative = path.relative(fs.realpathSync(cwd), directory);
       if (relative && relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative)) throw new Error("Cannot snapshot a directory containing the temporary workspace.");
       fs.cpSync(cwd, snapshot, { recursive: true });
+      if (expectedCandidate && candidateFingerprint(snapshot) !== expectedCandidate) throw new Error("Review candidate identity does not match the immutable snapshot.");
     }
-  } catch (error) { fs.rmSync(directory, { recursive: true, force: true }); throw error; }
+  } catch (error) {
+    try { if (root && fs.existsSync(snapshot)) execFileSync("git", ["worktree", "remove", "--force", snapshot], { cwd: root, stdio: ["ignore", "pipe", "ignore"] }); }
+    finally { fs.rmSync(directory, { recursive: true, force: true }); }
+    throw error;
+  }
   let disposed = false;
   return { cwd: snapshot, dispose() {
     if (disposed) return;
@@ -183,7 +222,7 @@ export function createWorkerRunner(options: RunnerOptions): WorkerRunner {
       const model = models.getModel(selected.provider, selected.model);
       if (!model) throw new Error(`Pi does not list ${selected.provider}/${selected.model}; no model fallback is allowed.`);
       if (!models.hasConfiguredAuth(selected.provider)) throw new Error(`No login for ${selected.provider}. Use Pi /login; no model/provider fallback was attempted.`);
-      if (readonly) snapshot = readOnlySnapshot(cwd);
+      if (readonly) snapshot = readOnlySnapshot(cwd, name === "review" && typeof metadata["candidate"] === "string" ? metadata["candidate"] : undefined);
       const workerCwd = snapshot?.cwd ?? cwd;
       const assignedSkill = explorer ? "dev-explore" : skill;
       const settings = settingsFor(cwd, model);
@@ -358,18 +397,30 @@ export function createWorkerRunner(options: RunnerOptions): WorkerRunner {
 }
 
 // Bounded investigation and exact-candidate review; verification uses a dedicated executor.
-export function reviewTool(run: RunWorker, report: (text: string) => void = () => undefined): ToolDefinition<typeof reviewParameters, Record<string, never>, unknown> {
+function validateReviewRequest(args: ReviewRequest, cwd?: string): void {
+  if (!args.evidence.includes(args.candidate)) throw new Error("Review evidence must identify the exact candidate fingerprint.");
+  if (new Set(args.focus).size !== args.focus.length) throw new Error("Review focus entries must be unique.");
+  if (cwd && candidateFingerprint(cwd) !== args.candidate) throw new Error("Review candidate does not match the current owner worktree. Refresh candidate and evidence before review.");
+}
+
+export function reviewTool(run: RunWorker, report: (text: string) => void = () => undefined,
+  onStarted?: (workerId: string) => void): ToolDefinition<typeof reviewParameters, Record<string, never>, unknown> {
   return { name: "review", label: "Reviewer",
-    description: "Review one exact candidate in a fresh, read-only Reviewer session.",
+    description: "Review one immutable exact candidate. Purpose is either the single broad risk-focused review or the single scoped repair audit.",
     parameters: reviewParameters,
     async execute(_id, args, signal, _onUpdate, ctx) {
+      validateReviewRequest(args);
       const result = await run({ name: "review", cwd: ctx.cwd,
-        task: `Review this exact candidate. Candidate identity: ${args.candidate}\nEvidence identity: ${args.evidence}\n\nTask:\n${args.task}`,
-        skill: "dev-review", schema: reviewResultSchema, tools: readers, ...(signal ? { signal } : {}), report,
-        metadata: { task: args.task, label: `Reviewer · ${args.candidate}`, candidate: args.candidate, evidence: args.evidence },
+        task: `Purpose: ${args.purpose}\nCandidate identity: ${args.candidate}\nEvidence identity: ${args.evidence}\nFrozen focus:\n${args.focus.map(item => `- ${item}`).join("\n")}\n\nTask:\n${args.task}`,
+        skill: "dev-review", schema: reviewResultSchema, tools: readers, ...(signal ? { signal } : {}), report, ...(onStarted ? { onStarted } : {}),
+        metadata: { task: args.task, label: `Reviewer · ${args.purpose} · ${args.candidate}`, purpose: args.purpose,
+          candidate: args.candidate, evidence: args.evidence, focus: args.focus },
       }) as ReviewResult;
-      if (result.candidate !== args.candidate || result.evidence !== args.evidence) throw new Error("Reviewer result does not match the supplied candidate and evidence identities.");
-      if ((result.verdict === "PASS" && (result.findings.length || result.blocker !== null))
+      if (result.purpose !== args.purpose || result.candidate !== args.candidate || result.evidence !== args.evidence
+        || JSON.stringify(result.focus) !== JSON.stringify(args.focus)) throw new Error("Reviewer result does not match the frozen purpose, candidate, evidence, and focus.");
+      const covered = new Map(result.coverage.map(item => [item.focus, item]));
+      if (covered.size !== result.coverage.length || args.focus.some(item => !covered.has(item)) || result.coverage.some(item => !args.focus.includes(item.focus))) throw new Error("Reviewer result does not account for every frozen focus exactly once.");
+      if ((result.verdict === "PASS" && (result.findings.length || result.blocker !== null || result.coverage.some(item => item.status !== "examined")))
         || (result.verdict === "REPAIRS" && (!result.findings.length || result.blocker !== null))
         || (result.verdict === "BLOCKED" && (result.findings.length || result.blocker === null))) throw new Error("Reviewer result is inconsistent with its verdict.");
       const text = JSON.stringify(result);
@@ -414,10 +465,12 @@ function publishDetached(
   track?: TrackAsyncWorkerCompletion,
   ownerSessionId?: string,
   ownerGoal = "",
-  started?: (id: string, ownerGoal: string) => void,
+  started?: (id: string, ownerGoal: string, timeoutMs?: number) => void,
+  suppliedId?: string,
+  timeoutMs?: number,
 ): string {
-  const id = `${role.toLowerCase()}:${randomUUID()}`;
-  started?.(id, ownerGoal);
+  const id = suppliedId ?? `${role.toLowerCase()}:${randomUUID()}`;
+  started?.(id, ownerGoal, timeoutMs);
   const notify = async (completion: AsyncWorkerCompletion): Promise<void> => { try { await publish(completion); } catch { /* completion remains in Agent Hub history */ } };
   const origin = { ...(ownerSessionId ? { ownerSessionId } : {}), ownerGoal };
   const completion = work.then(
@@ -449,18 +502,39 @@ export function asyncExploreTool(run: RunWorker, publish: PublishAsyncWorkerComp
 
 export function asyncReviewTool(run: RunWorker, publish: PublishAsyncWorkerCompletion, report: (text: string) => void = () => undefined,
   ownerSessionId?: () => string | undefined, ownerGoal?: () => string,
-  started?: (id: string, ownerGoal: string) => void): ReturnType<typeof reviewTool> {
-  const foreground = reviewTool(run, report);
-  return { ...foreground,
-    description: "Start an exact-candidate review in the background. Returns immediately; the verdict is delivered asynchronously.",
+  started?: (id: string, ownerGoal: string, timeoutMs?: number) => void, gate?: ReviewLaunchGate): ReturnType<typeof reviewTool> {
+  const shape = reviewTool(run, report);
+  return { ...shape,
+    description: "Start one bounded broad review or one bounded repair audit for the active shipping effort. Returns immediately; the verdict is delivered asynchronously.",
     promptGuidelines: [
-      ...(foreground.promptGuidelines || []),
+      ...(shape.promptGuidelines || []),
+      "Use purpose broad once for whole-scope accounting with deep attention to the supplied risks. Batch findings and give each concrete closure checks.",
+      "Use purpose repair-audit only once, after repairs, and freeze focus to accepted finding keys plus directly affected invariants. Never turn it into another full review.",
       "Continue independent work while review runs. Its verdict will arrive automatically and trigger progress.",
       "If the verdict gates the next decision, stop after exhausting independent work. Do not poll or launch a duplicate review.",
     ],
     async execute(callId, args, _signal, onUpdate, ctx) {
-      const id = publishDetached("Reviewer", args.task, Promise.resolve(foreground.execute(callId, args, undefined, onUpdate, ctx)), publish, undefined, ownerSessionId?.(), ownerGoal?.() ?? "", started);
-      return toolResult(id);
+      validateReviewRequest(args, gate ? ctx.cwd : undefined);
+      const reservation = gate?.reserve(args);
+      const id = `reviewer:${randomUUID()}`;
+      let began = false;
+      const timeout = AbortSignal.timeout(reviewTimeoutMs);
+      const foreground = reviewTool(run, report, workerId => {
+        if (reservation) gate?.started(reservation, workerId);
+        began = true;
+      });
+      const work = Promise.resolve(foreground.execute(callId, args, timeout, onUpdate, ctx)).then(result => {
+        if (reservation) gate?.completed(reservation, "completed", resultText(result));
+        return result;
+      }, error => {
+        if (reservation) {
+          if (began) gate?.completed(reservation, "failed", error instanceof Error ? error.message : String(error));
+          else gate?.release(reservation);
+        }
+        throw error;
+      });
+      const receipt = publishDetached("Reviewer", args.task, work, publish, undefined, ownerSessionId?.(), ownerGoal?.() ?? "", started, id, reviewTimeoutMs + 30_000);
+      return toolResult(receipt);
     },
   };
 }
