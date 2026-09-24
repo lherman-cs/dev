@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import { parse } from "smol-toml";
-export type PublicPhase = "spec" | "build" | "ship";
-export type RoleName = PublicPhase | "review" | "assessor" | "explorer" | "escalated_builder";
+export type PublicPhase = "spec" | "build" | "review" | "ship";
+export type RoleName = PublicPhase | "assessor" | "explorer" | "escalated_builder";
 export type AuthProvider = "openai-codex" | "openai";
 export interface RoleConfig {
   authProvider: AuthProvider;
@@ -19,7 +19,7 @@ if (!parsed || typeof parsed !== "object" || !("authProvider" in parsed) || !("r
   throw new Error("Invalid roles.toml configuration.");
 }
 export const config = parsed as RoleConfig;
-export const phases: readonly PublicPhase[] = ["spec", "build", "ship"];
+export const phases: readonly PublicPhase[] = ["spec", "build", "review", "ship"];
 
 export function role(name: RoleName): ResolvedRole {
   const match = /^openai\/([^:]+):(low|medium|high)$/.exec(config.roles[name]);

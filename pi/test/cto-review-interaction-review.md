@@ -1,23 +1,35 @@
-# Representative interaction review
+# Representative dev-review interaction
 
-This is a decision-usefulness assessment of three illustrative exchanges against the updated `pi/skills/dev-ship/SKILL.md`, not a claim that a model produced these words. The observed baseline is the 2026-09-24 rtc-prod ship session cited in `spec.md`: it named mechanisms and a feedback-credit risk, then emphasized gate status; the independent review produced no usable assessment; the final question bundled acceptance of that gap with closure. The human cancelled, for an unknown reason. The examples below test what the contract asks the Shipper to make understandable, not just whether specific words appear in it.
+This is an interaction target for the foreground `dev-review` phase.
 
-## Consequential change: RTP congestion feedback
+## Target relationship
 
-**Illustrative brief:** “Before, missing feedback could be interpreted as loss before the receiver had a chance to report newly received packets, driving the sender to reduce its rate unnecessarily. The candidate credits a received edge first and defers loss accounting so late feedback cannot double-count loss. This ordering favors avoiding false congestion reactions, but if feedback stops entirely, deferred loss must eventually be charged or the sender may remain too aggressive. The targeted late-feedback and loss-accounting cases exercise those transitions; the passing fast and slow gates support the tested scenarios, not behavior under every network pattern. I recommend local review of the candidate, with that untested feedback-outage behavior called out as the main remaining risk.”
+The Reviewer is the CTO's senior engineering partner. It owns deep technical inspection, ordinary repairs, and evidence gathering while progressively improving the CTO's high-level model of the affected system.
 
-**Assessment:** A CTO can tell what users notice (fewer unnecessary rate reductions), why ordering matters, what would fail (undercounting real loss), and what the checks do not prove. “Received edge” alone, a p99 gate name, or “all tests pass” would not provide that judgment. The exact outage risk and evidence must be checked against the actual candidate before a real recommendation; this example is not evidence that rtc-prod implemented or verified that behavior.
+The CTO should spend attention on behavior, architecture, scope, and accepted risk, not on review bookkeeping or routine repair approval.
 
-## Failed independent review after local checks pass
+## Example
 
-**Illustrative update:** “The broad review started but produced no usable assessment, so nobody independently challenged the congestion-control ordering across the agreed scope. My inspection and targeted tests support the observed late-feedback accounting in their fixtures; they cannot replace an adversarial search for an interaction we did not anticipate. The review slot is consumed and I cannot retry it within this effort. Given the untested feedback-outage interaction, I recommend deferring local completion until you initiate a new ship effort for independent scrutiny. If you instead want to accept that specific missing assurance and finish locally now, that is a separate risk decision; it would not mean the tests established independent coverage.”
+A candidate changes participant reconnection behavior.
 
-**Assessment:** The gap has a concrete consequence and a reasoned default, rather than being treated as a failed gate that passing tests cancel out. The choice about exceptional risk is separate from the ordinary completion question. A different actual candidate could justify proceeding, but the agent would need to explain why inspection plus available evidence support that recommendation despite missing scrutiny. This example does not silently spend another review slot or treat a failure as PASS.
+A useful Reviewer explanation is:
 
-## Routine successful review and local closure
+> Participant identity survives individual transports, while connections are replaceable. This change is in the cleanup path between those two responsibilities. The important invariant is that delayed cleanup from an old connection must not remove state owned by its replacement. I found one path where that ownership check is missing. I can repair it locally without changing the approved semantics.
 
-**Illustrative exchange:** After explaining the practical outcome, the Shipper reports that the broad review examined the agreed focus and its one concrete finding was repaired and revalidated with a targeted behavior check. No material gap remains. It then asks: “Are you satisfied with the resulting local review and do you authorize me to clean up the local commits? This does not authorize integration or deployment.” If the human cancels or does not answer, it does not rewrite history.
+The Reviewer should make that repair and verify it without asking whether the repair is worth doing.
 
-**Assessment:** The human is asked for one useful decision at the existing convergence point, not to certify that an abstract process is exhausted or approve each routine repair. The question grants only local cleanup authority. The agent must still present actual candidate evidence, residual risks, and its recommendation before asking; the illustrative exchange does not stand in for those facts.
+If the plausible repair changes an approved architectural boundary, the interaction changes:
 
-These cases exercise the new semantic boundaries. Contract regression checks guard instruction ownership, the one-broad-plus-optional-audit budget, validation and candidate protection, and the local-only boundary. Static checks cannot establish that future live model conversations will consistently follow the examples; a real ship conversation remains the behavioral acceptance check.
+> Fixing this cleanly would move ownership of reconnect state from the connection to the participant. That changes the architecture rather than merely closing the defect. I recommend keeping ownership where it is and adding the narrow guard instead. Do you want to preserve the current ownership model or intentionally move it?
+
+The human decides that consequential tradeoff; Review then continues the same goal.
+
+## Integration
+
+Before review judgment, merge the current local integration branch into the development candidate. Conflicts are part of technical convergence. Ordinary conflicts are resolved by Review. A conflict that changes approved behavior, architecture, scope, or accepted risk becomes a focused CTO decision.
+
+The resulting merge commit may remain in development history. Dev-ship later discards development history and reconstructs a clean linear shipping history from the reviewed tree.
+
+## Endpoint
+
+Review ends with a technically converged candidate and a human who understands the changed system well enough to challenge or redirect consequential decisions. It does not produce PASS/FAIL verdicts or hand findings to another Shipper for interpretation.

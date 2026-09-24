@@ -1,5 +1,5 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { asyncExploreTool, asyncReviewTool, createWorkerRunner, renderAsyncWorkerCompletion, type AsyncWorkerCompletion } from "./lib/worker.ts";
+import { asyncExploreTool, createWorkerRunner, renderAsyncWorkerCompletion, type AsyncWorkerCompletion } from "./lib/worker.ts";
 import { WorkerHub } from "./lib/worker-hub.ts";
 import { WorkerHistory } from "./lib/worker-history.ts";
 import { registerWorkerHubUI } from "./worker-hub-ui.ts";
@@ -8,6 +8,7 @@ import type { PublicPhase } from "./lib/roles.ts";
 import { registerCompletionGuard } from "./lib/completion-guard.ts";
 import { createVerifierTool } from "./lib/verifier.ts";
 import { registerVerifier } from "./lib/verifier-hub.ts";
+import { packageReviewedCandidate } from "./lib/ship.ts";
 
 export const explorerOnlyTools = new Set(["web_search", "source_check", "fetch_content", "get_search_content"]);
 type HubUI = ReturnType<typeof registerWorkerHubUI>;
@@ -16,6 +17,7 @@ interface ExtensionDependencies {
   hub?: WorkerHub;
   createWorkerRunner?: typeof createWorkerRunner;
   registerWorkerHubUI?: typeof registerWorkerHubUI;
+  packageReviewedCandidate?: typeof packageReviewedCandidate;
 }
 /** Current-conversation role aliases and isolated read-only child tools. */
 export default function extension(pi: ExtensionAPI, dependencies: ExtensionDependencies = {}): void {
@@ -23,10 +25,6 @@ export default function extension(pi: ExtensionAPI, dependencies: ExtensionDepen
   let closing = false, phase: PublicPhase | undefined;
   const setPhase = (next: PublicPhase | undefined): void => {
     phase = next;
-    const active = pi.getActiveTools();
-    const tools = active.filter(name => name !== "review");
-    if (next === "ship") tools.push("review");
-    if (tools.length !== active.length || tools.some((name, index) => name !== active[index])) pi.setActiveTools(tools);
   };
   const lifetime = new AbortController();
   const warn = (error: unknown): void => { if (!closing) ctx?.ui.notify(`Agent Hub: ${error instanceof Error ? error.message : String(error)}`, "warning"); };
@@ -77,10 +75,7 @@ export default function extension(pi: ExtensionAPI, dependencies: ExtensionDepen
   pi.registerTool(verifier.tool);
   pi.registerTool(asyncExploreTool(run, publishWorkerCompletion, undefined, undefined, {}, currentSession,
     guard.workerOwner, guard.workerStarted));
-  pi.registerTool(asyncReviewTool(run, publishWorkerCompletion, undefined, currentSession,
-    guard.workerOwner, guard.workerStarted, guard.reviewGate));
   pi.on("tool_call", event => {
-    if (event.toolName === "review" && phase !== "ship") return { block: true, reason: "Review is reserved for an explicit dev-ship invocation." };
     if (explorerOnlyTools.has(event.toolName)) return { block: true, reason: `Delegate ${event.toolName} to one or more narrowly scoped explore calls.` };
     return undefined;
   });
@@ -97,10 +92,14 @@ export default function extension(pi: ExtensionAPI, dependencies: ExtensionDepen
   pi.on("session_before_fork", stopForSessionChange);
   pi.on("session_before_tree", stopForSessionChange);
   pi.on("input", async (event, nextCtx) => {
-    const match = /^\/skill:dev-(spec|build|ship)(?:\s|$)/.exec(event.text);
+    const match = /^\/skill:dev-(spec|build|review|ship)(?:\s|$)/.exec(event.text);
     if (!match?.[1]) return { action: "continue" };
     const next = match[1] as PublicPhase;
-    if (next !== "spec" && event.source !== "extension" && nextCtx?.sessionManager) {
+    if (next === "ship") {
+      nextCtx?.ui.notify("dev-ship runs through /dev-ship so the runtime can isolate and guard the packaging workspace.", "warning");
+      return { action: "handled" };
+    }
+    if (event.source !== "extension" && nextCtx?.sessionManager) {
       const request = event.text.slice(match[0].length).trim();
       if (!request) { nextCtx.ui.notify(`Provide a request: /skill:dev-${next} <request>`, "warning"); return { action: "handled" }; }
       if (!await guard.activate(request, next, nextCtx)) return { action: "handled" }; // Do not execute an unauthorized replacement.
@@ -109,12 +108,23 @@ export default function extension(pi: ExtensionAPI, dependencies: ExtensionDepen
     return { action: "continue" };
   });
 
-  for (const commandPhase of ["spec", "build", "ship"] as const) pi.registerCommand(`dev-${commandPhase}`, {
+  for (const commandPhase of ["spec", "build", "review", "ship"] as const) pi.registerCommand(`dev-${commandPhase}`, {
     description: `Invoke dev-${commandPhase} in the current conversation`,
     handler: async (args, nextCtx) => {
       ctx = nextCtx;
-      if (commandPhase !== "spec" && !args.trim()) { nextCtx.ui.notify(`Provide a request: /dev-${commandPhase} <request>`, "warning"); return; }
-      if (commandPhase !== "spec" && !await guard.activate(args.trim(), commandPhase, nextCtx)) return;
+      if (commandPhase === "ship") {
+        if (guard.currentSkill()) { nextCtx.ui.notify("Finish or abandon the active goal before dev-ship.", "warning"); return; }
+        hubUI.setContext(nextCtx);
+        try {
+          const result = await (dependencies.packageReviewedCandidate || packageReviewedCandidate)({ cwd: nextCtx.cwd, run, ...(args.trim() ? { name: args.trim() } : {}) });
+          pi.sendMessage({ customType: "dev-ship-result", content: result, display: true }, { triggerTurn: false });
+        } catch (error) {
+          nextCtx.ui.notify(`dev-ship: ${error instanceof Error ? error.message : String(error)}`, "warning");
+        }
+        return;
+      }
+      if (!args.trim()) { nextCtx.ui.notify(`Provide a request: /dev-${commandPhase} <request>`, "warning"); return; }
+      if (!await guard.activate(args.trim(), commandPhase, nextCtx)) return;
       setPhase(commandPhase);
       hubUI.setContext(nextCtx);
       pi.sendUserMessage(`/skill:dev-${commandPhase}${args ? ` ${args}` : ""}`, { expandPromptTemplates: true });

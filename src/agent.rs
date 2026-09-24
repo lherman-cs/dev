@@ -34,7 +34,7 @@ fn load_roles(package: &Path) -> Result<Roles> {
 }
 
 fn phase_args(config: &Roles, phase: &str, prompt: &[String]) -> Result<Vec<String>> {
-    if !["spec", "build", "ship"].contains(&phase) {
+    if !["spec", "build", "review", "ship"].contains(&phase) {
         bail!("Unknown workflow phase: {phase}");
     }
     let selection = config
@@ -61,7 +61,9 @@ fn phase_args(config: &Roles, phase: &str, prompt: &[String]) -> Result<Vec<Stri
         "--thinking".into(),
         effort.into(),
     ];
-    if !prompt.is_empty() {
+    if phase == "ship" {
+        args.extend(["--".into(), if prompt.is_empty() { "/dev-ship".into() } else { format!("/dev-ship {}", prompt.join(" ")) }]);
+    } else if !prompt.is_empty() {
         args.extend(["--".into(), format!("/dev-{phase} {}", prompt.join(" "))]);
     }
     Ok(args)
@@ -151,21 +153,22 @@ mod tests {
     #[test]
     fn role_comments_parse_from_the_shared_toml_file() {
         assert_eq!(roles().roles["spec"], "openai/gpt-6-astra:medium");
-        assert_eq!(roles().roles["assessor"], "openai/gpt-6-astra:low");
+        assert_eq!(roles().roles["assessor"], "openai/gpt-6-luna:high");
     }
     #[test]
-    fn every_phase_is_interactive_until_invoked() {
-        for phase in ["spec", "build", "ship"] {
+    fn reasoning_phases_are_interactive_and_ship_runs_immediately() {
+        for phase in ["spec", "build", "review"] {
             let args = phase_args(&roles(), phase, &[]).unwrap();
             assert_eq!(args.len(), 6);
             assert_eq!(&args[..2], &["--provider", "openai-codex"]);
         }
+        let ship = phase_args(&roles(), "ship", &[]).unwrap();
+        assert_eq!(ship.last().unwrap(), "/dev-ship");
     }
     #[test]
     fn supporting_roles_are_not_public_phases() {
         for phase in [
             "plan",
-            "review",
             "explorer",
             "assessor",
             "escalated_builder",
@@ -196,7 +199,7 @@ mod tests {
     #[test]
     fn public_model_and_effort_selections_are_preserved() {
         let config = roles();
-        for name in ["spec", "build", "ship"] {
+        for name in ["spec", "build", "review", "ship"] {
             let args = phase_args(&config, name, &[]).unwrap();
             assert_eq!(
                 format!("openai/{}:{}", args[3], args[5]),

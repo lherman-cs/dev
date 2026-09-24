@@ -61,4 +61,4 @@ if ! command -v webi >/dev/null 2>&1 && [[ ! -d "$HOME/.local/bin/nerdfont" ]]; 
   curl -sS https://webi.sh/nerdfont | sh
 fi
 
-log "Done. Launch Pi phases with dev a spec|plan|build|ship; trigger with /dev-<phase>."
+log "Done. Launch Pi phases with dev a spec|build|review|ship; trigger with /dev-<phase>."

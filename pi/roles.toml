@@ -15,9 +15,9 @@ spec = "openai/gpt-6-astra:medium"
 # Reason: Sol high is close to Astra-medium coding quality at substantially lower task cost.
 build = "openai/gpt-6-sol:high"
 
-# Role: Independently find material defects in an exact candidate.
-# Signals: FrontierCode, DeepSWE, coding deception, warning circumvention.
-# Reason: Astra medium is worth the premium for cross-file reasoning, precision, and adherence-sensitive review.
+# Role: Converge the built candidate with the CTO through deep review, repair, and system understanding.
+# Signals: FrontierCode, DeepSWE, AutomationBench, factual error.
+# Reason: Review is the highest-judgment engineering phase and the primary human technical interaction.
 review = "openai/gpt-6-astra:medium"
 # review = "openai/gpt-6-luna:high"
 
@@ -26,10 +26,9 @@ review = "openai/gpt-6-astra:medium"
 # assessor = "openai/gpt-6-astra:low"
 assessor = "openai/gpt-6-luna:high"
 
-# Role: Collaborate on local candidate review, repair, validation, and history refinement.
-# Signals: AutomationBench, Agents' Last Exam, FrontierCode, OSWorld.
-# Reason: Sol medium provides solid agentic and engineering judgment for bounded shipping work without build-level spend.
-ship = "openai/gpt-6-sol:high"
+# Role: Package an already-reviewed tree into a clean local commit history.
+# Reason: Shipping is intentionally narrow; mechanical guardrails own correctness while the model only groups commits.
+ship = "openai/gpt-6-luna:medium"
 # ship = "openai/gpt-6-luna:high"
 
 # Role: Gather narrow, verifiable evidence independently and asynchronously.
