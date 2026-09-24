@@ -54,9 +54,10 @@ test("four current-session aliases and supporting tools register without work", 
   assert.equal(toolCall({ toolName: "edit" }), undefined);
 });
 
-test("spec build and review activate goals while ship does not", async () => {
+test("spec build and review activate goals while ship delegates to the deterministic packager", async () => {
   const commands = new Map<string, Omit<RegisteredCommand, "name" | "sourceInfo">>();
   const noop = () => undefined, manager = SessionManager.inMemory(process.cwd());
+  let packaged = 0;
   load({
     registerCommand: (name, command) => { commands.set(name, command); },
     registerShortcut: noop as ExtensionAPI["registerShortcut"],
@@ -66,7 +67,8 @@ test("spec build and review activate goals while ship does not", async () => {
     sendUserMessage: noop as ExtensionAPI["sendUserMessage"],
     appendEntry: (name, data) => manager.appendCustomEntry(name, data),
     getActiveTools: () => ["read"], setActiveTools: noop as ExtensionAPI["setActiveTools"],
-  }, { hub: new WorkerHub(), registerWorkerHubUI: (() => ({ setContext: noop, dispose: noop })) as never });
+  }, { hub: new WorkerHub(), registerWorkerHubUI: (() => ({ setContext: noop, dispose: noop })) as never,
+    packageReviewedCandidate: (async () => { packaged++; return "packaged"; }) as never });
   const context = { cwd: process.cwd(), hasUI: false, sessionManager: manager, ui: { notify: noop, setWidget: noop } } as never;
   for (const phase of ["spec", "build"] as const) {
     await commands.get(`dev-${phase}`)!.handler(`${phase} request`, context);
@@ -85,6 +87,7 @@ test("spec build and review activate goals while ship does not", async () => {
   await commands.get("dev-ship")!.handler("ship request", context);
   const after = manager.getBranch().filter(entry => entry.type === "custom" && entry.customType === "dev-goal").length;
   assert.equal(after, before, "ship must not activate a goal");
+  assert.equal(packaged, 1);
 });
 
 test("session change cancels active evidence work without vetoing or transferring ownership", async () => {
