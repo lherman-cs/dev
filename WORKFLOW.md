@@ -1,45 +1,64 @@
 # Pi-first development workflow
 
-Pi is the harness. The request, repository evidence, and applicable approved decisions define semantics; Git and local validation are candidate truth. The foreground agent owns its independent worktree. Supporting read-only workers provide evidence, not ownership or a mandatory handoff. The human owns integration and remote publishing.
+Pi is the harness. The request, repository evidence, applicable approved decisions, Git state, and local validation define the work. The foreground agent owns its worktree. Supporting workers provide evidence, not authority. The human owns remote publishing and final integration.
 
-## Entry points and stages
+## Public phases
 
-`dev pi <args...>` passes arguments to the pinned project-local Pi runtime. `dev a <phase>` selects the configured model and thinking level, then opens Pi without a user turn. Adding a prompt submits `/dev-<phase> <prompt>` immediately. The public phase set is exactly `spec`, `build`, and `ship`; each alias explicitly loads its lazy skill in the current conversation. `dev-explore` and `dev-review` are supporting roles, not stages. Pi can resume saved sessions, but a fresh agent can also reconstruct work from live evidence. No automatic phase transition or general coordinator is involved.
+`dev a <phase>` supports exactly `spec`, `build`, `review`, and `ship`. A prompt invokes the matching `/dev-<phase>` skill in the current conversation.
 
-| Stage | Responsibility and stopping point |
+| Stage | Responsibility |
 | --- | --- |
-| Spec | Resolve material semantics with the human and present decision-complete intent for explicit approval. Persisting a spec is optional; a status marker alone is not approval. |
-| Build | Require an approved outcome, including applicable explicit approval in conversation without a spec file. Implement, validate, and commit locally. Resolve routine engineering issues without handing them to the human; do not claim collaborative convergence. |
-| Ship | Fix a local comparison base and candidate scope. Open with a compact engineering assessment of the practical outcome, why consequential choices fit, concrete failure implications, what evidence does and does not establish, and a recommendation, rather than a mechanism or gate inventory. Follow the human's questions rather than a mandatory topic-by-topic tour, tracking unresolved concerns. Repair clear defects without routine approval, and discuss consequential changes before implementation; update the assessment when evidence or risks change. Once discussion and repairs settle, obtain one broad independent review with deep attention to the highest risks. Close its batched findings with affected validation. Use the one narrowly scoped repair audit only with human permission and a concrete coverage need, then present the consolidated assessment and seek explicit human authorization to finish local review and clean up local commits, not to integrate or deploy. Treat a material independent-review failure as a separate risk decision, not an ordinary completion checkbox. Only then refine owned history with a recovery reference and leave a clean committed local candidate. |
+| Spec | Converge the smallest coherent outcome the human actually wants. Resolve consequential semantics and scope with explicit human approval. |
+| Build | Implement the approved outcome, validate it, and commit locally. Resolve ordinary engineering choices autonomously. |
+| Review | Merge the current local integration branch, normally `main`, into the candidate; resolve conflicts; deeply review and repair the integrated result; keep the CTO's high-level system model current; involve the human only for consequential behavior, architecture, scope, or risk decisions. |
+| Ship | Package the reviewed tree into a clean local `ship/<name>` branch with a minimal linear commit history. Do not change candidate content. |
 
-Ship does not fetch or rebase onto a moving integration branch, push, create or mutate PRs, or merge. Human review and local validation suffice; there is no GitHub readiness or CI prerequisite. Missing or failing required local proof, unresolved material findings, uncertain history authority, or missing human confirmation prevents a successful ship claim. History-only cleanup that preserves the reviewed tree does not require repeating behavioral validation or human confirmation solely for changed commit IDs.
+Spec, Build, and Review activate a session-native goal. Spec and Review are collaborative goals: ordinary human conversation keeps the same goal active. Ship does not activate a goal.
 
-## Isolated child sessions
+No phase automatically transitions to another phase.
 
-`explore` is the bounded investigation primitive. Parent agents use it for read-only evidence gathering reasonably expected to take material time or produce substantial raw output, including broad repository or web research. Quick known-target reads may stay direct. Every call creates a fresh asynchronous Explorer with a narrowly scoped factual question, explicit boundaries, and compact schema-checked evidence. Explorer may inspect existing logs but does not run tests or builds, and has no edit/write, browser-control, or recursive delegation capability. `verify` runs exact parent-selected tests, builds, lint checks, benchmarks, and acceptance gates asynchronously in the actual owner worktree regardless of expected cost. The receipt is not a result; delivered evidence contains the tested fingerprint, command exits, duration, excerpts, and retained log path. Parent Bash remains unrestricted for inspection and parent-owned mutation. Web research routing is unchanged.
+## Review contract
 
-`review` is an asynchronous read-only primitive available only to the active Shipper after an explicit `dev-ship` invocation:
+Review is a foreground engineering phase, not a Reviewer sub-agent handoff.
 
-```text
-review({ purpose, task, candidate, evidence, focus })
-```
+At entry, Review reconstructs the approved outcome and candidate from observable repository state, then merges the current local integration branch into the candidate. Merge commits are acceptable in development history because that history is not the shipping artifact. Review evaluates the integrated candidate, repairs ordinary in-scope defects, and reruns validation invalidated by the merge or repairs.
 
-A shipping effort has one broad-review slot and one repair-audit slot. The broad review starts only after discussion and known repairs settle. Its frozen assignment accounts for the whole agreed outcome while naming the highest-risk invariants for deep adversarial attention. It returns one batch of findings with closure checks and explicit examined, finding, or unexamined coverage. The Shipper receives a job receipt immediately and can continue independent work; each completion is injected when it settles. No caller awaits a child agent. A reviewer PASS is not human approval, and the Shipper retains judgment and routine repair ownership. `review_disposition` persists each broad finding's status, rationale, and, for resolved findings, repair and verification evidence in the effort ledger.
+Review's human interaction is CTO-facing. It progressively explains the relevant architecture, ownership boundaries, invariants, tradeoffs, failure modes, and evidence as those become relevant to the current change. It does not produce a code tour or ask the human to adjudicate routine repairs. Consequential choices are presented with concrete consequences and a recommended direction.
 
-Repairs do not automatically relaunch review. If subtle interactions, weak executable proof, or substantial redesign leave a concrete independent need, the Shipper explains it and obtains human permission before using the one repair audit. That audit is frozen to accepted finding keys, the repair delta, and directly affected invariants; it is not another whole-candidate review and cannot trigger another audit. Review slots and compact results persist with the ship effort across session recovery. A started review that fails leaves missing independent scrutiny even when local checks pass; the Shipper explains its implications, remaining support for the recommendation, and whether a separate human risk decision is warranted. A new human-started ship effort is required for additional independent review.
+The Review endpoint is a technically converged candidate against the merged integration baseline, with applicable passing validation and material concerns resolved or explicitly understood with the human. Review does not rewrite history, push, deploy, or merge the candidate into another branch.
 
-Before a review consumes its slot or executes a model, transport checks the supplied candidate fingerprint and evidence and creates an immutable private snapshot with the exact tracked and untracked non-ignored worktree contents. Snapshot drift is a preflight error rather than a reviewer verdict. Each Reviewer execution has a five-minute deadline. Reviewer has repository read tools, VCC recall, and `submit_result`, but no mutation, shell, direct-human, or child-worker capability. Its bounded response echoes the frozen purpose, candidate, evidence, and focus. Transport validates identity and coverage accounting, not semantic completeness. The active Shipper rechecks applicability before repair or confirmation. Native SDK read-only workers have isolated contexts and cancellation, with Pi-native persisted child transcripts when the parent has a session file. Every child created through the shared worker boundary registers in one session-wide Agent Hub. `Alt+A` opens the live roster, inspector, and thread UI; the Hub may steer or stop a supplied session but never owns sequencing, Git, verification, workflow state, or model policy.
+## Ship contract
 
-Runtime allowlists enforce isolation, edit/write-tool denial, web-tool exclusivity, and non-recursion. The Explorer tool contract owns the general material-cost investigation trigger; the Verifier tool contract owns operation-specific verification routing. The Explorer skill constrains its shell against source mutation. Whether a local operation will be materially costly and whether natural-language scopes overlap remain semantic parent responsibilities, made reviewable through explicit boundaries and exclusions rather than misrepresented as mechanically provable. Workers do not inherit the foreground conversation. Web research is available only inside Explorer; foreground-only integrations are not replicated into children.
+Ship changes representation only.
 
-## Human supervision and recovery
+The reviewed candidate tree and reviewed integration baseline are immutable inputs. Ship creates an isolated local `ship/<name>` branch and rebuilds the reviewed change as the smallest useful set of coherent Conventional Commits. Development merge commits and incidental implementation history are not preserved.
 
-Agent Hub is a view and owner-action adapter, not a scheduler. The foreground Shipper sequences the living review brief and discussion, independent review of the settled candidate, repairs, validation, explicit convergence confirmation, and history cleanup. The Hub preserves independent drafts, anchored history navigation, contextual help, native messages, tool rendering, and completed child transcripts. A queued instruction is not delivered until accepted. The worker owner seals completed sessions and rejects stale structured results after interventions. Related questions create a fresh bounded investigation rather than reviving a completed result.
+The model may decide only semantic commit grouping and commit-message wording. Candidate identity, changed-path accounting, Git operations, and final equivalence are mechanical concerns.
 
-Read-only workers never acquire ownership of the worktree. On a session change, child cancellation is requested without vetoing or waiting on the owner; late results cannot be delivered into another session. Git and applicable decisions make failures visible and resumable. If Explorer is unavailable or fails, the parent may disclose and perform only necessary permitted read-only work directly with bounded output. This fallback grants no prohibited tool or mutation capability, and no fabricated completion is available.
+Before completion, Ship must establish:
 
-Each invoked stage reconciles from applicable decisions and live Git/worktree evidence, even for a new agent with no saved session. The exclusive writing owner classifies existing dirty edits, adopts relevant work under approved scope, and may remove irrelevant uncommitted edits after a best-effort local backup with an explicit removal/backup report. Ignored files and independent remote work are outside that cleanup authority. Ship alone may rewrite its established owned candidate range after human convergence while preserving a recovery reference, base, and unrelated/shared history. Consequential unresolved intent, scope, or authority goes to the human; nothing relaunches automatically.
+- the source development branch was not rewritten or otherwise mutated;
+- the shipping branch is based on the exact integration baseline reviewed by Review;
+- the final shipping tree is identical to the reviewed candidate tree;
+- every base-to-candidate change is present exactly once and no unrelated change entered;
+- the worktree is clean and the shipping history is linear.
 
-Pi and the requested plugins own rendering and integrations. The installer does not ship MCP servers, browser-cookie opt-ins, permission bypasses, or user credential files.
+If exact equivalence cannot be established, Ship stops and preserves both branches. If the integration branch has moved beyond the baseline Review merged, the candidate returns to Review rather than being adapted by Ship.
 
-See [Agent Hub](pi/AGENT_HUB.md) for keyboard controls and retention.
+Ship does not fetch, push, deploy, open or mutate remote review state, or merge into another branch.
+
+## Supporting evidence
+
+`explore` is the bounded read-only investigation primitive. Use it for material research or repository investigation that would otherwise consume substantial foreground context. Explorers do not edit, verify, make project decisions, or delegate.
+
+`verify` runs tests, builds, lints, benchmarks, and acceptance checks against the owner's actual worktree and returns asynchronous evidence tied to that candidate. Keep a candidate unchanged while a relevant verification run is active.
+
+Agent Hub is an inspection and owner-action UI for child sessions, not a scheduler or workflow authority. Child results are evidence only.
+
+## Recovery and ownership
+
+Every phase reconstructs work from the request, applicable decisions, and live Git/worktree evidence. A prior session, plan, or status marker is never required to begin and never substitutes for observable state.
+
+The active foreground agent owns its worktree exclusively. Existing tracked and untracked work is classified by content before staging or removal. Irrelevant edits may be backed up and removed under the shared reconciliation policy; ignored files and independent remote work remain outside that authority.
+
+Consequential unresolved intent, scope, semantics, or authority goes to the human. Ordinary engineering failures are diagnosed and repaired autonomously.
