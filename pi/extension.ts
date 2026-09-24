@@ -93,6 +93,10 @@ export default function extension(pi: ExtensionAPI, dependencies: ExtensionDepen
     const match = /^\/skill:dev-(spec|build|review|ship)(?:\s|$)/.exec(event.text);
     if (!match?.[1]) return { action: "continue" };
     const next = match[1] as PublicPhase;
+    if (next === "ship" && guard.currentSkill()) {
+      nextCtx?.ui.notify("Finish or abandon the active goal before dev-ship.", "warning");
+      return { action: "handled" };
+    }
     if (next !== "ship" && event.source !== "extension" && nextCtx?.sessionManager) {
       const request = event.text.slice(match[0].length).trim();
       if (!request) { nextCtx.ui.notify(`Provide a request: /skill:dev-${next} <request>`, "warning"); return { action: "handled" }; }
@@ -107,6 +111,7 @@ export default function extension(pi: ExtensionAPI, dependencies: ExtensionDepen
     handler: async (args, nextCtx) => {
       ctx = nextCtx;
       if (!args.trim()) { nextCtx.ui.notify(`Provide a request: /dev-${commandPhase} <request>`, "warning"); return; }
+      if (commandPhase === "ship" && guard.currentSkill()) { nextCtx.ui.notify("Finish or abandon the active goal before dev-ship.", "warning"); return; }
       if (commandPhase !== "ship" && !await guard.activate(args.trim(), commandPhase, nextCtx)) return;
       setPhase(commandPhase);
       hubUI.setContext(nextCtx);
