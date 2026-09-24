@@ -68,12 +68,19 @@ test("spec build and review activate goals while ship does not", async () => {
     getActiveTools: () => ["read"], setActiveTools: noop as ExtensionAPI["setActiveTools"],
   }, { hub: new WorkerHub(), registerWorkerHubUI: (() => ({ setContext: noop, dispose: noop })) as never });
   const context = { cwd: process.cwd(), hasUI: false, sessionManager: manager, ui: { notify: noop, setWidget: noop } } as never;
-  for (const phase of ["spec", "build", "review"] as const) {
+  for (const phase of ["spec", "build"] as const) {
     await commands.get(`dev-${phase}`)!.handler(`${phase} request`, context);
     const goals = manager.getBranch().filter(entry => entry.type === "custom" && entry.customType === "dev-goal");
     assert.equal((goals.at(-1) as { data: { skill?: string } }).data.skill, phase);
     await commands.get("dev-goal")!.handler("abandon", context);
   }
+  await commands.get("dev-review")!.handler("review request", context);
+  let goals = manager.getBranch().filter(entry => entry.type === "custom" && entry.customType === "dev-goal");
+  assert.equal((goals.at(-1) as { data: { skill?: string } }).data.skill, "review");
+  const sentBeforeBlockedShip = goals.length;
+  await commands.get("dev-ship")!.handler("ship request", context);
+  assert.equal(manager.getBranch().filter(entry => entry.type === "custom" && entry.customType === "dev-goal").length, sentBeforeBlockedShip);
+  await commands.get("dev-goal")!.handler("abandon", context);
   const before = manager.getBranch().filter(entry => entry.type === "custom" && entry.customType === "dev-goal").length;
   await commands.get("dev-ship")!.handler("ship request", context);
   const after = manager.getBranch().filter(entry => entry.type === "custom" && entry.customType === "dev-goal").length;
