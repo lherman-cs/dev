@@ -1,19 +1,32 @@
 ---
 name: dev-ship
-description: Collaboratively review, repair, and refine a local candidate for human-confirmed convergence without publishing.
+description: Collaboratively review and converge a completed local candidate into a clean, validated, human-ready branch without publishing or merging.
 disable-model-invocation: true
 ---
 
 # dev-ship
 
-Read `../../references/reconcile.md` at entry. Read `../../references/engineering.md` at entry. As the foreground writing owner, reconstruct the outcome, candidate worktree and history, validation, and unresolved feedback from available evidence. A prior build session or handoff is unnecessary. Establish a fixed local comparison base and exact candidate scope; ask if either cannot safely be determined. Include uncommitted candidate changes in review, inspecting them yourself or explicitly supplying their contents to a read-only worker whose snapshot sees only HEAD.
+Read `../../references/reconcile.md` and `../../references/engineering.md` at entry. Reconstruct the intended outcome, fixed comparison base, candidate scope, history, validation, and unresolved feedback. Include uncommitted candidate changes.
 
-Use `ask_user_question` for every human decision and review checkpoint. Ask one focused question at a time, with a recommended option and concise alternatives where useful. After the initial walkthrough, ask for review priorities before substantive review. Ask again when presenting grouped findings, choosing a material repair direction, accepting a consequential risk, confirming that no meaningful feedback remains, and resolving uncertain history-rewrite authority. Pause for each answer; do not treat silence as agreement. Between checkpoints, investigate and make routine fixes without asking permission for each tool call.
+Own the local candidate through convergence:
 
-- **Understand together.** Begin with a compact, high-level walkthrough of resulting behavior, important invariants, consequential design choices, and risks. Pause for the human's questions, concerns, and review priorities before substantive review or repair. Refine the explanation when evidence changes it; use focused checkpoints rather than a tool-call narration or a large final tour.
-- **Review and decide.** Review against approved intent and repository constraints. Independent read-only `review` is useful evidence, not required authority, a veto, or human approval. Judge findings by impact, evidence, scope, repair cost, regression risk, and value. Group meaningful findings into high-level recommendations and obtain human agreement on the repair direction before material repairs, even for clear material defects. Explain what changes and why, not individual patches. Ask for consequential tradeoffs, disputed behavior, or material scope expansion; make routine mechanical fixes autonomously. Reject unsupported, taste-only, speculative, and low-value churn with concise reasons for meaningful rejections or accepted residual risks. An accepted limitation changes the agreed risk or outcome, not the status of a failed check.
-- **Repair and re-review.** Implement agreed repairs yourself, validate affected behavior, and re-review interactions. Expand proof as effects warrant; do not repeat unrelated passing checks. Evidence belongs to the exact candidate it covers; stale, missing, interrupted, or failing required checks do not pass. Continue until no meaningful actionable feedback remains under the agreed scope. New evidence may reopen a rejection; repeated low-value feedback without new evidence need not. Bring consequential disagreement to the human, not an endless repair loop. Return after an agreed direction only if new evidence materially changes it.
-- **Confirm convergence.** Explicitly ask the human whether meaningful review feedback remains, with a concise closing view of behavior, consequential decisions or repairs, proof, and residual risks. Silence or reviewer PASS cannot substitute for confirmation.
-- **Refine local history.** After confirmation, condense implementation noise into a few coherent commits, possibly one. Rewrite only the established candidate range on the owned branch, preserve a recoverable pre-cleanup reference, and leave the comparison base and unrelated/shared history untouched. If rewrite ownership is unclear, ask first. Verify tree equivalence, final history and base-to-candidate diff, and history-sensitive checks. Tree-only equivalence does not require repeating behavioral tests or human confirmation solely for changed commit IDs; material content changes require affected validation, re-review, and renewed confirmation.
+1. **Orient.** Inspect enough to form a reliable high-level model. Keep the human incrementally oriented around resulting behavior, important invariants, consequential design choices, and risks. Use `ask_user_question` at meaningful review checkpoints and for focused decisions. Prefer concise diagrams, tables, or before/after views when they reduce cognitive load.
 
-**Endpoint:** Leave a committed local candidate with a clean worktree, intentional diff, coherent history, applicable passing validation, explicit human convergence, and stated residual risks. Hand off branch/HEAD, comparison base, meaningful commit boundaries, and proof. The human owns branch integration and all remote publishing. Do not fetch, rebase onto a moving integration branch, push, create or mutate a PR, or merge into another branch. If required validation is unavailable or failing, material findings remain unresolved, confirmation is missing, or rewrite authority is uncertain, preserve resumable state and identify the exact blocker instead of declaring success.
+2. **Review.** Review the candidate yourself and use the read-only `review` sub-agent for independent scrutiny. Give it the intended outcome, fixed base, exact candidate, and relevant constraints; request only concrete, evidence-backed material findings. If its snapshot cannot see uncommitted changes, provide them explicitly. Verify, deduplicate, group, and judge its findings yourself. After repairs, target follow-up review at the changed findings and their interaction blast radius unless the candidate changed broadly.
+
+3. **Converge.**
+
+   * Repair clear, material, in-scope defects directly.
+   * Ask the human when semantics, scope, tradeoffs, repair value, regression risk, or understanding materially benefit from judgment.
+   * Group related findings around the decision they require.
+   * Reject unsupported, speculative, taste-only, unrelated, redundant, or low-value churn.
+
+   Validate affected behavior after repairs and re-review as needed. Continue until serious review yields no meaningful actionable feedback.
+
+4. **Refine.** Leave a clean worktree and rewrite candidate history into the smallest useful set of coherent Conventional Commits. Squash fixups, debugging, detours, and incidental churn; preserve boundaries that materially aid review, understanding, testing, rollback, or archaeology. Rewrite only owned candidate history and verify the final tree and base-to-candidate diff are unchanged by history-only cleanup.
+
+5. **Confirm.** Present a concise closing view of resulting behavior, consequential decisions and repairs, validation, residual risks, and final commit structure. Use `ask_user_question` to confirm that no meaningful review feedback remains.
+
+Do not make the reviewer a gatekeeper, decision-maker, repair owner, or source of repeated full-candidate reviews without reason. Material content changes invalidate affected review and validation evidence.
+
+**Endpoint:** A committed local candidate with an intentional diff, coherent Conventional Commit history, applicable passing validation, no known meaningful review feedback, and explicit human convergence. The human owns branch integration and remote publishing. Do not fetch, push, mutate remote review state, or merge into another branch.
