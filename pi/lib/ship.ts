@@ -69,7 +69,7 @@ function isolatedWorkspace(sourceRoot: string, baseline: string, candidate: stri
   return { dir, baselineCommit, dispose: () => fs.rmSync(parent, { recursive: true, force: true }) };
 }
 
-function commitTool(cwd: string): ToolDefinition<typeof commitParams, Record<string, never>, unknown> {
+function commitTool(cwd: string): ToolDefinition<typeof commitParams, unknown, any> {
   return {
     name: "ship_commit",
     label: "Ship commit",
