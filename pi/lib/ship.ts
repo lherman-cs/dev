@@ -73,7 +73,14 @@ function commitTool(cwd: string): ToolDefinition<typeof commitParams, Record<str
     parameters: commitParams,
     async execute(_id, args: Static<typeof commitParams>) {
       const paths = [...new Set(args.paths.map(assertRelativePath))];
-      const changed = new Set(git(cwd, ["status", "--porcelain", "--untracked-files=all"]).split("\n").filter(Boolean).map(line => line.slice(3).split(" -> ").at(-1)!).filter(Boolean));
+      const raw = execFileSync("git", ["status", "--porcelain=v1", "-z", "--untracked-files=all"], { cwd, encoding: "utf8" });
+      const entries = raw.split("\0").filter(Boolean);
+      const changed = new Set<string>();
+      for (let i = 0; i < entries.length; i++) {
+        const entry = entries[i]!;
+        const status = entry.slice(0, 2), first = entry.slice(3);
+        changed.add(status[0] === "R" || status[1] === "R" ? entries[++i]! : first);
+      }
       for (const p of paths) if (!changed.has(p)) throw new Error(`Path is not currently changed: ${p}`);
       git(cwd, ["add", "--", ...paths]);
       git(cwd, ["commit", "-qm", args.message.trim()]);
@@ -82,7 +89,7 @@ function commitTool(cwd: string): ToolDefinition<typeof commitParams, Record<str
   };
 }
 
-function applyIsolatedHistory(sourceRoot: string, workspace: string, isolatedBaseline: string, baseline: string, branchName: string): { branch: string; head: string; worktree: string } {
+function applyIsolatedHistory(sourceRoot: string, workspace: string, isolatedBaseline: string, baseline: string, branchName: string): { branch: string; head: string; worktree: string; dispose(): void } {
   try { git(sourceRoot, ["show-ref", "--verify", "--quiet", `refs/heads/${branchName}`]); throw new Error(`Shipping branch already exists: ${branchName}`); }
   catch (error) { if (error instanceof Error && error.message.startsWith("Shipping branch")) throw error; }
 
@@ -98,7 +105,8 @@ function applyIsolatedHistory(sourceRoot: string, workspace: string, isolatedBas
       const patch = execFileSync("git", ["format-patch", "--stdout", "--no-signature", "-1", commit], { cwd: workspace, maxBuffer: 64 * 1024 * 1024 });
       execFileSync("git", ["am", "-q"], { cwd: worktree, input: patch, stdio: ["pipe", "pipe", "pipe"], maxBuffer: 64 * 1024 * 1024 });
     }
-    return { branch: branchName, head: git(worktree, ["rev-parse", "HEAD"]), worktree };
+    return { branch: branchName, head: git(worktree, ["rev-parse", "HEAD"]), worktree,
+      dispose() { try { git(sourceRoot, ["worktree", "remove", "--force", worktree]); } finally { fs.rmSync(parent, { recursive: true, force: true }); } } };
   } catch (error) {
     if (created) {
       try { git(sourceRoot, ["worktree", "remove", "--force", worktree]); } catch {}
@@ -140,6 +148,7 @@ export async function packageReviewedCandidate(options: { cwd: string; name?: st
       if (git(final.worktree, ["status", "--porcelain", "--untracked-files=all"])) throw new Error("Final shipping worktree is not clean.");
       const parents = git(source.root, ["rev-list", "--parents", `${source.baseline}..${final.head}`]).split("\n").filter(Boolean);
       if (parents.some(line => line.trim().split(/\s+/).length !== 2)) throw new Error("Shipping history is not linear.");
+      final.dispose();
       return `Created ${final.branch} with ${parents.length} clean commit(s). Tree equivalence to the reviewed candidate is exact.`;
     } catch (error) {
       try { git(source.root, ["worktree", "remove", "--force", final.worktree]); } catch {}
