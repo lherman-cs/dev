@@ -23,7 +23,7 @@ Rules:
 - A narrower layer may specialize but never restate or contradict a broader layer.
 - Skills are compact, single-purpose, and mode-free.
 - **Pi lazy-skills.** Keep skill bodies out of standing instructions; load them only through an explicit `/skill:<name>` invocation when needed.
-- Reusable semantic roles, sequencing, Git/GitHub work, verification, repair convergence, and human gates belong in skills.
+- Reusable semantic roles, sequencing, verification, repair convergence, and human gates belong in skills. Deterministic Git safety and isolation belong in runtime tools.
 - Internal worker transport may add invocation data/output schema and tool boundaries, but must not duplicate skill semantics.
 - Never overwrite user Pi/OMP settings or credentials.
 - Preserve symmetric `dev a <phase>` / `/dev-<phase>` dispatch. `/dev-ship` is owned by its deterministic packaging runtime, not the foreground agent; do not introduce a general coordinator.
