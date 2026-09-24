@@ -8,6 +8,7 @@ import type { PublicPhase } from "./lib/roles.ts";
 import { registerCompletionGuard } from "./lib/completion-guard.ts";
 import { createVerifierTool } from "./lib/verifier.ts";
 import { registerVerifier } from "./lib/verifier-hub.ts";
+import { packageReviewedCandidate } from "./lib/ship.ts";
 
 export const explorerOnlyTools = new Set(["web_search", "source_check", "fetch_content", "get_search_content"]);
 type HubUI = ReturnType<typeof registerWorkerHubUI>;
@@ -93,11 +94,11 @@ export default function extension(pi: ExtensionAPI, dependencies: ExtensionDepen
     const match = /^\/skill:dev-(spec|build|review|ship)(?:\s|$)/.exec(event.text);
     if (!match?.[1]) return { action: "continue" };
     const next = match[1] as PublicPhase;
-    if (next === "ship" && guard.currentSkill()) {
-      nextCtx?.ui.notify("Finish or abandon the active goal before dev-ship.", "warning");
+    if (next === "ship") {
+      nextCtx?.ui.notify("dev-ship runs through /dev-ship so the runtime can isolate and guard the packaging workspace.", "warning");
       return { action: "handled" };
     }
-    if (next !== "ship" && event.source !== "extension" && nextCtx?.sessionManager) {
+    if (event.source !== "extension" && nextCtx?.sessionManager) {
       const request = event.text.slice(match[0].length).trim();
       if (!request) { nextCtx.ui.notify(`Provide a request: /skill:dev-${next} <request>`, "warning"); return { action: "handled" }; }
       if (!await guard.activate(request, next, nextCtx)) return { action: "handled" }; // Do not execute an unauthorized replacement.
@@ -110,9 +111,19 @@ export default function extension(pi: ExtensionAPI, dependencies: ExtensionDepen
     description: `Invoke dev-${commandPhase} in the current conversation`,
     handler: async (args, nextCtx) => {
       ctx = nextCtx;
+      if (commandPhase === "ship") {
+        if (guard.currentSkill()) { nextCtx.ui.notify("Finish or abandon the active goal before dev-ship.", "warning"); return; }
+        hubUI.setContext(nextCtx);
+        try {
+          const result = await packageReviewedCandidate({ cwd: nextCtx.cwd, name: args.trim() || undefined, run });
+          pi.sendMessage({ customType: "dev-ship-result", content: result, display: true }, { triggerTurn: false });
+        } catch (error) {
+          nextCtx.ui.notify(`dev-ship: ${error instanceof Error ? error.message : String(error)}`, "warning");
+        }
+        return;
+      }
       if (!args.trim()) { nextCtx.ui.notify(`Provide a request: /dev-${commandPhase} <request>`, "warning"); return; }
-      if (commandPhase === "ship" && guard.currentSkill()) { nextCtx.ui.notify("Finish or abandon the active goal before dev-ship.", "warning"); return; }
-      if (commandPhase !== "ship" && !await guard.activate(args.trim(), commandPhase, nextCtx)) return;
+      if (!await guard.activate(args.trim(), commandPhase, nextCtx)) return;
       setPhase(commandPhase);
       hubUI.setContext(nextCtx);
       pi.sendUserMessage(`/skill:dev-${commandPhase}${args ? ` ${args}` : ""}`, { expandPromptTemplates: true });
