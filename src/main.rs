@@ -182,6 +182,8 @@ enum AgentAction {
     Spec { prompt: Vec<String> },
     /// Open the Builder role, or run /dev-build immediately when a prompt is given
     Build { prompt: Vec<String> },
+    /// Open the Reviewer role, or run /dev-review immediately when a prompt is given
+    Review { prompt: Vec<String> },
     /// Open the Shipper role, or run /dev-ship immediately when a prompt is given
     Ship { prompt: Vec<String> },
     /// Show an interactive dashboard for a Pi session
@@ -1674,6 +1676,7 @@ fn cmd_agent(action: Option<AgentAction>) -> Result<()> {
         None => agent::launch(None, vec![], None),
         Some(AgentAction::Spec { prompt }) => agent::launch(Some("spec"), prompt, None),
         Some(AgentAction::Build { prompt }) => agent::launch(Some("build"), prompt, None),
+        Some(AgentAction::Review { prompt }) => agent::launch(Some("review"), prompt, None),
         Some(AgentAction::Ship { prompt }) => agent::launch(Some("ship"), prompt, None),
         Some(AgentAction::Stats { session }) => agent_stats::run(session),
         Some(AgentAction::Resume { session }) => agent::launch(None, vec![], Some(session)),
