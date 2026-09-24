@@ -29,7 +29,7 @@ assessor = "openai/gpt-6-luna:high"
 # Role: Collaborate on local candidate review, repair, validation, and history refinement.
 # Signals: AutomationBench, Agents' Last Exam, FrontierCode, OSWorld.
 # Reason: Sol medium provides solid agentic and engineering judgment for bounded shipping work without build-level spend.
-ship = "openai/gpt-6-sol:medium"
+ship = "openai/gpt-6-sol:high"
 # ship = "openai/gpt-6-luna:high"
 
 # Role: Gather narrow, verifiable evidence independently and asynchronously.
@@ -40,4 +40,4 @@ explorer = "openai/gpt-6-luna:high"
 # Role: Resolve implementation problems that exceed the normal Builder.
 # Signals: FrontierCode, DeepSWE, AutomationBench.
 # Reason: Astra high provides a genuine capability escalation for rare hard cases where the additional cost is justified.
-escalated_builder = "openai/gpt-6-astra:high"
+escalated_builder = "openai/gpt-6-astra:medium"
