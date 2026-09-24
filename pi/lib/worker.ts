@@ -42,9 +42,11 @@ const reviewResultSchema = Type.Object({
   summary: Type.String({ minLength: 1, maxLength: 4000 }),
   findings: Type.Array(Type.Object({
     key: Type.String({ minLength: 1, maxLength: 200 }),
+    focus: Type.Union([Type.String({ minLength: 1, maxLength: 500 }), Type.Null()]),
     title: Type.String({ minLength: 1, maxLength: 500 }),
     problem: Type.String({ minLength: 1, maxLength: 4000 }),
-    evidence: Type.Array(Type.String({ minLength: 1, maxLength: 1000 }), { maxItems: 20 }),
+    repair_direction: Type.String({ minLength: 1, maxLength: 2000 }),
+    evidence: Type.Array(Type.String({ minLength: 1, maxLength: 1000 }), { minItems: 1, maxItems: 20 }),
     acceptance_checks: Type.Array(Type.String({ minLength: 1, maxLength: 1000 }), { minItems: 1, maxItems: 20 }),
   }, { additionalProperties: false }), { maxItems: 30 }),
   blocker: Type.Union([Type.String({ minLength: 1, maxLength: 4000 }), Type.Null()]),
@@ -263,7 +265,7 @@ export function createWorkerRunner(options: RunnerOptions): WorkerRunner {
       };
       const verifier = !explorer && name !== "review" ? createVerifierTool(publishNestedCompletion, { track: trackDetachedCompletion, ownerCwd: () => cwd }) : undefined;
       signal.addEventListener("abort", () => verifier?.cancelAll(), { once: true });
-      const customTools: ToolDefinition[] = [...scopedTools, ...(explorer ? [] : [asyncExploreTool(childRun, publishNestedCompletion, quietReport, trackDetachedCompletion, { parentId: id, owner: metadata.owner, phase: metadata.phase }) as unknown as ToolDefinition, ...(verifier ? [verifier.tool] : [])])];
+      const customTools: ToolDefinition[] = [...(name === "review" ? [] : scopedTools), ...(explorer || name === "review" ? [] : [asyncExploreTool(childRun, publishNestedCompletion, quietReport, trackDetachedCompletion, { parentId: id, owner: metadata.owner, phase: metadata.phase }) as unknown as ToolDefinition, ...(verifier ? [verifier.tool] : [])])];
       if (askHuman && !readonly && metadata.phase !== "ship") {
         const askSchema = Type.Object({ question: Type.String(), choices: Type.Optional(Type.Array(Type.String())) });
         customTools.push({ name: "ask_human", label: "Ask human", description: "Ask a bounded question and wait for the human to respond explicitly in Main.",
@@ -283,7 +285,7 @@ export function createWorkerRunner(options: RunnerOptions): WorkerRunner {
         } });
       const allowed = explorer
         ? [...readers, "bash", "web_search", "source_check", "fetch_content", "get_search_content", ...scopedTools.map(tool => tool.name)]
-        : name === "review" ? [...readers, ...scopedTools.map(tool => tool.name)]
+        : name === "review" ? readers
             : tools || [...readers, ...(!readonly ? ["bash", "edit", "write", "lsp_diagnostics", "lsp_fix", "chrome_devtools_load", "chrome_devtools_list_pages", "chrome_devtools_select_page", "chrome_devtools_navigate", "chrome_devtools_evaluate", "chrome_devtools_screenshot"] : [])];
       const created = await create({ cwd: workerCwd, model, thinkingLevel: selected.thinking, modelRuntime: models,
         settingsManager: settings, resourceLoader: loader, sessionManager: manager,
@@ -398,6 +400,7 @@ export function createWorkerRunner(options: RunnerOptions): WorkerRunner {
 
 // Bounded investigation and exact-candidate review; verification uses a dedicated executor.
 function validateReviewRequest(args: ReviewRequest, cwd?: string): void {
+  if (!/^[0-9a-f]{40}(?:[0-9a-f]{24})?:[0-9a-f]{64}$/.test(args.candidate)) throw new Error("Review candidate must be a Git revision and exact worktree fingerprint.");
   if (!args.evidence.includes(args.candidate)) throw new Error("Review evidence must identify the exact candidate fingerprint.");
   if (new Set(args.focus).size !== args.focus.length) throw new Error("Review focus entries must be unique.");
   if (cwd && candidateFingerprint(cwd) !== args.candidate) throw new Error("Review candidate does not match the current owner worktree. Refresh candidate and evidence before review.");
@@ -420,9 +423,13 @@ export function reviewTool(run: RunWorker, report: (text: string) => void = () =
         || JSON.stringify(result.focus) !== JSON.stringify(args.focus)) throw new Error("Reviewer result does not match the frozen purpose, candidate, evidence, and focus.");
       const covered = new Map(result.coverage.map(item => [item.focus, item]));
       if (covered.size !== result.coverage.length || args.focus.some(item => !covered.has(item)) || result.coverage.some(item => !args.focus.includes(item.focus))) throw new Error("Reviewer result does not account for every frozen focus exactly once.");
+      const keys = new Set(result.findings.map(item => item.key));
+      if (keys.size !== result.findings.length || result.findings.some(item => item.focus === null ? args.purpose !== "repair-audit" : !covered.has(item.focus)) ||
+        result.coverage.some(item => (item.status === "finding") !== result.findings.some(finding => finding.focus === item.focus)))
+        throw new Error("Reviewer findings must have unique keys and correspond to finding coverage (except incidental repair-audit findings).");
       if ((result.verdict === "PASS" && (result.findings.length || result.blocker !== null || result.coverage.some(item => item.status !== "examined")))
         || (result.verdict === "REPAIRS" && (!result.findings.length || result.blocker !== null))
-        || (result.verdict === "BLOCKED" && (result.findings.length || result.blocker === null))) throw new Error("Reviewer result is inconsistent with its verdict.");
+        || (result.verdict === "BLOCKED" && result.blocker === null)) throw new Error("Reviewer result is inconsistent with its verdict.");
       const text = JSON.stringify(result);
       if (text.length > reviewResultChars) throw new Error("Reviewer result exceeds the transport limit.");
       return toolResult(text);

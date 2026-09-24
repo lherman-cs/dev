@@ -10,8 +10,10 @@ const finishParams = Type.Object({ outcome: Type.Union([Type.Literal("complete")
 type Task = { id: number; subject: string; status: string; description?: string };
 type Member = Task & { epoch: number };
 type Lifecycle = "Active" | "Classifying" | "Paused" | "Blocked" | "Completed" | "Abandoned";
+type FindingDisposition = { status: "accepted-open" | "resolved" | "rejected" | "deferred"; rationale: string; repair?: string; verification?: string };
 type ReviewAttempt = { id: string; purpose: ReviewRequest["purpose"]; candidate: string; evidence: string; task: string; focus: string[];
-  status: "reserved" | "started" | "completed" | "failed"; reservedAt: number; workerId?: string; endedAt?: number; result?: string };
+  status: "reserved" | "started" | "completed" | "failed"; reservedAt: number; workerId?: string; endedAt?: number; result?: string;
+  dispositions?: Record<string, FindingDisposition> };
 type ReviewLedger = { broad?: ReviewAttempt; repairAudit?: ReviewAttempt };
 type State = { id: string; session: string; request: string; skill: "build" | "ship" | undefined; clarifications: string[];
   status: Lifecycle; reason: string; generation: number; baseline: number[]; members: Member[]; tasks: Task[]; todoEpoch: number;
@@ -42,6 +44,8 @@ export function registerCompletionGuard(pi: ExtensionAPI, _run?: unknown,
   const currentSkill = () => state && unfinished(state) ? state.skill : undefined;
   const clearWorkerWaits = () => { for (const wait of workerWaits.values()) clearTimeout(wait.timer); workerWaits.clear(); };
   const save = () => { if (state) pi.appendEntry(entryType, structuredClone(state)); };
+  const reviewReceipts = () => ([state?.reviews?.broad, state?.reviews?.repairAudit].filter(Boolean) as ReviewAttempt[])
+    .map(review => `${review.purpose}: ${review.status} · ${review.candidate}${review.workerId ? ` · ${review.workerId}` : ""}\nTask: ${review.task}\nEvidence: ${review.evidence}\nFocus: ${JSON.stringify(review.focus)}\nResult: ${review.result ?? "pending"}\nDispositions: ${JSON.stringify(review.dispositions ?? {})}`).join("\n");
   const header = () => ctx?.ui.setWidget("dev-goal", state ? [`Goal: ${state.request.replace(/\s+/g, " ").slice(0, 55)} · ${state.status}${state.reason ? ` · ${state.reason.slice(0, 85)}` : ""}`] : undefined, { placement: "aboveEditor" });
   const announce = (text: string) => {
     try { pi.sendMessage({ customType: "dev-goal-event", content: text, display: true }, { triggerTurn: false }); }
@@ -65,7 +69,7 @@ export function registerCompletionGuard(pi: ExtensionAPI, _run?: unknown,
     if (!state || (state.status !== "Paused" && state.status !== "Blocked")) { next.ui.notify("Only a paused or blocked goal can resume.", "warning"); return; }
     ctx = next; invalidate(); stagnant = 0;
     transition("Active", "Reconcile original request and uncertain side effects before proceeding", "human");
-    try { pi.sendMessage({ customType: "dev-goal-resume", content: `Resume goal ${state.id}: ${state.request}. Reconcile observable work before continuing.`, display: true }, { triggerTurn: true, deliverAs: "steer" }); }
+    try { pi.sendMessage({ customType: "dev-goal-resume", content: `Resume goal ${state.id}: ${state.request}. Reconcile observable work before continuing.\nReview receipts from this effort:\n${reviewReceipts() || "none"}`, display: true }, { triggerTurn: true, deliverAs: "steer" }); }
     catch { pause("Resume delivery failed"); }
   };
   const show = (next: ExtensionContext) => {
@@ -74,9 +78,7 @@ export function registerCompletionGuard(pi: ExtensionAPI, _run?: unknown,
     const tasks = state.members.map(t => { const live = t.epoch === state!.todoEpoch ? state!.tasks.find(x => x.id === t.id && x.subject === t.subject) : undefined;
       return `${t.id}: ${t.subject} (${live?.status ?? "historical; not current"}, claim only)`; });
     const stages = state.stages.map(e => `${e.label}: ${e.status}${e.disposition ? ` ${e.disposition}` : ""}${e.code ? ` (${e.code})` : ""} at ${new Date(e.at).toISOString()} (${e.elapsedMs}ms)`).join("\n");
-    const reviews = ([state.reviews?.broad, state.reviews?.repairAudit].filter(Boolean) as ReviewAttempt[])
-      .map(review => `${review.purpose}: ${review.status} · ${review.candidate}${review.workerId ? ` · ${review.workerId}` : ""}`).join("\n");
-    announce(`Goal ${state.id}\nRequest: ${state.request}\nContract: ${state.skill ? `dev-${state.skill}` : "explicit goal"}\nClarifications: ${state.clarifications.join("; ") || "none"}\nState: ${state.status}. ${state.reason}\nAutomatic execution: ${state.status === "Active" ? "allowed" : "stopped"}\nChecklist: ${tasks.join("; ") || "none associated"}\nReview ledger:\n${reviews || "none"}\nOutcome: ${state.outcome ?? "none"}\nClassifier history:\n${stages || "none"}\nRecent transitions:\n${state.transitions.join("\n")}\nControls: /dev-goal pause | resume | abandon | start <request>`);
+    announce(`Goal ${state.id}\nRequest: ${state.request}\nContract: ${state.skill ? `dev-${state.skill}` : "explicit goal"}\nClarifications: ${state.clarifications.join("; ") || "none"}\nState: ${state.status}. ${state.reason}\nAutomatic execution: ${state.status === "Active" ? "allowed" : "stopped"}\nChecklist: ${tasks.join("; ") || "none associated"}\nReview ledger:\n${reviewReceipts() || "none"}\nOutcome: ${state.outcome ?? "none"}\nClassifier history:\n${stages || "none"}\nRecent transitions:\n${state.transitions.join("\n")}\nControls: /dev-goal pause | resume | abandon | start <request>`);
   };
   const restore = (next: ExtensionContext) => {
     invalidate(); replacement = undefined; ctx = next; stagnant = 0; humanControlInput = false;
@@ -89,7 +91,7 @@ export function registerCompletionGuard(pi: ExtensionAPI, _run?: unknown,
       else if (attempt?.status === "started") { attempt.status = "failed"; attempt.endedAt = Date.now(); attempt.result = "Reviewer interrupted before a durable completion was delivered."; }
     }
     const forked = !!state && state.session !== next.sessionManager.getSessionId();
-    if (state && forked) state = { ...state, id: randomUUID(), session: next.sessionManager.getSessionId() };
+    if (state && forked) state = { ...state, session: next.sessionManager.getSessionId() };
     if (state && unfinished(state)) { invalidate(); transition("Paused", `${forked ? "Forked" : "Restored"} unfinished session; explicit resume required`, "recovery"); }
     else { header(); if (state) announce(`Goal restored: ${state.status} is historical.`); }
   };
@@ -174,6 +176,23 @@ export function registerCompletionGuard(pi: ExtensionAPI, _run?: unknown,
     const attempt = state.reviews?.[reviewKey(reservation.purpose)];
     return attempt?.id === reservation.id ? attempt : undefined;
   }
+  pi.registerTool({ name: "review_disposition", label: "Review finding disposition", description: "Persist the Shipper's finding decision and closure evidence for one broad-review finding in this shipping effort.",
+    parameters: Type.Object({ key: Type.String({ minLength: 1 }), status: Type.Union([Type.Literal("accepted-open"), Type.Literal("resolved"), Type.Literal("rejected"), Type.Literal("deferred")]),
+      rationale: Type.String({ minLength: 1 }), repair: Type.Optional(Type.String({ minLength: 1 })), verification: Type.Optional(Type.String({ minLength: 1 })) }, { additionalProperties: false }),
+    async execute(_id, args) {
+      if (!state || state.status !== "Active" || state.skill !== "ship") throw new Error("Finding dispositions require an active shipping effort.");
+      const broad = state.reviews?.broad;
+      if (broad?.status !== "completed" || !broad.result) throw new Error("A completed broad review is required before recording finding dispositions.");
+      const result = JSON.parse(broad.result) as { findings?: { key: string }[] };
+      if (!result.findings?.some(finding => finding.key === args.key)) throw new Error("Finding key is not in this effort's broad-review receipt.");
+      if (args.status === "resolved" && (!args.repair || !args.verification)) throw new Error("Resolved findings require repair and verification evidence.");
+      broad.dispositions ??= {};
+      broad.dispositions[args.key] = { status: args.status, rationale: args.rationale,
+        ...(args.repair ? { repair: args.repair } : {}), ...(args.verification ? { verification: args.verification } : {}) };
+      save();
+      return { content: [{ type: "text" as const, text: `Recorded ${args.key}: ${args.status}.` }], details: undefined };
+    },
+  });
   pi.registerTool({ name: "goal_control", label: "Goal control", parameters: Type.Object({
     action: Type.Union([Type.Literal("resume"), Type.Literal("pause"), Type.Literal("abandon"), Type.Literal("adopt"), Type.Literal("clarify")]),
     taskId: Type.Optional(Type.Number()), reason: Type.Optional(Type.String()),

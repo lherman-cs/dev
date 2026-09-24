@@ -45,7 +45,7 @@ test("three current-session aliases, Agent Hub and isolated tools register witho
   });
   assert.deepEqual([...commands.keys()].sort(), ["dev-build", "dev-goal", "dev-ship", "dev-spec"]);
   assert.ok(shortcuts.has("alt+a"));
-  assert.deepEqual(tools.map(tool => tool.name), ["goal_control", "continue_goal", "finish", "stopping_report", "verify", "explore", "review"]);
+  assert.deepEqual(tools.map(tool => tool.name), ["review_disposition", "goal_control", "continue_goal", "finish", "stopping_report", "verify", "explore", "review"]);
   assert.equal(messages.length, 0);
   const explore = tools.find(tool => tool.name === "explore"); assert.ok(explore);
   const toolCall = handlers.get("tool_call"); assert.ok(toolCall);
@@ -100,8 +100,11 @@ test("one broad review and one repair audit are durably bounded per ship effort"
     args.onStarted?.(`worker-${calls}`);
     const purpose = args.metadata?.["purpose"] as "broad" | "repair-audit";
     const focus = args.metadata?.["focus"] as string[];
-    return { purpose, verdict: "PASS", candidate, evidence: `verified ${candidate}`, focus,
-      coverage: focus.map(item => ({ focus: item, status: "examined", evidence: "candidate.txt:1" })), summary: "covered", findings: [], blocker: null };
+    const reviewedCandidate = args.metadata?.["candidate"] as string;
+    const broad = purpose === "broad";
+    return { purpose, verdict: broad ? "REPAIRS" : "PASS", candidate: reviewedCandidate, evidence: `verified ${reviewedCandidate}`, focus,
+      coverage: focus.map(item => ({ focus: item, status: broad && item === "whole outcome" ? "finding" : "examined", evidence: "candidate.txt:1" })), summary: "covered",
+      findings: broad ? [{ key: "F1", focus: "whole outcome", title: "Candidate issue", problem: "Unsettled behavior", repair_direction: "Fix behavior", evidence: ["candidate.txt:1"], acceptance_checks: ["Affected behavior verified"] }] : [], blocker: null };
   }, { hasActive: () => false, stopAll: async () => undefined, related: async () => "unused" });
   const tools: RegisteredTool[] = [], commands = new Map<string, Omit<RegisteredCommand, "name" | "sourceInfo">>();
   const noop = () => undefined;
@@ -123,30 +126,60 @@ test("one broad review and one repair audit are durably bounded per ship effort"
   await review.execute("broad", { ...request, purpose: "broad", focus: ["whole outcome", "identity safety"] }, undefined, undefined, context);
   await new Promise(resolve => setImmediate(resolve));
   await assert.rejects(review.execute("duplicate", { ...request, purpose: "broad", focus: ["whole outcome"] }, undefined, undefined, context), /already completed/);
+  const disposition = tools.find(tool => tool.name === "review_disposition")!;
+  await assert.rejects(disposition.execute("unknown", { key: "F2", status: "resolved", rationale: "fixed", repair: "changed", verification: "checked" }, undefined, undefined, context), /not in this effort/);
+  await assert.rejects(disposition.execute("unverified", { key: "F1", status: "resolved", rationale: "fixed", repair: "changed" }, undefined, undefined, context), /require repair and verification/);
+  await disposition.execute("closure", { key: "F1", status: "resolved", rationale: "Accepted and closed", repair: "candidate fix", verification: "affected validation passed" }, undefined, undefined, context);
 
   const restoredTools: RegisteredTool[] = [], restoredCommands = new Map<string, Omit<RegisteredCommand, "name" | "sourceInfo">>();
+  const resumedMessages: string[] = [];
   const restoredHandlers = new Map<string, Array<(event: unknown, context: unknown) => Promise<unknown> | unknown>>();
   load({
     registerCommand: (name, command) => { restoredCommands.set(name, command); },
     registerShortcut: noop as ExtensionAPI["registerShortcut"],
     registerTool: tool => { restoredTools.push(tool as RegisteredTool); },
     on: (name, handler) => { const list = restoredHandlers.get(name) ?? []; list.push(handler as (event: unknown, context: unknown) => unknown); restoredHandlers.set(name, list); return noop; },
-    sendMessage: noop as ExtensionAPI["sendMessage"], sendUserMessage: noop as ExtensionAPI["sendUserMessage"],
+    sendMessage: message => { resumedMessages.push(String(message.content)); }, sendUserMessage: noop as ExtensionAPI["sendUserMessage"],
     appendEntry: (name, data) => manager.appendCustomEntry(name, data),
     getActiveTools: () => ["read"], setActiveTools: noop as ExtensionAPI["setActiveTools"],
   }, { hub: new WorkerHub(), createWorkerRunner: (() => run) as never,
     registerWorkerHubUI: (() => ({ setContext: noop, dispose: noop })) as never });
   for (const handler of restoredHandlers.get("session_start") ?? []) await handler({}, context);
   await restoredCommands.get("dev-goal")!.handler("resume", context);
+  assert.ok(resumedMessages.some(message => message.includes("whole outcome") && message.includes('"verdict":"REPAIRS"') && message.includes("affected validation passed")), "recovery exposes durable receipt, dispositions and frozen focus");
   const restoredReview = restoredTools.find(tool => tool.name === "review")!;
   await assert.rejects(restoredReview.execute("restored-duplicate", { ...request, purpose: "broad", focus: ["whole outcome"] }, undefined, undefined, context), /already completed/);
-  await restoredReview.execute("audit", { ...request, purpose: "repair-audit", focus: ["finding F1", "affected invariant"] }, undefined, undefined, context);
+  fs.writeFileSync(path.join(cwd, "candidate.txt"), "repaired candidate\n");
+  const repairedCandidate = candidateFingerprint(cwd);
+  const repairedRequest = { ...request, candidate: repairedCandidate, evidence: `verified ${repairedCandidate}` };
+  await restoredReview.execute("audit", { ...repairedRequest, purpose: "repair-audit", focus: ["finding F1", "affected invariant"] }, undefined, undefined, context);
   await new Promise(resolve => setImmediate(resolve));
-  await assert.rejects(restoredReview.execute("duplicate-audit", { ...request, purpose: "repair-audit", focus: ["finding F1"] }, undefined, undefined, context), /already completed/);
+  await assert.rejects(restoredReview.execute("duplicate-audit", { ...repairedRequest, purpose: "repair-audit", focus: ["finding F1"] }, undefined, undefined, context), /already completed/);
   assert.equal(calls, 2);
   const state = manager.getBranch().filter(entry => entry.type === "custom" && entry.customType === "dev-goal").at(-1);
-  const reviews = state?.type === "custom" ? (state.data as { reviews: { broad: { status: string }; repairAudit: { status: string } } }).reviews : undefined;
-  assert.equal(reviews?.broad.status, "completed"); assert.equal(reviews?.repairAudit.status, "completed");
+  const reviews = state?.type === "custom" ? (state.data as { reviews: { broad: { status: string; dispositions: Record<string, { status: string }> }; repairAudit: { status: string } } }).reviews : undefined;
+  assert.equal(reviews?.broad.status, "completed"); assert.equal(reviews?.broad.dispositions["F1"]?.status, "resolved"); assert.equal(reviews?.repairAudit.status, "completed");
+  const forkManager = SessionManager.inMemory(cwd);
+  if (state?.type !== "custom") assert.fail("Missing durable ship effort");
+  forkManager.appendCustomEntry("dev-goal", state.data);
+  const forkContext = { cwd, hasUI: false, sessionManager: forkManager, ui: { notify: noop, setWidget: noop } } as never;
+  const forkTools: RegisteredTool[] = [], forkCommands = new Map<string, Omit<RegisteredCommand, "name" | "sourceInfo">>();
+  const forkHandlers = new Map<string, Array<(event: unknown, context: unknown) => Promise<unknown> | unknown>>();
+  load({
+    registerCommand: (name, command) => { forkCommands.set(name, command); },
+    registerShortcut: noop as ExtensionAPI["registerShortcut"],
+    registerTool: tool => { forkTools.push(tool as RegisteredTool); },
+    on: (name, handler) => { const list = forkHandlers.get(name) ?? []; list.push(handler as (event: unknown, context: unknown) => unknown); forkHandlers.set(name, list); return noop; },
+    sendMessage: noop as ExtensionAPI["sendMessage"], sendUserMessage: noop as ExtensionAPI["sendUserMessage"],
+    appendEntry: (name, data) => forkManager.appendCustomEntry(name, data),
+    getActiveTools: () => ["read"], setActiveTools: noop as ExtensionAPI["setActiveTools"],
+  }, { hub: new WorkerHub(), createWorkerRunner: (() => run) as never,
+    registerWorkerHubUI: (() => ({ setContext: noop, dispose: noop })) as never });
+  for (const handler of forkHandlers.get("session_start") ?? []) await handler({}, forkContext);
+  const forkState = forkManager.getBranch().filter(entry => entry.type === "custom" && entry.customType === "dev-goal").at(-1);
+  assert.equal(forkState?.type === "custom" && (forkState.data as { id: string }).id, (state.data as { id: string }).id);
+  await forkCommands.get("dev-goal")!.handler("resume", forkContext);
+  await assert.rejects(forkTools.find(tool => tool.name === "review")!.execute("fork-duplicate", { ...repairedRequest, purpose: "broad", focus: ["whole outcome"] }, undefined, undefined, forkContext), /already completed/);
 });
 
 test("session change cancels active evidence work without vetoing or transferring ownership", async () => {

@@ -5,9 +5,11 @@ import os from "node:os";
 import path from "node:path";
 import { ModelRuntime, createAgentSession, type AgentSession } from "@earendil-works/pi-coding-agent";
 import { createAssistantMessageEventStream, type AssistantMessage } from "@earendil-works/pi-ai";
-import { asyncExploreTool, asyncReviewTool, createWorkerRunner, exploreTool, reviewTool, type AsyncWorkerCompletion, type RunWorker } from "../lib/worker.ts";
+import { Value } from "typebox/value";
+import { asyncExploreTool, asyncReviewTool, createWorkerRunner, exploreTool, reviewTool, type AsyncWorkerCompletion, type ReviewLaunchGate, type RunWorker } from "../lib/worker.ts";
 import { WorkerHub } from "../lib/worker-hub.ts";
 import { role } from "../lib/roles.ts";
+import { candidateFingerprint } from "../lib/verifier.ts";
 
 type StreamModel = Parameters<ModelRuntime['streamSimple']>[0];
 type StreamContext = Parameters<ModelRuntime['streamSimple']>[1];
@@ -83,12 +85,13 @@ test('Explorer submit_result ends the run without a redundant model turn', async
   assert.deepEqual(await f.run({cwd:f.cwd,name:'explorer',task:'find one fact',schema}),{answer:'found'});
   assert.equal(f.calls.length,1);
 });
-test('Reviewer is fresh, read-only, cannot ask directly, and may use bounded Explorer', async t=>{
+test('Reviewer is fresh, read-only, and cannot launch child workers', async t=>{
   const f=await fixture(t,(_n,_c,m)=>message(m,[{type:'text',text:'done'}]));
   await f.run({cwd:f.cwd,name:'review',task:'candidate',skill:'dev-review',tools:['bash','edit','ask_human']});
   const names=required(f.sessions[0],'session').getActiveToolNames();
   for(const name of ['bash','edit','write','ask_human','review','git']) assert.ok(!names.includes(name),name);
-  assert.ok(names.includes('explore'));
+  assert.ok(!names.includes('explore'));
+  assert.ok(!names.includes('verify'));
 });
 test('assessor role cannot be launched as an independent worker', async t=>{
   const f=await fixture(t,(_n,_c,m)=>message(m,[{type:'text',text:'done'}]));
@@ -96,18 +99,38 @@ test('assessor role cannot be launched as an independent worker', async t=>{
   assert.equal(f.sessions.length,0);
 });
 test('review transport rejects mismatched, incomplete, inconsistent, and oversized results', async()=>{
-  const base={purpose:'broad',verdict:'PASS',candidate:'abc',evidence:'proof for abc',focus:['identity'],
+  const candidate=`${'a'.repeat(40)}:${'b'.repeat(64)}`;
+  const base={purpose:'broad',verdict:'PASS',candidate,evidence:`proof for ${candidate}`,focus:['identity'],
     coverage:[{focus:'identity',status:'examined',evidence:'src/id.ts:1'}],summary:'ok',findings:[],blocker:null};
   const invoke=async (result: unknown) => {
     const run: RunWorker=async()=>result as never;
-    return reviewTool(run).execute('id',{purpose:'broad',task:'review',candidate:'abc',evidence:'proof for abc',focus:['identity']},undefined,undefined,{cwd:process.cwd()} as never);
+    return reviewTool(run).execute('id',{purpose:'broad',task:'review',candidate,evidence:`proof for ${candidate}`,focus:['identity']},undefined,undefined,{cwd:process.cwd()} as never);
   };
   await assert.rejects(invoke({...base,candidate:'other'}),/does not match/);
   await assert.rejects(invoke({...base,coverage:[]}),/account/);
   await assert.rejects(invoke({...base,coverage:[{focus:'identity',status:'unexamined',evidence:'budget exhausted'}]}),/inconsistent/);
-  await assert.rejects(invoke({...base,findings:[{key:'x'}]}),/inconsistent/);
+  await assert.rejects(invoke({...base,findings:[{key:'x'}]}),/correspond/);
+  const finding={key:'F1',focus:'identity',title:'Broken identity',problem:'Identity drifts',repair_direction:'Pin snapshot',evidence:['src/id.ts:1'],acceptance_checks:['Reject drift before launch']};
+  await assert.rejects(invoke({...base,verdict:'REPAIRS',findings:[finding]}),/correspond/);
+  await assert.rejects(invoke({...base,verdict:'REPAIRS',coverage:[{focus:'identity',status:'finding',evidence:'src/id.ts:1'}],findings:[finding,finding]}),/unique keys/);
+  const found=await invoke({...base,verdict:'REPAIRS',coverage:[{focus:'identity',status:'finding',evidence:'src/id.ts:1'}],findings:[finding]});
+  assert.equal(required(found.content[0],'finding content').type,'text');
+  const blocked=await invoke({...base,verdict:'BLOCKED',blocker:'Human decision needed',coverage:[{focus:'identity',status:'finding',evidence:'src/id.ts:1'}],findings:[finding]});
+  assert.equal(required(blocked.content[0],'blocked content').type,'text');
   await assert.rejects(invoke({...base,summary:'x'.repeat(13000)}),/transport limit/);
   const ok=await invoke(base as never); assert.equal(required(ok.content[0],'content').type,'text');
+});
+test('review schema requires concrete findings, repair directions and acceptance checks', async()=>{
+  let schema:Parameters<RunWorker>[0]['schema'];
+  const run:RunWorker=async args=>{schema=args.schema;return {} as never;};
+  const candidate=`${'a'.repeat(40)}:${'b'.repeat(64)}`;
+  await assert.rejects(reviewTool(run).execute('id',{purpose:'broad',task:'inspect',candidate,evidence:`proof ${candidate}`,focus:['identity']},undefined,undefined,{cwd:process.cwd()} as never),/does not match/);
+  assert.ok(schema);
+  const result={purpose:'broad',verdict:'REPAIRS',candidate,evidence:`proof ${candidate}`,focus:['identity'],coverage:[{focus:'identity',status:'finding',evidence:'src/id.ts:1'}],summary:'identity drift',blocker:null,
+    findings:[{key:'F1',focus:'identity',title:'Identity drift',problem:'Wrong candidate',repair_direction:'Pin snapshot',evidence:['src/id.ts:1'],acceptance_checks:['Drift rejected']}]};
+  assert.ok(Value.Check(schema,result));
+  assert.equal(Value.Check(schema,{...result,findings:[{...result.findings[0],repair_direction:undefined}]}),false);
+  assert.equal(Value.Check(schema,{...result,findings:[{...result.findings[0],acceptance_checks:[]}]}),false);
 });
 test('Explorer can investigate but has no Verifier, edit or recursive delegation' , async t=>{
   const f=await fixture(t,(_n,_c,m)=>message(m,[{type:'text',text:'Conclusion: found it'}]));
@@ -116,13 +139,13 @@ test('Explorer can investigate but has no Verifier, edit or recursive delegation
   for(const name of ['verify','explore','subagent','edit','write','lsp_fix','install','git']) assert.ok(!names.includes(name),name);
   for(const name of ['bash','web_search','source_check','fetch_content','get_search_content']) assert.ok(names.includes(name),name);
 });
-test('every non-Explorer worker role receives the bounded Explorer primitive', async t=>{
+test('non-review writing workers receive Explorer and Verifier, but Reviewer cannot delegate', async t=>{
   const f=await fixture(t,(_n,_c,m)=>message(m,[{type:'text',text:'done'}]));
   const roles=['spec','build','review','ship'] as const;
   for(const name of roles) await f.run({cwd:f.cwd,name,task:`${name} task`});
   assert.equal(f.sessions.length,roles.length);
   for(const session of f.sessions) {
-    assert.ok(session.getActiveToolNames().includes('explore'));
+    assert.equal(session.getActiveToolNames().includes('explore'), session !== f.sessions[2]);
     assert.equal(session.getActiveToolNames().includes('verify'), session !== f.sessions[2]);
     for(const name of ['web_search','source_check','fetch_content','get_search_content']) assert.ok(!session.getActiveToolNames().includes(name),name);
   }
@@ -166,10 +189,32 @@ test('Main Reviewer failure is delivered asynchronously instead of rejecting its
   let reject!: (error: Error) => void;const completions: AsyncWorkerCompletion[]=[];
   const run = (() => new Promise((_resolve, decline)=>{reject=decline;})) as unknown as RunWorker;
   const tool=asyncReviewTool(run,completion=>{completions.push(completion);});
-  const receipt=await tool.execute('review',{purpose:'broad',task:'gate',candidate:'abc',evidence:'proof for abc',focus:['identity']},undefined,undefined,{cwd:process.cwd()} as never);
+  const candidate=`${'a'.repeat(40)}:${'b'.repeat(64)}`;
+  const receipt=await tool.execute('review',{purpose:'broad',task:'gate',candidate,evidence:`proof for ${candidate}`,focus:['identity']},undefined,undefined,{cwd:process.cwd()} as never);
   assert.match(firstText(receipt) || '',/^reviewer:[0-9a-f-]+$/);
   reject(new Error('review transport failed'));await new Promise(resolve=>setImmediate(resolve));
   assert.equal(completions.length,1);assert.equal(required(completions[0],'completion').status,'failed');assert.match(required(completions[0],'completion').result,/transport failed/);
+});
+test('review preflight releases an unstarted slot, but a started failure consumes it', async()=>{
+  const candidate=candidateFingerprint(process.cwd());
+  const request={purpose:'broad' as const,task:'inspect',candidate,evidence:`proof for ${candidate}`,focus:['safety']};
+  let attempts=0, started=0, released=0, failed=0, completed=0;
+  const gate:ReviewLaunchGate={
+    reserve:()=>{attempts++;if(started)throw new Error('slot consumed');return {effort:'ship',purpose:'broad',id:String(attempts)};},
+    started:()=>{started++;}, completed:(_r,status)=>{if(status==='failed')failed++;else completed++;}, release:()=>{released++;},
+  };
+  const messages:AsyncWorkerCompletion[]=[];
+  let run:RunWorker=async()=>{throw new Error('snapshot mismatch');};
+  const tool=asyncReviewTool((args=>run(args)) as RunWorker,message=>{messages.push(message);},undefined,undefined,undefined,undefined,gate);
+  await tool.execute('first',request,undefined,undefined,{cwd:process.cwd()} as never);
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(released,1);assert.equal(started,0);assert.equal(messages.at(-1)?.status,'failed');
+  run=async args=>{args.onStarted?.('worker');throw new Error('model timeout');};
+  await tool.execute('second',request,undefined,undefined,{cwd:process.cwd()} as never);
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(started,1);assert.equal(failed,1);assert.equal(completed,0);assert.equal(released,1);
+  await assert.rejects(tool.execute('third',request,undefined,undefined,{cwd:process.cwd()} as never),/slot consumed/);
+  assert.equal(attempts,3);assert.equal(messages.length,2);
 });
 test('authentication failure occurs before session creation and never changes models', async t=>{
   const f=await fixture(t,()=>assert.fail('should not call model'));
