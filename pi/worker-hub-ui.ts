@@ -214,7 +214,8 @@ export class AgentHubView {
   }
   private open() {
     if (!this.current() || !this.rows().some(r => r.id === this.state.selectedId)) return;
-    this.state.mode = "thread"; this.panel = undefined; this.transcript(); this.composer(this.state.selectedId!);
+    this.state.mode = "thread"; this.panel = undefined; this.transcript();
+    if (!this.current()?.metadata["verifier"]) this.composer(this.state.selectedId!);
     this.displayedQuestions.set(this.state.selectedId!, this.question()?.id ?? null);
     this.setEditorFocus(); this.repaint();
   }
@@ -227,7 +228,7 @@ export class AgentHubView {
   }
   private stopAction() {
     const r = this.current(); if (!isActive(r)) return;
-    const scope = r.metadata["parentId"] ? "Only this investigation stops. Its parent may continue." : "Only this agent and its children stop.";
+    const scope = r.metadata["verifier"] ? "Only this verification run stops; its current command is terminated." : r.metadata["parentId"] ? "Only this investigation stops. Its parent may continue." : "Only this agent and its children stop.";
     this.confirmLabel = "Stop";
     this.confirm = { title: `Stop ${r.label}? ${scope} Already completed edits/commands are not undone.`, run: () => this.hub.abort(r.id) };
     this.menuReady = false; this.menuIndex = 0; this.panel = "confirm"; this.setEditorFocus(); this.repaint();
@@ -236,9 +237,9 @@ export class AgentHubView {
     const r = this.current(), id = r?.id;
     this.menu = [];
     if (id && this.hub.canSend(id)) this.menu.push({ title: "Queue this draft after the agent's current work", run: () => this.send(id, "followUp") });
-    if (id) this.menu.push({ title: "Inspect delivery receipts and recover a selected message", run: () => this.deliveryPanel(id) });
+    if (id && !r?.metadata["verifier"]) this.menu.push({ title: "Inspect delivery receipts and recover a selected message", run: () => this.deliveryPanel(id) });
     if (r?.actions?.cancelQueued && r.deliveries.some(d => d.status === "queued")) { const workerId = r.id; this.menu.push({ title: "Cancel ALL still-queued messages to this agent…", run: () => this.cancelQueueAction(workerId) }); }
-    if (r?.closed && r.file && this.hub.onRelated) { const workerId = r.id; this.menu.push({ title: "Investigate this draft in a NEW read-only thread", run: async () => {
+    if (r?.closed && r.file && this.hub.onRelated && !r.metadata["verifier"]) { const workerId = r.id; this.menu.push({ title: "Investigate this draft in a NEW read-only thread", run: async () => {
       const c = this.composer(workerId), text = c.editor.getExpandedText();
       if (!text.trim()) { this.notice("Write a follow-up question first. Original result remains unchanged.", workerId); return; }
       const version = c.version; const newId = await this.hub.related(workerId, text);
@@ -249,7 +250,7 @@ export class AgentHubView {
     if (id) {
       this.menu.push({ title: "Copy full available transcript", run: async () => { this.hub.load(id); const text = this.transcript()?.exportText(); if (text) await (this.options.copy ? this.options.copy(text) : copyToClipboard(text)); this.notice("Transcript copied.", id); } });
       this.menu.push({ title: "Expand / collapse tool output", run: () => { const v = this.viewport(); v.expanded = !v.expanded; this.transcript()?.setExpanded(!!v.expanded); } });
-      this.menu.push({ title: "Show / hide provider-supplied thinking", run: () => { const v = this.viewport(); v.hideThinking = !(v.hideThinking ?? true); this.transcript()?.setHideThinking(v.hideThinking); } });
+      if (!r?.metadata["verifier"]) this.menu.push({ title: "Show / hide provider-supplied thinking", run: () => { const v = this.viewport(); v.hideThinking = !(v.hideThinking ?? true); this.transcript()?.setHideThinking(v.hideThinking); } });
       if (isActive(r)) this.menu.push({ title: `Stop ${r.label}…`, run: () => this.stopAction() });
     }
     this.menu.push({ title: "Return to Main (agents keep running)", run: () => this.done() });
@@ -311,7 +312,7 @@ export class AgentHubView {
       this.repaint(); return;
     }
     if (matchesKey(data, "f2")) { this.actions(); return; }
-    if (matchesKey(data, "f7") && this.state.mode === "thread" && this.state.selectedId) { this.deliveryPanel(this.state.selectedId); return; }
+    if (matchesKey(data, "f7") && this.state.mode === "thread" && this.state.selectedId && !this.current()?.metadata["verifier"]) { this.deliveryPanel(this.state.selectedId); return; }
     if (matchesKey(data, "f3") || (this.state.mode === "roster" && data === "/")) {
       this.panel = "search"; this.search.setValue(this.state.mode === "roster" ? this.state.filter : ""); this.setEditorFocus(); this.repaint(); return;
     }
@@ -386,14 +387,22 @@ export class AgentHubView {
       ...(r.storageError ? [`History warning: ${safe(r.storageError)}`] : []),
       "TASK", safe(r.metadata["task"] || "No task supplied"), "", "CURRENT", safe(r.outcome || r.activity), "",
       contextText(r), statsText(r), cost, `VCC ${r.metadata["vcc"] ? "loaded" : "not reported"}`, parent ? `Parent: ${safe(parent.label)}` : "Parent: Main",
-      r.file ? `Saved: ${safe(r.file)}` : "History: memory-only session", r.closed ? "Read-only result. F2 starts a related investigation." : "Enter opens this agent. Your drafts stay with their recipient."];
+      r.file ? `Saved: ${safe(r.file)}` : "History: memory-only session",
+      ...(r.metadata["verifier"] ? [`Full log: ${safe(r.metadata["log"])}`, `Evidence: ${safe(r.metadata["record"])}`, "Read-only verification. F2 can stop a running check or copy its transcript."]
+        : [r.closed ? "Read-only result. F2 starts a related investigation." : "Enter opens this agent. Your drafts stay with their recipient."])];
     const lines = sections.flatMap(t => wrapTextWithAnsi(t, Math.max(1, width)));
     this.detailScroll = Math.min(this.detailScroll, Math.max(0, lines.length - height));
     return lines.slice(this.detailScroll, this.detailScroll + height);
   }
   private thread(width: number, height: number) {
     const r = this.current(); if (!r) return ["This thread is unavailable. Your draft was not retargeted. Esc returns to agents."];
-    this.canCompose = height >= 10 && width >= 30;
+    this.canCompose = height >= 10 && width >= 30 && !r.metadata["verifier"];
+    if (r.metadata["verifier"]) {
+      const window = this.transcript()?.window(this.viewport(), width, Math.max(0, height - 3));
+      return [this.theme.bold(`Verifier · ${stateText(r)} · ${safe(r.outcome || r.activity)}`),
+        this.theme.fg("muted", `${this.viewport().follow ? "Live" : "Reading history · F4 live"} · ${window ? `${window.start + 1}–${window.end}/${window.total}` : ""}`),
+        ...(window?.lines || []), this.theme.fg("muted", `Read-only · F2 copy / stop · Full log: ${safe(r.metadata["log"])}`)].slice(0, height);
+    }
     if (!this.canCompose) {
       this.setEditorFocus();
       const notice = `Input paused (resize to edit) · ${safe(r.label)} · ${stateText(r)}`;
@@ -501,7 +510,7 @@ export class AgentHubView {
     const r = this.current();
     const header = [this.theme.fg("accent", this.theme.bold(`Agent Hub · ${this.state.mode === "thread" ? safe(r?.label || "Unavailable thread") : safe(title)}`))];
     const hints = this.panel ? ["Esc back", "F1 help", ...(this.panel === "help" ? ["PgUp/Dn more"] : []), ...(this.panel === "actions" || this.panel === "confirm" ? ["↑↓/click choose", "Enter/double-click select"] : [])]
-      : this.state.mode === "thread" ? ["Esc back", "F1 help", `${sendKey()} send`, "Alt+↑↓ switch", "F2 actions", "F7 delivery", "PgUp/Dn history", "F4 live"]
+      : this.state.mode === "thread" ? r?.metadata["verifier"] ? ["Esc back", "F1 help", "Alt+↑↓ switch", "F2 copy / stop", "PgUp/Dn history", "F4 live"] : ["Esc back", "F1 help", `${sendKey()} send`, "Alt+↑↓ switch", "F2 actions", "F7 delivery", "PgUp/Dn history", "F4 live"]
       : ["Esc Main", "F1 help", "↑↓ choose", "Enter/double-click open", "F2 actions", "F3 find", "Tab details", ...(this.narrowDetails ? ["PgUp/Dn more"] : [])];
     const footer = height < 8 || width < 20
       ? hintLines(["Esc", "F1 help"], width).slice(0, Math.max(1, height - 1))

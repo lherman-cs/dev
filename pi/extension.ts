@@ -7,6 +7,7 @@ import type { WorkerHistory as WorkerHistoryStore } from "./lib/worker-history.t
 import type { PublicPhase } from "./lib/roles.ts";
 import { registerCompletionGuard } from "./lib/completion-guard.ts";
 import { createVerifierTool } from "./lib/verifier.ts";
+import { registerVerifier } from "./lib/verifier-hub.ts";
 
 export const explorerOnlyTools = new Set(["web_search", "source_check", "fetch_content", "get_search_content"]);
 type HubUI = ReturnType<typeof registerWorkerHubUI>;
@@ -61,7 +62,18 @@ export default function extension(pi: ExtensionAPI, dependencies: ExtensionDepen
   };
   const currentSession = (): string | undefined => ctx?.sessionManager.getSessionId();
   const verifier = createVerifierTool(publishWorkerCompletion, { ownerSessionId: currentSession,
-    ownerGoal: guard.workerOwner, started: guard.workerStarted });
+    ownerGoal: guard.workerOwner, started: guard.workerStarted,
+    observe: (runInfo, cancel) => {
+      try {
+        const observer = registerVerifier(hub, history, runInfo, ctx?.cwd ?? runInfo.cwd, cancel);
+        return {
+          command: command => { try { observer.command(command); } catch (error) { warn(error); } },
+          output: chunk => { try { observer.output(chunk); } catch (error) { warn(error); } },
+          finish: (status, outcome) => { try { observer.finish(status === "passed" ? "completed" : status === "cancelled" ? "aborted" : "failed", outcome); } catch (error) { warn(error); } },
+        };
+      } catch (error) { warn(error); return undefined; }
+    },
+  });
   pi.registerTool(verifier.tool);
   pi.registerTool(asyncExploreTool(run, publishWorkerCompletion, undefined, undefined, {}, currentSession,
     guard.workerOwner, guard.workerStarted));

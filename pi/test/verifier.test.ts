@@ -5,6 +5,11 @@ import os from "node:os";
 import path from "node:path";
 import test, { type TestContext } from "node:test";
 import { createVerifierTool, candidateFingerprint } from "../lib/verifier.ts";
+import { registerVerifier } from "../lib/verifier-hub.ts";
+import { WorkerHub } from "../lib/worker-hub.ts";
+import { WorkerHistory } from "../lib/worker-history.ts";
+import { SessionManager } from "@earendil-works/pi-coding-agent";
+import { screen, viewFixture } from "./helpers/hub.ts";
 import type { AsyncWorkerCompletion } from "../lib/worker.ts";
 
 function fixture(t: TestContext): string {
@@ -100,6 +105,59 @@ test("candidate drift invalidates an otherwise successful run", async t => {
   const evidence = unpack(await run.delivered);
   assert.equal(evidence.status, "candidate_drift");
   assert.match(evidence.detail ?? "", /changed/);
+});
+
+test("Verifier is visible live in Agent Hub, stoppable, and its full transcript survives restoration", async t => {
+  const cwd = fixture(t);
+  const sessions = fs.mkdtempSync(path.join(os.tmpdir(), "verify-sessions-"));
+  t.after(() => fs.rmSync(sessions, { recursive: true, force: true }));
+  const parent = SessionManager.create(cwd, sessions);
+  const history = new WorkerHistory(parent);
+  const hub = new WorkerHub({ history }); t.after(() => hub.dispose());
+  const { view, state } = viewFixture(t, { hub });
+  let deliver!: (completion: AsyncWorkerCompletion) => void;
+  const delivered = new Promise<AsyncWorkerCompletion>(resolve => { deliver = resolve; });
+  const { tool } = createVerifierTool(deliver, { observe(run, cancel) {
+    const observer = registerVerifier(hub, history, run, cwd, cancel);
+    return { ...observer, finish(status, outcome) { observer.finish(status === "cancelled" ? "aborted" : status === "passed" ? "completed" : "failed", outcome); } };
+  } });
+  const receipt = await tool.execute("call", { commands: ["node -e 'console.log(\"live output\"); setTimeout(() => console.log(\"done\"), 150)'" ] }, undefined, () => undefined, { cwd } as Parameters<typeof tool.execute>[4]);
+  const { id, log } = receipt.details as { id: string; log: string };
+  assert.equal(hub.get(id)?.role, "Verifier");
+  assert.equal(hub.get(id)?.metadata["log"], log);
+  await new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error("Verifier output did not arrive")), 2000);
+    const unsubscribe = hub.subscribe(() => { if (hub.get(id)?.messages?.some(message => JSON.stringify(message).includes("live output"))) { clearTimeout(timer); unsubscribe(); resolve(); } });
+  });
+  state.selectedId = id; state.mode = "thread";
+  assert.match(screen(view), /live output/);
+  assert.match(screen(view), /Read-only/);
+  assert.equal(hub.canSend(id), false);
+  const completion = await delivered;
+  assert.equal(completion.status, "completed");
+  assert.equal(hub.get(id)?.state, "completed");
+  assert.match(fs.readFileSync(log, "utf8"), /done/);
+  const restored = new WorkerHub({ history }); t.after(() => restored.dispose());
+  await history.restore(restored);
+  assert.equal(restored.get(id)?.state, "completed");
+  assert.match(JSON.stringify(restored.load(id).messages), /live output/);
+  assert.match(JSON.stringify(restored.load(id).messages), /done/);
+});
+
+test("Agent Hub stop cancels verifier and marks the result non-passing", async t => {
+  const cwd = fixture(t), hub = new WorkerHub(); t.after(() => hub.dispose());
+  let deliver!: (completion: AsyncWorkerCompletion) => void;
+  const delivered = new Promise<AsyncWorkerCompletion>(resolve => { deliver = resolve; });
+  const { tool } = createVerifierTool(deliver, { observe(run, cancel) {
+    const observer = registerVerifier(hub, undefined, run, cwd, cancel);
+    return { ...observer, finish(status, outcome) { observer.finish(status === "cancelled" ? "aborted" : "failed", outcome); } };
+  } });
+  const receipt = await tool.execute("call", { commands: ["exec sleep 5"] }, undefined, () => undefined, { cwd } as Parameters<typeof tool.execute>[4]);
+  const { id } = receipt.details as { id: string };
+  assert.equal(await hub.abort(id), true);
+  const completion = await delivered;
+  assert.equal(unpack(completion).status, "cancelled");
+  assert.equal(hub.get(id)?.state, "aborted");
 });
 
 test("cancellation terminates the run without publishing passing evidence", async t => {

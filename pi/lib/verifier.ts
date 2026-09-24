@@ -53,7 +53,7 @@ export function candidateFingerprint(cwd: string): string {
   return `${revision}:${hash.digest("hex")}`;
 }
 
-function executeCommand(command: string, cwd: string, timeoutMs: number, signal: AbortSignal, log: string): Promise<{ exit: number | null; durationMs: number; excerpt: string; reason?: "cancelled" | "timeout" | "interrupted" }> {
+function executeCommand(command: string, cwd: string, timeoutMs: number, signal: AbortSignal, log: string, onOutput?: (chunk: Buffer) => void): Promise<{ exit: number | null; durationMs: number; excerpt: string; reason?: "cancelled" | "timeout" | "interrupted" }> {
   return new Promise(resolve => {
     const started = performance.now();
     let tail = "", reason: "cancelled" | "timeout" | "interrupted" | undefined, settled = false;
@@ -62,6 +62,7 @@ function executeCommand(command: string, cwd: string, timeoutMs: number, signal:
     const collect = (stream: typeof child.stdout) => (chunk: Buffer) => {
       if (!output.destroyed && !output.write(chunk)) { stream.pause(); output.once("drain", () => stream.resume()); }
       tail = (tail + chunk.toString("utf8")).slice(-3000);
+      onOutput?.(chunk);
     };
     child.stdout.on("data", collect(child.stdout)); child.stderr.on("data", collect(child.stderr));
     const stop = (why: "cancelled" | "timeout" | "interrupted") => {
@@ -87,6 +88,9 @@ function executeCommand(command: string, cwd: string, timeoutMs: number, signal:
 export function createVerifierTool(publish: PublishAsyncWorkerCompletion, options: {
   ownerSessionId?: () => string | undefined; ownerGoal?: () => string; started?: (id: string, owner: string, timeoutMs: number) => void;
   track?: TrackAsyncWorkerCompletion; ownerCwd?: () => string | undefined;
+  observe?: (run: { id: string; cwd: string; commands: string[]; record: string; log: string }, cancel: () => void) => {
+    command(command: string): void; output(chunk: Buffer): void; finish(status: CheckStatus, outcome: string): void;
+  } | undefined;
 } = {}): { tool: ToolDefinition<typeof parameters>; cancelAll(): void } {
   const active = new Set<AbortController>();
   const tool: ToolDefinition<typeof parameters> = {
@@ -112,6 +116,7 @@ export function createVerifierTool(publish: PublishAsyncWorkerCompletion, option
       // Persist the receipt first: even an interrupted host leaves a non-passing pending record.
       fs.writeFileSync(log, "");
       fs.writeFileSync(record, JSON.stringify({ id, status: "interrupted", cwd, commands: args.commands, log, detail: "No completed evidence was delivered." }));
+      const observer = options.observe?.({ id, cwd, commands: args.commands, record, log }, () => controller.abort());
       options.started?.(id, ownerGoal, (args.timeoutMs ?? 600_000) * args.commands.length + 30_000);
       const work = new Promise<void>(resolve => setImmediate(resolve)).then(async (): Promise<CheckEvidence> => {
         const started = performance.now();
@@ -125,7 +130,8 @@ export function createVerifierTool(publish: PublishAsyncWorkerCompletion, option
           else for (const command of args.commands) {
             if (controller.signal.aborted) { evidence.status = "cancelled"; break; }
             fs.appendFileSync(log, `\n$ ${command}\n`);
-            const result = await executeCommand(command, cwd, args.timeoutMs ?? 600_000, controller.signal, log);
+            observer?.command(command);
+            const result = await executeCommand(command, cwd, args.timeoutMs ?? 600_000, controller.signal, log, chunk => observer?.output(chunk));
             evidence.results.push({ command, exit: result.exit, durationMs: result.durationMs, excerpt: result.excerpt });
             if (result.reason || result.exit !== 0) { evidence.status = result.reason ?? "failed"; break; }
           }
@@ -135,6 +141,7 @@ export function createVerifierTool(publish: PublishAsyncWorkerCompletion, option
         } catch (error) { evidence.status = controller.signal.aborted ? "cancelled" : "interrupted"; evidence.detail = error instanceof Error ? error.message : String(error); }
         evidence.durationMs = Math.round(performance.now() - started);
         fs.writeFileSync(record, JSON.stringify(evidence, null, 2));
+        observer?.finish(evidence.status, `${evidence.status}${evidence.detail ? `: ${evidence.detail}` : ""} · ${evidence.durationMs}ms · record: ${record} · log: ${log}`);
         return evidence;
       });
       const completion = work.then(async evidence => {

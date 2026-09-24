@@ -97,7 +97,8 @@ export class NativeTranscript {
       (block.component as ToolExecutionComponent).updateResult(displayValue({ ...message, isError: Boolean(message["isError"]) }) as never, false);
       block.raw += `\n${contentText(message.content)}`; block.dirty = true;
     } else if (message.role === "user") {
-      this.add(`message:${index}`, () => new UserMessageComponent(safeText(contentText(message.content))), contentText(message.content));
+      const raw = contentText(message.content);
+      this.add(`message:${index}`, () => this.record.metadata["verifier"] ? new Text(safeText(raw), 0, 0) : new UserMessageComponent(safeText(raw)), raw);
     } else if (message.role !== "system") {
       const raw = `${message.role}\n${contentText(messageContent(message)) || messageOutput(message)}`;
       this.add(`message:${index}`, () => new Text(safeText(raw), 1, 0), raw);
