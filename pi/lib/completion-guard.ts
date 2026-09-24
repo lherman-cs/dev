@@ -30,7 +30,8 @@ function branchTasks(ctx: ExtensionContext): { tasks: Task[]; nextId?: number } 
   return { tasks: [] };
 }
 export function registerCompletionGuard(pi: ExtensionAPI, _run?: unknown,
-  backendFactory: (ctx: ExtensionContext) => ClassifierBackend = assessorBackend) {
+  backendFactory: (ctx: ExtensionContext) => ClassifierBackend = assessorBackend,
+  reviewApproval?: (ctx: ExtensionContext) => Promise<boolean>) {
   let state: State | undefined, ctx: ExtensionContext | undefined, humanControlInput = false;
   let pending: { id: string; controller: AbortController } | undefined;
   const workerWaits = new Map<string, { owner: string; timer: ReturnType<typeof setTimeout> }>();
@@ -200,6 +201,7 @@ export function registerCompletionGuard(pi: ExtensionAPI, _run?: unknown,
     async execute(_id, args, _signal, _update, toolCtx) {
       if (!state || state.status !== "Active" || state.session !== toolCtx.sessionManager.getSessionId()) throw new Error("No active goal.");
       if (workerWaits.size) throw new Error("Wait for known asynchronous worker delivery before declaring finish.");
+      if (args.outcome === "complete" && state.skill === "review" && reviewApproval && !await reviewApproval(toolCtx)) throw new Error("Current-candidate approval in the review workspace is required before completing Review.");
       const outcome = args.outcome === "complete" ? "Completed" : "Blocked";
       state.outcome = `Reported ${args.outcome} by foreground`; invalidate();
       transition(outcome, `${state.outcome}: ${args.summary.slice(0, 150)}`, "foreground declaration");
@@ -212,6 +214,7 @@ export function registerCompletionGuard(pi: ExtensionAPI, _run?: unknown,
       const report = validateReport(args);
       if (!state || state.status !== "Active" || state.session !== toolCtx.sessionManager.getSessionId()) throw new Error("No active goal.");
       if (workerWaits.size) throw new Error("Wait for known asynchronous worker delivery before reporting a stopping point.");
+      if (state.skill === "review" && reviewApproval) throw new Error("Review completion uses finish and requires current-candidate workspace approval.");
       const backend = backendFactory(toolCtx);
       // Fit failures known before inference are foreground errors, not classification attempts.
       await backend.checkFit(report);
@@ -263,5 +266,5 @@ export function registerCompletionGuard(pi: ExtensionAPI, _run?: unknown,
     pause("Settled without a valid stopping report or explicit disposition; resume and report the same facts");
   });
   const shutdown = () => { if (state && (state.status === "Active" || state.status === "Classifying")) pause("Extension shutdown interrupted execution"); ctx?.ui.setWidget("dev-goal", undefined); };
-  return { activate, pause, cancel: pause, resume, abandon, show, shutdown, currentSkill, workerOwner, workerStarted, workerFinished, workerDeliveryFailed };
+  return { activate, pause, cancel: pause, resume, abandon, show, shutdown, currentSkill, isActive: () => state?.status === "Active", workerOwner, workerStarted, workerFinished, workerDeliveryFailed };
 }

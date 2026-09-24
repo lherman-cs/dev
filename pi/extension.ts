@@ -9,6 +9,7 @@ import { registerCompletionGuard } from "./lib/completion-guard.ts";
 import { createVerifierTool } from "./lib/verifier.ts";
 import { registerVerifier } from "./lib/verifier-hub.ts";
 import { packageReviewedCandidate } from "./lib/ship.ts";
+import { registerReviewWorkspace } from "./lib/review-controller.ts";
 
 export const explorerOnlyTools = new Set(["web_search", "source_check", "fetch_content", "get_search_content"]);
 type HubUI = ReturnType<typeof registerWorkerHubUI>;
@@ -40,7 +41,15 @@ export default function extension(pi: ExtensionAPI, dependencies: ExtensionDepen
   const run: WorkerRunner = (dependencies.createWorkerRunner || createWorkerRunner)({ hub, getHistory: () => history, ownerCwd: () => ctx?.cwd, askHuman });
   hub.onRelated = (record, text) => run.related(record, text);
   const hubUI: HubUI = (dependencies.registerWorkerHubUI || registerWorkerHubUI)(pi, hub);
-  const guard = registerCompletionGuard(pi, run);
+  let review: ReturnType<typeof registerReviewWorkspace>;
+  const guard = registerCompletionGuard(pi, run, undefined, async next => {
+    await review.setContext(next);
+    const store = review.getStore();
+    if (!store?.state.approval || !store.state.current) return false;
+    const check = await store.check();
+    return check.current && store.state.approval.version === store.state.current.version && store.state.approval.fingerprint === check.candidate.fingerprint;
+  });
+  review = registerReviewWorkspace(pi, () => guard.currentSkill() === "review" && guard.isActive() && phase === "review");
 
   pi.on("session_start", async (_event, nextCtx) => {
     ctx = nextCtx;
@@ -105,6 +114,7 @@ export default function extension(pi: ExtensionAPI, dependencies: ExtensionDepen
       if (!await guard.activate(request, next, nextCtx)) return { action: "handled" }; // Do not execute an unauthorized replacement.
     }
     setPhase(next);
+    if (next === "review" && nextCtx?.mode === "tui") setImmediate(() => { void review.show(nextCtx).catch(warn); });
     return { action: "continue" };
   });
 
@@ -128,6 +138,7 @@ export default function extension(pi: ExtensionAPI, dependencies: ExtensionDepen
       setPhase(commandPhase);
       hubUI.setContext(nextCtx);
       pi.sendUserMessage(`/skill:dev-${commandPhase}${args ? ` ${args}` : ""}`, { expandPromptTemplates: true });
+      if (commandPhase === "review" && nextCtx.mode === "tui") setImmediate(() => { void review.show(nextCtx).catch(warn); });
     },
   });
   pi.registerCommand("dev-goal", {

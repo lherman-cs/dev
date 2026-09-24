@@ -43,8 +43,11 @@ test("four current-session aliases and supporting tools register without work", 
     getActiveTools: () => ["read"],
     setActiveTools: () => undefined,
   });
-  assert.deepEqual([...commands.keys()].sort(), ["dev-build", "dev-goal", "dev-review", "dev-ship", "dev-spec"]);
+  assert.deepEqual([...commands.keys()].sort(), ["dev-build", "dev-goal", "dev-review", "dev-review-view", "dev-ship", "dev-spec"]);
   assert.ok(shortcuts.has("alt+a"));
+  assert.ok(shortcuts.has("alt+r"));
+  assert.ok(tools.some(tool => tool.name === "review_publish"));
+  assert.ok(tools.some(tool => tool.name === "review_reply"));
   assert.ok(tools.some(tool => tool.name === "verify"));
   assert.ok(tools.some(tool => tool.name === "explore"));
   assert.ok(!tools.some(tool => tool.name === "review"), "review is a foreground phase, not a child tool");

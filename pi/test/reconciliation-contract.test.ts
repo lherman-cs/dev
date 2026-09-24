@@ -45,6 +45,8 @@ test("dev-review owns technical convergence and CTO understanding", () => {
     /materially change approved behavior, architecture, scope, or accepted risk/,
     /findings as working engineering evidence, not PASS\/FAIL judgments/,
     /clean, fully committed reviewed candidate/,
+    /dedicated terminal review workspace/,
+    /explicit current-candidate approval/,
     /Do not rewrite history/,
   ]) assert.match(review, requirement);
   assert.doesNotMatch(review, /Reviewer PASS|single broad `review`|repair audit/);
@@ -80,5 +82,6 @@ test("documentation exposes the four phase boundary", () => {
 test("user-wide input preference has one owner", () => {
   const user = text("AGENTS.md");
   assert.match(user, /Use `ask_user_question` whenever requesting human input/);
+  assert.match(user, /except inside the dedicated dev-review terminal workspace/);
   for (const name of ["dev-spec", "dev-build", "dev-review", "dev-ship", "dev-explore"]) assert.doesNotMatch(skill(name), /`ask_user_question`/);
 });
