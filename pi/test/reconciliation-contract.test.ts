@@ -40,6 +40,10 @@ test("three stage contracts keep approval, local review, and history ownership d
   for (const requirement of [
     /short map of resulting behavior/, /one meaningful topic at a time/, /concrete scenario/,
     /recommend a direction, then pause for the human's questions/, /skip settled or routine details/,
+    /`ask_user_question` for every interaction that solicits human input/,
+    /including walkthrough pauses, consequential decisions, permission for a second reviewer, and final convergence/,
+    /recommended option first and label it `\(Recommended\)`/,
+    /Never ask for input only in prose or treat silence as agreement/,
     /Fix clear in-scope defects directly/, /Discuss consequential changes .* before implementing them/,
     /one independent read-only `review` on the stable agreed candidate/,
     /reopen only the relevant human discussion/, /Do not automatically launch another reviewer/,
@@ -59,6 +63,7 @@ test("ship documentation describes human-first walkthrough and one stable review
   const workflow = readFileSync(fileURLToPath(new URL("../../WORKFLOW.md", import.meta.url)), "utf8");
   const readme = readFileSync(fileURLToPath(new URL("../../README.md", import.meta.url)), "utf8");
   assert.match(workflow, /one concrete topic at a time/);
+  assert.match(workflow, /Every request for human input uses `ask_user_question` with a recommended choice/);
   assert.match(workflow, /invoke it once after the human walkthrough and known repairs settle/);
   assert.match(workflow, /without an automatic second review/);
   assert.match(workflow, /obtaining human permission/);
