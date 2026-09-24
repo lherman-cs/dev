@@ -50,7 +50,7 @@ function sourceState(cwd: string): { root: string; baseline: string; candidate: 
   return { root, baseline, candidate, candidateTree: tree(root, candidate), sourceBranch };
 }
 
-function isolatedWorkspace(sourceRoot: string, baseline: string, candidate: string): { dir: string; baselineCommit: string; dispose(): void } {
+function isolatedWorkspace(sourceRoot: string, baseline: string, candidate: string, candidateTree: string): { dir: string; baselineCommit: string; dispose(): void } {
   const parent = fs.mkdtempSync(path.join(os.tmpdir(), "dev-ship-model-"));
   const dir = path.join(parent, "repo");
   fs.mkdirSync(dir);
@@ -62,6 +62,10 @@ function isolatedWorkspace(sourceRoot: string, baseline: string, candidate: stri
   git(dir, ["commit", "-qm", "baseline"]);
   const baselineCommit = git(dir, ["rev-parse", "HEAD"]);
   replaceTree(dir, sourceRoot, candidate);
+  git(dir, ["add", "-A"]);
+  const preparedTree = git(dir, ["write-tree"]);
+  if (preparedTree !== candidateTree) throw new Error("Isolated candidate materialization does not exactly match the reviewed tree.");
+  git(dir, ["reset", "-q", baselineCommit]);
   return { dir, baselineCommit, dispose: () => fs.rmSync(parent, { recursive: true, force: true }) };
 }
 
@@ -122,7 +126,7 @@ export async function packageReviewedCandidate(options: { cwd: string; name?: st
   const source = sourceState(options.cwd);
   const suffix = safeName(options.name || source.sourceBranch);
   const branch = `ship/${suffix}`;
-  const isolated = isolatedWorkspace(source.root, source.baseline, source.candidate);
+  const isolated = isolatedWorkspace(source.root, source.baseline, source.candidate, source.candidateTree);
   try {
     const beforeTree = tree(source.root, source.candidate);
     if (beforeTree !== source.candidateTree) throw new Error("Reviewed candidate changed before shipping started.");
@@ -139,7 +143,8 @@ export async function packageReviewedCandidate(options: { cwd: string; name?: st
 
     if (git(isolated.dir, ["status", "--porcelain", "--untracked-files=all"])) throw new Error("Shipping model left uncommitted candidate content.");
     if (tree(isolated.dir) !== source.candidateTree) throw new Error("Shipping model changed candidate content; no shipping branch was created.");
-    if (tree(source.root, source.candidate) !== source.candidateTree) throw new Error("Reviewed candidate changed while shipping ran.");
+    if (git(source.root, ["rev-parse", "HEAD"]) !== source.candidate || git(source.root, ["branch", "--show-current"]) !== source.sourceBranch ||
+      git(source.root, ["status", "--porcelain", "--untracked-files=all"])) throw new Error("Source development worktree changed while shipping ran.");
 
     const final = applyIsolatedHistory(source.root, isolated.dir, isolated.baselineCommit, source.baseline, branch);
     try {
@@ -147,6 +152,8 @@ export async function packageReviewedCandidate(options: { cwd: string; name?: st
       const diff = git(source.root, ["diff", "--exit-code", source.candidate, final.head]);
       if (finalTree !== source.candidateTree || diff) throw new Error("Final shipping branch is not tree-equivalent to the reviewed candidate.");
       if (git(final.worktree, ["status", "--porcelain", "--untracked-files=all"])) throw new Error("Final shipping worktree is not clean.");
+      if (git(source.root, ["rev-parse", "HEAD"]) !== source.candidate || git(source.root, ["branch", "--show-current"]) !== source.sourceBranch ||
+        git(source.root, ["status", "--porcelain", "--untracked-files=all"])) throw new Error("Source development worktree changed during final packaging.");
       const parents = git(source.root, ["rev-list", "--parents", `${source.baseline}..${final.head}`]).split("\n").filter(Boolean);
       if (parents.some(line => line.trim().split(/\s+/).length !== 2)) throw new Error("Shipping history is not linear.");
       final.dispose();
