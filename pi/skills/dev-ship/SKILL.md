@@ -18,4 +18,4 @@ Transform representation only.
 - If exact equivalence cannot be established, stop and preserve both branches. If current `main` has moved beyond the baseline reviewed by dev-review, do not integrate it here; return the candidate to dev-review.
 - Leave the source branch untouched and the `ship/<name>` worktree clean. Do not fetch, push, deploy, open or mutate remote review state, or merge into another branch.
 
-**Endpoint:** A clean local `ship/<name>` branch, based on the exact integration baseline reviewed by dev-review, with a minimal linear commit history and mechanically verified tree equivalence to the reviewed candidate.
+**Endpoint:** A clean local `ship/<name>` branch, based on the exact integration baseline reviewed by dev-review, with a minimal linear commit history, mechanically verified tree equivalence to the reviewed candidate, and a branch that is fast-forwardable from the exact reviewed integration baseline.
