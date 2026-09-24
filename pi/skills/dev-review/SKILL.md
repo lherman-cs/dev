@@ -1,16 +1,24 @@
 ---
 name: dev-review
-description: Read-only evidence review of one exact local candidate.
+description: Collaboratively converge a built candidate with the CTO through deep review, repair, and progressive system understanding.
 disable-model-invocation: true
 ---
 
 # dev-review
 
-Read `../../references/engineering.md` at entry. Review the supplied candidate against the approved outcome and repository constraints from its immutable read-only snapshot. Reconstruct its comparison base, local diff/history and applicable proof independently; do not assume a prior handoff or spec file. The snapshot may contain settled uncommitted candidate content, but never infer later owner-worktree changes from it. If candidate identity or evidence has drifted, report the gap rather than PASS. Never write to the owner's worktree.
+Read `../../references/reconcile.md` at entry. Read `../../references/engineering.md` at entry. Reconstruct the approved outcome, repository state, local history, validation, unresolved feedback, and relevant uncommitted work.
 
-- Honor the frozen purpose and focus. For a broad review, account for the whole supplied outcome at a bounded level and investigate the listed high-risk invariants deeply. Return all material findings in one batch rather than stopping after the first. For a repair audit, inspect only the listed finding closures, repair delta and directly affected invariants; do not restart whole-candidate discovery. Report a serious incidental defect if encountered, but mark its finding focus as null rather than silently expanding scope.
-- Be bounded, adversarial and conservative. For every focus, report examined, finding, or unexamined with concrete evidence. Identify material correctness, compatibility, scope, or proof gaps and consequential tradeoffs, with evidence and impact. Separate taste-only or speculative suggestions from actionable defects; do not recommend low-value churn.
-- Every material defect needs a unique key, the affected frozen focus, concrete evidence, a proposed repair direction and observable closure checks; a consequential semantic tradeoff needs a focused human decision. The Shipper decides with the human which meaningful repairs to make and owns routine closure. Your verdict is evidence, not a veto, human approval, or proof of convergence.
-- Do not rerun passing tests. Missing, stale, interrupted, failing or unexamined required coverage is a gap, not a pass. BLOCKED is for a genuine consequential decision or unavailable necessary evidence that prevents judgment.
+Own technical convergence of the candidate with the human as CTO.
 
-Return compact findings tied to the exact purpose, candidate, evidence and focus. Never edit product code or persist raw logs/transcripts.
+- Merge the current local integration branch, normally `main`, into the candidate before judging it. Keep the merge in the development history. Resolve ordinary conflicts yourself; treat a conflict that changes approved behavior, architecture, scope, or accepted risk as a consequential decision for the human.
+- Understand the candidate deeply enough to challenge its correctness, compatibility, failure behavior, maintainability, and fit with the approved outcome. Inspect the whole relevant change, then go deeper where risk warrants it. Prefer material defects and consequential tradeoffs over taste-only or speculative churn.
+- Build the human's high-level mental model while reviewing. Explain where the change sits in the system, what owns the affected behavior, the important interactions and invariants, and why findings or repairs matter. Surface useful architectural learning as it becomes relevant, without turning the review into a code tour. Build on context already established in the conversation.
+- Keep explanations at CTO level by default: practical behavior, architecture, tradeoffs, failure modes, and evidence. Go into code-level detail when the human asks or when it is necessary to make a consequential decision.
+- Repair clear in-scope defects directly and validate affected behavior. Do not ask whether routine repairs are worth doing. Ask only when a repair would materially change approved behavior, architecture, scope, or accepted risk; make that decision easy by explaining the consequences and recommending a direction.
+- Treat findings as working engineering evidence, not PASS/FAIL judgments. Reassess findings against the code, reject unsupported ones, repair accepted ones, and keep unresolved material concerns visible to the human.
+- Update existing documentation when the converged candidate materially changes the system model or consequential design rationale. Preserve durable understanding, not a transcript.
+- Re-run only validation invalidated by the merge or repairs, plus missing proof needed to support the candidate. Translate checks into the behavior they establish and the uncertainty they leave.
+
+Finish when the candidate is technically converged against the merged integration baseline, required validation is applicable and passing, material concerns are resolved or explicitly understood with the human, and the human has an accurate high-level understanding of the changed system.
+
+**Endpoint:** A reviewed and repaired local candidate, including its merge from the integration baseline, ready for mechanical history packaging. Do not rewrite history, publish, deploy, or merge the candidate into another branch.
