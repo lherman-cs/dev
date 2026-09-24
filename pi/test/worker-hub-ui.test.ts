@@ -7,6 +7,24 @@ import type { WorkerRecord } from '../lib/worker-types.ts';
 function worker(hub: WorkerHub, id: string): WorkerRecord { const record = hub.get(id); assert.ok(record, `expected worker ${id}`); return record; }
 function composer(state: ReturnType<typeof viewFixture>['state'], id: string) { const value = state.composers.get(id); assert.ok(value, `expected composer ${id}`); return value; }
 
+test('agent and verifier activities show their own started_at in the roster and details after completion', t => {
+  const hub = new WorkerHub();
+  const agent = register(hub, session(), 'agent', { label: 'Explorer · agent' });
+  hub.register({ id: 'verify', label: 'Verify · tests', role: 'Verifier', model: 'command runner', thinking: '', session: session(), metadata: { verifier: true, task: 'Run tests' } });
+  const verifier = worker(hub, 'verify');
+  agent.startedAt = Date.parse('2025-02-03T04:05:06.000Z');
+  verifier.startedAt = Date.parse('2025-02-03T05:06:07.000Z');
+  const { view: v } = viewFixture(t, { hub });
+  assert.match(screen(v, 80), /started_at: 2025-02-03T04:05:06\.000Z/);
+  assert.match(screen(v, 80), /started_at: 2025-02-03T05:06:07\.000Z/);
+  assert.match(screen(v, 120), /started_at: 2025-02-03T04:05:06\.000Z/);
+  v.handleInput(keys.down);
+  assert.match(screen(v, 120), /started_at: 2025-02-03T05:06:07\.000Z/);
+  hub.unregister('agent'); hub.unregister('verify');
+  assert.match(screen(v, 80), /started_at: 2025-02-03T04:05:06\.000Z/);
+  assert.match(screen(v, 80), /started_at: 2025-02-03T05:06:07\.000Z/);
+});
+
 test('per-thread drafts cannot cross recipients when switching and submitting', async t => {
   const hub = new WorkerHub(), a = session(), b = session(); register(hub, a, 'a'); register(hub, b, 'b'); const { view: v } = viewFixture(t, { hub }); v.handleInput(keys.enter); v.handleInput('for A'); v.handleInput(keys.altDown); v.handleInput('for B'); v.handleInput(keys.enter); await tick();
   assert.deepEqual(a.calls, []); assert.deepEqual(b.calls, [['steer', 'for B']]); assert.equal(worker(hub, 'a').draft, 'for A'); assert.equal(worker(hub, 'b').draft, ''); v.handleInput(keys.altUp); v.handleInput(keys.enter); await tick(); assert.deepEqual(a.calls, [['steer', 'for A']]);

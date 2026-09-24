@@ -9,6 +9,7 @@ const fmt = (n: number | null | undefined) => n == null ? "—" : n >= 1e6 ? `${
 const pad = (text: string, width: number) => { const t = truncateToWidth(text, Math.max(1, width)); return t + " ".repeat(Math.max(0, width - visibleWidth(t))); };
 const stateText = (r: WorkerRecord): string => r.state === "completed" ? "Finished" : r.state === "working" ? "Running" : r.state;
 const duration = (r: WorkerRecord): string => { const s = Math.max(0, Math.floor(((r.endedAt ?? Date.now()) - r.startedAt) / 1000)); return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${s % 60}s`; };
+const startedAt = (r: WorkerRecord): string => `started_at: ${new Date(r.startedAt).toISOString()}`;
 type ContextUsage = { percent: number | null; tokens: number | null; contextWindow: number | null };
 const contextUsage = (record: WorkerRecord): ContextUsage | undefined => {
   const value = record.context; if (!value) return undefined;
@@ -371,7 +372,7 @@ export class AgentHubView {
       const lines = [
         `${chosen ? this.theme.fg("accent", "›") : " "} ${this.theme.fg(color(r), glyph(r))} ${safe(r.label)}${r.unread && r.closed ? " · new" : ""}${this.question(r.id) ? " · QUESTION" : r.state === "failed" ? " · ATTENTION" : ""}`,
         `    ${section(r)} · ${safe(r.role)} · ${safe(r.model)} ${safe(r.thinking)} · ${stateText(r)}`,
-        `    ${parent ? `↳ ${safe(parent.label)} · ` : ""}${safe(r.activity)}`,
+        `    ${startedAt(r)} · ${parent ? `↳ ${safe(parent.label)} · ` : ""}${safe(r.activity)}`,
       ].map(t => pad(t, width));
       entries.push(...(chosen ? lines.map(t => this.theme.bg("selectedBg", t)) : lines));
     }
@@ -383,7 +384,7 @@ export class AgentHubView {
     const parentId = typeof r.metadata["parentId"] === "string" ? r.metadata["parentId"] : undefined;
     const parent = this.hub.get(parentId);
     const cost = r.stats?.cost == null ? "Reported cost —" : `Reported cost $${r.stats.cost.toFixed(4)} (not subscription billing)`;
-    const sections = [this.theme.bold(safe(r.label)), `${stateText(r)} · ${duration(r)}`, "",
+    const sections = [this.theme.bold(safe(r.label)), `${stateText(r)} · ${duration(r)}`, startedAt(r), "",
       ...(r.storageError ? [`History warning: ${safe(r.storageError)}`] : []),
       "TASK", safe(r.metadata["task"] || "No task supplied"), "", "CURRENT", safe(r.outcome || r.activity), "",
       contextText(r), statsText(r), cost, `VCC ${r.metadata["vcc"] ? "loaded" : "not reported"}`, parent ? `Parent: ${safe(parent.label)}` : "Parent: Main",
