@@ -19,15 +19,18 @@ build = "openai/gpt-6-sol:high"
 # Signals: FrontierCode, DeepSWE, coding deception, warning circumvention.
 # Reason: Astra medium is worth the premium for cross-file reasoning, precision, and adherence-sensitive review.
 review = "openai/gpt-6-astra:medium"
+# review = "openai/gpt-6-luna:high"
 
 # Role: Classify a tiny typed stopping report, without checking the work or the goal.
 # Reason: Use one configured model for a restricted four-label intent decision.
-assessor = "openai/gpt-6-astra:low"
+# assessor = "openai/gpt-6-astra:low"
+assessor = "openai/gpt-6-luna:high"
 
 # Role: Collaborate on local candidate review, repair, validation, and history refinement.
 # Signals: AutomationBench, Agents' Last Exam, FrontierCode, OSWorld.
 # Reason: Sol medium provides solid agentic and engineering judgment for bounded shipping work without build-level spend.
 ship = "openai/gpt-6-sol:medium"
+# ship = "openai/gpt-6-luna:high"
 
 # Role: Gather narrow, verifiable evidence independently and asynchronously.
 # Signals: Factual error, DeepSWE, FrontierCode.
