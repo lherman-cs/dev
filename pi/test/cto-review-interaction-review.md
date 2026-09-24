@@ -1,0 +1,23 @@
+# Representative interaction review
+
+This is a decision-usefulness assessment of three illustrative exchanges against the updated `pi/skills/dev-ship/SKILL.md`, not a claim that a model produced these words. The observed baseline is the 2026-09-24 rtc-prod ship session cited in `spec.md`: it named mechanisms and a feedback-credit risk, then emphasized gate status; the independent review produced no usable assessment; the final question bundled acceptance of that gap with closure. The human cancelled, for an unknown reason. The examples below test what the contract asks the Shipper to make understandable, not just whether specific words appear in it.
+
+## Consequential change: RTP congestion feedback
+
+**Illustrative brief:** “Before, missing feedback could be interpreted as loss before the receiver had a chance to report newly received packets, driving the sender to reduce its rate unnecessarily. The candidate credits a received edge first and defers loss accounting so late feedback cannot double-count loss. This ordering favors avoiding false congestion reactions, but if feedback stops entirely, deferred loss must eventually be charged or the sender may remain too aggressive. The targeted late-feedback and loss-accounting cases exercise those transitions; the passing fast and slow gates support the tested scenarios, not behavior under every network pattern. I recommend local review of the candidate, with that untested feedback-outage behavior called out as the main remaining risk.”
+
+**Assessment:** A CTO can tell what users notice (fewer unnecessary rate reductions), why ordering matters, what would fail (undercounting real loss), and what the checks do not prove. “Received edge” alone, a p99 gate name, or “all tests pass” would not provide that judgment. The exact outage risk and evidence must be checked against the actual candidate before a real recommendation; this example is not evidence that rtc-prod implemented or verified that behavior.
+
+## Failed independent review after local checks pass
+
+**Illustrative update:** “The broad review started but produced no usable assessment, so nobody independently challenged the congestion-control ordering across the agreed scope. My inspection and targeted tests support the observed late-feedback accounting in their fixtures; they cannot replace an adversarial search for an interaction we did not anticipate. The review slot is consumed and I cannot retry it within this effort. Given the untested feedback-outage interaction, I recommend deferring local completion until you initiate a new ship effort for independent scrutiny. If you instead want to accept that specific missing assurance and finish locally now, that is a separate risk decision; it would not mean the tests established independent coverage.”
+
+**Assessment:** The gap has a concrete consequence and a reasoned default, rather than being treated as a failed gate that passing tests cancel out. The choice about exceptional risk is separate from the ordinary completion question. A different actual candidate could justify proceeding, but the agent would need to explain why inspection plus available evidence support that recommendation despite missing scrutiny. This example does not silently spend another review slot or treat a failure as PASS.
+
+## Routine successful review and local closure
+
+**Illustrative exchange:** After explaining the practical outcome, the Shipper reports that the broad review examined the agreed focus and its one concrete finding was repaired and revalidated with a targeted behavior check. No material gap remains. It then asks: “Are you satisfied with the resulting local review and do you authorize me to clean up the local commits? This does not authorize integration or deployment.” If the human cancels or does not answer, it does not rewrite history.
+
+**Assessment:** The human is asked for one useful decision at the existing convergence point, not to certify that an abstract process is exhausted or approve each routine repair. The question grants only local cleanup authority. The agent must still present actual candidate evidence, residual risks, and its recommendation before asking; the illustrative exchange does not stand in for those facts.
+
+These cases exercise the new semantic boundaries. Contract regression checks guard instruction ownership, the one-broad-plus-optional-audit budget, validation and candidate protection, and the local-only boundary. Static checks cannot establish that future live model conversations will consistently follow the examples; a real ship conversation remains the behavioral acceptance check.
