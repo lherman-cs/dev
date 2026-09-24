@@ -29,21 +29,23 @@ The Review endpoint is a technically converged candidate against the merged inte
 
 ## Ship contract
 
-Ship changes representation only.
+Ship is a guarded packaging operation, not a general-purpose foreground engineering phase.
 
-The reviewed candidate tree and reviewed integration baseline are immutable inputs. Ship creates an isolated local `ship/<name>` branch and rebuilds the reviewed change as the smallest useful set of coherent Conventional Commits. Development merge commits and incidental implementation history are not preserved.
+The source development candidate must already be clean, fully committed, and converged by Review. The runtime mechanically captures its exact tree and requires the current local `main` to equal the candidate's merge-base with `main`; if `main` advanced after Review, shipping stops and the candidate returns to Review.
 
-The model may decide only semantic commit grouping and commit-message wording. Candidate identity, changed-path accounting, Git operations, and final equivalence are mechanical concerns.
+Before any Ship model runs, the runtime creates a disposable standalone Git repository containing only the reviewed baseline and reviewed candidate content. It has no remotes and no source-worktree reference. The model is never given the source repository path or source branch. It receives read-only inspection tools plus one `ship_commit` primitive that can commit existing changed paths but cannot author file content.
 
-Before completion, Ship must establish:
+The model's only judgment is commit grouping and Conventional Commit wording. Prefer one commit unless separating changes materially improves coherence or independent shippability. It does not merge, repair, validate, explore, edit files, or make product decisions.
 
-- the source development branch was not rewritten or otherwise mutated;
-- the shipping branch is based on the exact integration baseline reviewed by Review;
-- the final shipping tree is identical to the reviewed candidate tree;
-- every base-to-candidate change is present exactly once and no unrelated change entered;
-- the worktree is clean, the shipping history is linear, and the branch is fast-forwardable from the exact reviewed integration baseline.
+After the isolated model workspace is clean, the runtime compares its final tree hash with the captured reviewed candidate tree. Only then does the host create a real local `ship/<name>` worktree from the exact reviewed `main` baseline and replay the isolated commits. The host then mechanically verifies:
 
-If exact equivalence cannot be established, Ship stops and preserves both branches. If the integration branch has moved beyond the baseline Review merged, the candidate returns to Review rather than being adapted by Ship.
+- the source development branch still points to the same reviewed candidate;
+- the final shipping tree exactly equals the reviewed candidate tree;
+- the base-to-candidate diff is identical;
+- every shipping commit has one parent, so history is linear;
+- the final worktree is clean.
+
+Any mismatch deletes the provisional shipping branch/worktree and leaves the source branch untouched. A successful run removes its temporary workspaces and leaves only the verified local `ship/<name>` branch.
 
 Ship does not fetch, push, deploy, open or mutate remote review state, or merge into another branch.
 
