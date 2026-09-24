@@ -34,7 +34,7 @@ fn load_roles(package: &Path) -> Result<Roles> {
 }
 
 fn phase_args(config: &Roles, phase: &str, prompt: &[String]) -> Result<Vec<String>> {
-    if !["spec", "build", "ship"].contains(&phase) {
+    if !["spec", "build", "review", "ship"].contains(&phase) {
         bail!("Unknown workflow phase: {phase}");
     }
     let selection = config
@@ -155,7 +155,7 @@ mod tests {
     }
     #[test]
     fn every_phase_is_interactive_until_invoked() {
-        for phase in ["spec", "build", "ship"] {
+        for phase in ["spec", "build", "review", "ship"] {
             let args = phase_args(&roles(), phase, &[]).unwrap();
             assert_eq!(args.len(), 6);
             assert_eq!(&args[..2], &["--provider", "openai-codex"]);
@@ -165,7 +165,6 @@ mod tests {
     fn supporting_roles_are_not_public_phases() {
         for phase in [
             "plan",
-            "review",
             "explorer",
             "assessor",
             "escalated_builder",
@@ -196,7 +195,7 @@ mod tests {
     #[test]
     fn public_model_and_effort_selections_are_preserved() {
         let config = roles();
-        for name in ["spec", "build", "ship"] {
+        for name in ["spec", "build", "review", "ship"] {
             let args = phase_args(&config, name, &[]).unwrap();
             assert_eq!(
                 format!("openai/{}:{}", args[3], args[5]),
