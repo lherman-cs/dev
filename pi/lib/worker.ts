@@ -29,11 +29,6 @@ const reviewParameters = Type.Object({
   focus: Type.Array(Type.String({ minLength: 1, maxLength: 500 }), { minItems: 1, maxItems: 20 }),
 }, { additionalProperties: false });
 const reviewResultSchema = Type.Object({
-  purpose: reviewPurpose,
-  verdict: Type.Union([Type.Literal("PASS"), Type.Literal("REPAIRS"), Type.Literal("BLOCKED")]),
-  candidate: Type.String({ minLength: 1, maxLength: 2000 }),
-  evidence: Type.String({ minLength: 1, maxLength: 12000 }),
-  focus: Type.Array(Type.String({ minLength: 1, maxLength: 500 }), { minItems: 1, maxItems: 20 }),
   coverage: Type.Array(Type.Object({
     focus: Type.String({ minLength: 1, maxLength: 500 }),
     status: Type.Union([Type.Literal("examined"), Type.Literal("finding"), Type.Literal("unexamined")]),
@@ -49,7 +44,7 @@ const reviewResultSchema = Type.Object({
     evidence: Type.Array(Type.String({ minLength: 1, maxLength: 1000 }), { minItems: 1, maxItems: 20 }),
     acceptance_checks: Type.Array(Type.String({ minLength: 1, maxLength: 1000 }), { minItems: 1, maxItems: 20 }),
   }, { additionalProperties: false }), { maxItems: 30 }),
-  blocker: Type.Union([Type.String({ minLength: 1, maxLength: 4000 }), Type.Null()]),
+  limitations: Type.Array(Type.String({ minLength: 1, maxLength: 2000 }), { maxItems: 20 }),
 }, { additionalProperties: false });
 export type ReviewRequest = Static<typeof reviewParameters>;
 export type ReviewResult = Static<typeof reviewResultSchema>;
@@ -280,7 +275,6 @@ export function createWorkerRunner(options: RunnerOptions): WorkerRunner {
       if (schema) customTools.push({ name: "submit_result", label: "Submit result", description: explorer ? "Submit the final result in the required schema and end this Explorer run." : "Submit the final result in the required schema.", parameters: schema,
         async execute(_id: string, args: Static<NonNullable<TShape>>) {
           if (hub.get(id)?.deliveries.some(d => ["sending", "queued"].includes(d.status))) throw new Error("Read the pending human instruction before submitting a new result.");
-          if (name === "review" && hub.get(id)?.deliveries.some(d => d.status === "delivered") && args["verdict"] === "pass") throw new Error("Human feedback requires a revised repairs or blocked result, never silent PASS.");
           value = args; valueEpoch = inputEpoch; return explorer ? terminalToolResult("Result recorded.") : toolResult("Result recorded.");
         } });
       const allowed = explorer
@@ -297,7 +291,7 @@ export function createWorkerRunner(options: RunnerOptions): WorkerRunner {
         actions: {
           async send(text, mode) {
             if (!accepting || !childSession.isStreaming || signal.aborted) throw new Error("Agent finished or is not accepting input. Your draft is preserved.");
-            // A new human instruction invalidates any prior structured verdict.
+            // A new human instruction invalidates any prior structured result.
             // Send the human text verbatim; approved-contract semantics live in
             // the assigned skill, not in a generic hub-wide prompt wrapper.
             // Native prompt with expansion disabled queues literal text (including
@@ -414,22 +408,17 @@ export function reviewTool(run: RunWorker, report: (text: string) => void = () =
     async execute(_id, args, signal, _onUpdate, ctx) {
       validateReviewRequest(args);
       const result = await run({ name: "review", cwd: ctx.cwd,
-        task: `Purpose: ${args.purpose}\nCandidate identity: ${args.candidate}\nEvidence identity: ${args.evidence}\nFrozen focus:\n${args.focus.map(item => `- ${item}`).join("\n")}\n\nTask:\n${args.task}`,
+        task: `Purpose: ${args.purpose}\nFrozen focus:\n${args.focus.map(item => `- ${item}`).join("\n")}\n\nApplicable evidence:\n${args.evidence}\n\nTask:\n${args.task}`,
         skill: "dev-review", schema: reviewResultSchema, tools: readers, ...(signal ? { signal } : {}), report, ...(onStarted ? { onStarted } : {}),
         metadata: { task: args.task, label: `Reviewer · ${args.purpose} · ${args.candidate}`, purpose: args.purpose,
           candidate: args.candidate, evidence: args.evidence, focus: args.focus },
       }) as ReviewResult;
-      if (result.purpose !== args.purpose || result.candidate !== args.candidate || result.evidence !== args.evidence
-        || JSON.stringify(result.focus) !== JSON.stringify(args.focus)) throw new Error("Reviewer result does not match the frozen purpose, candidate, evidence, and focus.");
       const covered = new Map(result.coverage.map(item => [item.focus, item]));
       if (covered.size !== result.coverage.length || args.focus.some(item => !covered.has(item)) || result.coverage.some(item => !args.focus.includes(item.focus))) throw new Error("Reviewer result does not account for every frozen focus exactly once.");
       const keys = new Set(result.findings.map(item => item.key));
-      if (keys.size !== result.findings.length || result.findings.some(item => item.focus === null ? args.purpose !== "repair-audit" : !covered.has(item.focus)) ||
+      if (keys.size !== result.findings.length || result.findings.some(item => item.focus !== null && !covered.has(item.focus)) ||
         result.coverage.some(item => (item.status === "finding") !== result.findings.some(finding => finding.focus === item.focus)))
-        throw new Error("Reviewer findings must have unique keys and correspond to finding coverage (except incidental repair-audit findings).");
-      if ((result.verdict === "PASS" && (result.findings.length || result.blocker !== null || result.coverage.some(item => item.status !== "examined")))
-        || (result.verdict === "REPAIRS" && (!result.findings.length || result.blocker !== null))
-        || (result.verdict === "BLOCKED" && result.blocker === null)) throw new Error("Reviewer result is inconsistent with its verdict.");
+        throw new Error("Reviewer findings must have unique keys and correspond to finding coverage; incidental findings use null focus.");
       const text = JSON.stringify(result);
       if (text.length > reviewResultChars) throw new Error("Reviewer result exceeds the transport limit.");
       return toolResult(text);
@@ -512,13 +501,13 @@ export function asyncReviewTool(run: RunWorker, publish: PublishAsyncWorkerCompl
   started?: (id: string, ownerGoal: string, timeoutMs?: number) => void, gate?: ReviewLaunchGate): ReturnType<typeof reviewTool> {
   const shape = reviewTool(run, report);
   return { ...shape,
-    description: "Start one bounded broad review or one bounded repair audit for the active shipping effort. Returns immediately; the verdict is delivered asynchronously.",
+    description: "Start one bounded broad review or one bounded repair audit for the active shipping effort. Returns immediately; findings and coverage are delivered asynchronously.",
     promptGuidelines: [
       ...(shape.promptGuidelines || []),
       "Use purpose broad once for whole-scope accounting with deep attention to the supplied risks. Batch findings and give each concrete closure checks.",
       "Use purpose repair-audit only once, after repairs, and freeze focus to accepted finding keys plus directly affected invariants. Never turn it into another full review.",
-      "Continue independent work while review runs. Its verdict will arrive automatically and trigger progress.",
-      "If the verdict gates the next decision, stop after exhausting independent work. Do not poll or launch a duplicate review.",
+      "Continue independent work while review runs. Its findings and coverage will arrive automatically and trigger progress.",
+      "If review evidence gates the next decision, stop after exhausting independent work. Do not poll or launch a duplicate review.",
     ],
     async execute(callId, args, _signal, onUpdate, ctx) {
       validateReviewRequest(args, gate ? ctx.cwd : undefined);
