@@ -116,7 +116,7 @@ export default function extension(pi: ExtensionAPI, dependencies: ExtensionDepen
         if (guard.currentSkill()) { nextCtx.ui.notify("Finish or abandon the active goal before dev-ship.", "warning"); return; }
         hubUI.setContext(nextCtx);
         try {
-          const result = await (dependencies.packageReviewedCandidate || packageReviewedCandidate)({ cwd: nextCtx.cwd, name: args.trim() || undefined, run });
+          const result = await (dependencies.packageReviewedCandidate || packageReviewedCandidate)({ cwd: nextCtx.cwd, run, ...(args.trim() ? { name: args.trim() } : {}) });
           pi.sendMessage({ customType: "dev-ship-result", content: result, display: true }, { triggerTurn: false });
         } catch (error) {
           nextCtx.ui.notify(`dev-ship: ${error instanceof Error ? error.message : String(error)}`, "warning");
