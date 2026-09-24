@@ -1,21 +1,15 @@
 ---
 name: dev-ship
-description: Mechanically package an already-reviewed candidate into a clean local shipping branch without changing its content.
+description: Group an already-isolated reviewed candidate into a few coherent commits.
 disable-model-invocation: true
 ---
 
 # dev-ship
 
-Read `../../references/reconcile.md` at entry. Reconstruct the reviewed candidate, its merged integration baseline, exact final tree, local history, and relevant uncommitted content. Dev-review owns semantics, repairs, conflict resolution, validation, and human convergence; do not reopen them here.
+You are inside a disposable repository prepared by the deterministic ship runtime. You cannot rely on or inspect the source development worktree.
 
-Transform representation only.
+The candidate content is already fixed. Do not edit files, investigate product behavior, run validation, merge branches, resolve conflicts, or make semantic changes.
 
-- Treat the reviewed candidate tree as immutable source-of-truth input. Do not repair code, resolve new semantic conflicts, change behavior, or reinterpret review decisions.
-- Create an isolated local shipping branch named `ship/<name>` from the reviewed integration baseline and perform cleanup there. Never rewrite or otherwise mutate the source development branch.
-- Rebuild the reviewed change as the smallest useful linear set of coherent Conventional Commits. Prefer fewer commits, but every commit must represent one understandable shippable step and must not depend on accidental intermediate development history. Development merge commits are input history only and must not appear in the shipping history.
-- Use the LLM only for the narrow semantic task of grouping the already-reviewed diff into coherent commits and writing concise commit messages. Git operations, candidate identity, changed-path accounting, and equivalence checks are mechanical.
-- After every history construction, mechanically compare the shipping branch with the reviewed candidate. The final tree and base-to-candidate content must be identical. No candidate change may be omitted, altered, or added; no unrelated change may enter.
-- If exact equivalence cannot be established, stop and preserve both branches. If current `main` has moved beyond the baseline reviewed by dev-review, do not integrate it here; return the candidate to dev-review.
-- Leave the source branch untouched and the `ship/<name>` worktree clean. Do not fetch, push, deploy, open or mutate remote review state, or merge into another branch.
+Inspect only enough of the existing diff to choose the fewest coherent shippable commits. Use `ship_commit` to commit changed paths with concise Conventional Commit messages. Prefer one commit unless separating changes materially improves coherence or independent shippability.
 
-**Endpoint:** A clean local `ship/<name>` branch, based on the exact integration baseline reviewed by dev-review, with a minimal linear commit history, mechanically verified tree equivalence to the reviewed candidate, and a branch that is fast-forwardable from the exact reviewed integration baseline.
+Finish only when no candidate changes remain uncommitted. The runtime independently verifies exact tree equivalence and constructs the real `ship/<name>` branch outside this workspace.
