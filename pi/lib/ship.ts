@@ -79,7 +79,8 @@ function commitTool(cwd: string): ToolDefinition<typeof commitParams, Record<str
       for (let i = 0; i < entries.length; i++) {
         const entry = entries[i]!;
         const status = entry.slice(0, 2), first = entry.slice(3);
-        changed.add(status[0] === "R" || status[1] === "R" ? entries[++i]! : first);
+        changed.add(first);
+        if (status[0] === "R" || status[1] === "R") changed.add(entries[++i]!);
       }
       for (const p of paths) if (!changed.has(p)) throw new Error(`Path is not currently changed: ${p}`);
       git(cwd, ["add", "--", ...paths]);
