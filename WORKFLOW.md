@@ -41,7 +41,7 @@ Before completion, Ship must establish:
 - the shipping branch is based on the exact integration baseline reviewed by Review;
 - the final shipping tree is identical to the reviewed candidate tree;
 - every base-to-candidate change is present exactly once and no unrelated change entered;
-- the worktree is clean and the shipping history is linear.
+- the worktree is clean, the shipping history is linear, and the branch is fast-forwardable from the exact reviewed integration baseline.
 
 If exact equivalence cannot be established, Ship stops and preserves both branches. If the integration branch has moved beyond the baseline Review merged, the candidate returns to Review rather than being adapted by Ship.
 
