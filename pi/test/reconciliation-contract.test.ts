@@ -27,6 +27,22 @@ test("one lazy engineering reference owns minimal-change guidance for every role
   }
 });
 
+test("dev-spec converges on a narrow coherent build target", () => {
+  const spec = skill("dev-spec");
+  for (const requirement of [
+    /alignment quality, not speed to a draft/,
+    /desired product or user outcome and its motivation/,
+    /important invariants/,
+    /Actively narrow scope/,
+    /smallest coherent shippable slice/,
+    /one spec per coherent shippable unit/,
+    /propose concrete spec boundaries and sequencing/,
+    /Implementation design belongs to build/,
+    /scope exclusions are explicit/,
+    /little room to solve the wrong problem/,
+  ]) assert.match(spec, requirement);
+});
+
 test("three stage contracts keep approval, local review, and history ownership distinct", () => {
   assert.match(skill("dev-spec"), /explicit human approval/);
   assert.match(skill("dev-build"), /approval of the outcome must be established/);
