@@ -61,7 +61,7 @@ test("dev-ship model is only an isolated commit grouper", () => {
     /Prefer one commit unless/,
     /runtime independently verifies exact tree equivalence/,
   ]) assert.match(ship, requirement);
-  assert.doesNotMatch(ship, /references\/reconcile|merge branches|resolve conflicts|run validation|create .*ship\//i);
+  assert.doesNotMatch(ship, /references\/reconcile|Read `\.\.\/\.\.\/references|Create an isolated|source branch history/i);
 });
 
 
