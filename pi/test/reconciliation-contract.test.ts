@@ -8,7 +8,7 @@ const skill = (name: string): string => text(`skills/${name}/SKILL.md`);
 
 test("shared references own reconciliation and engineering policy", () => {
   const reconcile = text("references/reconcile.md"), engineering = text("references/engineering.md");
-  for (const name of ["dev-spec", "dev-build", "dev-review", "dev-ship"]) assert.match(skill(name), /references\/reconcile\.md/);
+  for (const name of ["dev-spec", "dev-build", "dev-review"]) assert.match(skill(name), /references\/reconcile\.md/);
   for (const name of ["dev-spec", "dev-build", "dev-review"]) assert.match(skill(name), /references\/engineering\.md/);
   for (const requirement of [/no prior session/, /including untracked files/, /Verify uncertain side effects/, /outside the worktree/, /Never sweep ignored files/]) assert.match(reconcile, requirement);
   for (const requirement of [/requested problem/, /deletion or reuse/, /smallest durable change/, /speculative flexibility/]) assert.match(engineering, requirement);
@@ -44,28 +44,26 @@ test("dev-review owns technical convergence and CTO understanding", () => {
     /Do not ask whether routine repairs are worth doing/,
     /materially change approved behavior, architecture, scope, or accepted risk/,
     /findings as working engineering evidence, not PASS\/FAIL judgments/,
-    /reviewed and repaired local candidate/,
+    /clean, fully committed reviewed candidate/,
     /Do not rewrite history/,
   ]) assert.match(review, requirement);
   assert.doesNotMatch(review, /Reviewer PASS|single broad `review`|repair audit/);
 });
 
-test("dev-ship changes representation only", () => {
+test("dev-ship model is only an isolated commit grouper", () => {
   const ship = skill("dev-ship");
   for (const requirement of [
-    /Transform representation only/,
-    /reviewed candidate tree as immutable/,
-    /ship\/<name>/,
-    /Never rewrite or otherwise mutate the source development branch/,
-    /smallest useful linear set of coherent Conventional Commits/,
-    /Development merge commits .* must not appear in the shipping history/,
-    /LLM only for the narrow semantic task of grouping/,
-    /final tree and base-to-candidate content must be identical/,
-    /current `main` has moved .* return the candidate to dev-review/,
-    /Do not fetch, push, deploy/,
+    /disposable repository prepared by the deterministic ship runtime/,
+    /cannot rely on or inspect the source development worktree/,
+    /Do not edit files/,
+    /fewest coherent shippable commits/,
+    /Use `ship_commit`/,
+    /Prefer one commit unless/,
+    /runtime independently verifies exact tree equivalence/,
   ]) assert.match(ship, requirement);
-  assert.doesNotMatch(ship, /review the candidate|repair accepted|human permission|human approval/i);
+  assert.doesNotMatch(ship, /references\/reconcile|merge branches|resolve conflicts|run validation|create .*ship\//i);
 });
+
 
 test("documentation exposes the four phase boundary", () => {
   const workflow = readFileSync(fileURLToPath(new URL("../../WORKFLOW.md", import.meta.url)), "utf8");
