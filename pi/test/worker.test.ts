@@ -164,7 +164,7 @@ test('Main Reviewer failure is delivered asynchronously instead of rejecting its
   const run = (() => new Promise((_resolve, decline)=>{reject=decline;})) as unknown as RunWorker;
   const tool=asyncReviewTool(run,completion=>{completions.push(completion);});
   const receipt=await tool.execute('review',{task:'gate',candidate:'abc',evidence:'proof'},undefined,undefined,{cwd:process.cwd()} as never);
-  assert.match(firstText(receipt) || '',/Reviewer .* started/);
+  assert.match(firstText(receipt) || '',/^reviewer:[0-9a-f-]+$/);
   reject(new Error('review transport failed'));await new Promise(resolve=>setImmediate(resolve));
   assert.equal(completions.length,1);assert.equal(required(completions[0],'completion').status,'failed');assert.match(required(completions[0],'completion').result,/transport failed/);
 });

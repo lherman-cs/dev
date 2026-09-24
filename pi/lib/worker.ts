@@ -460,7 +460,7 @@ export function asyncReviewTool(run: RunWorker, publish: PublishAsyncWorkerCompl
     ],
     async execute(callId, args, _signal, onUpdate, ctx) {
       const id = publishDetached("Reviewer", args.task, Promise.resolve(foreground.execute(callId, args, undefined, onUpdate, ctx)), publish, undefined, ownerSessionId?.(), ownerGoal?.() ?? "", started);
-      return toolResult(`Reviewer ${id} started.`);
+      return toolResult(id);
     },
   };
 }
