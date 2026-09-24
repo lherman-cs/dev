@@ -263,9 +263,9 @@ export function createWorkerRunner(options: RunnerOptions): WorkerRunner {
           throw error;
         }
       };
-      const verifier = !explorer && name !== "review" ? createVerifierTool(publishNestedCompletion, { track: trackDetachedCompletion, ownerCwd: () => cwd }) : undefined;
+      const verifier = !explorer && name !== "review" && name !== "ship" ? createVerifierTool(publishNestedCompletion, { track: trackDetachedCompletion, ownerCwd: () => cwd }) : undefined;
       signal.addEventListener("abort", () => verifier?.cancelAll(), { once: true });
-      const customTools: ToolDefinition[] = [...(name === "review" ? [] : scopedTools), ...(explorer || name === "review" ? [] : [asyncExploreTool(childRun, publishNestedCompletion, quietReport, trackDetachedCompletion, { parentId: id, owner: metadata.owner, phase: metadata.phase }) as unknown as ToolDefinition, ...(verifier ? [verifier.tool] : [])])];
+      const customTools: ToolDefinition[] = [...(name === "review" ? [] : scopedTools), ...(explorer || name === "review" || name === "ship" ? [] : [asyncExploreTool(childRun, publishNestedCompletion, quietReport, trackDetachedCompletion, { parentId: id, owner: metadata.owner, phase: metadata.phase }) as unknown as ToolDefinition, ...(verifier ? [verifier.tool] : [])])];
       if (askHuman && !readonly && metadata.phase !== "ship") {
         const askSchema = Type.Object({ question: Type.String(), choices: Type.Optional(Type.Array(Type.String())) });
         customTools.push({ name: "ask_human", label: "Ask human", description: "Ask a bounded question and wait for the human to respond explicitly in Main.",
