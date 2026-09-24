@@ -139,15 +139,17 @@ test('Explorer can investigate but has no Verifier, edit or recursive delegation
   for(const name of ['verify','explore','subagent','edit','write','lsp_fix','install','git']) assert.ok(!names.includes(name),name);
   for(const name of ['bash','web_search','source_check','fetch_content','get_search_content']) assert.ok(names.includes(name),name);
 });
-test('non-review writing workers receive Explorer and Verifier, but Reviewer cannot delegate', async t=>{
+test('ship worker is minimal while normal writing workers retain helpers', async t=>{
   const f=await fixture(t,(_n,_c,m)=>message(m,[{type:'text',text:'done'}]));
   const roles=['spec','build','review','ship'] as const;
   for(const name of roles) await f.run({cwd:f.cwd,name,task:`${name} task`});
   assert.equal(f.sessions.length,roles.length);
-  for(const session of f.sessions) {
-    assert.equal(session.getActiveToolNames().includes('explore'), session !== f.sessions[2]);
-    assert.equal(session.getActiveToolNames().includes('verify'), session !== f.sessions[2]);
-    for(const name of ['web_search','source_check','fetch_content','get_search_content']) assert.ok(!session.getActiveToolNames().includes(name),name);
+  for (let i=0;i<f.sessions.length;i++) {
+    const session=f.sessions[i]!, name=roles[i]!;
+    const helpers=name==='spec'||name==='build';
+    assert.equal(session.getActiveToolNames().includes('explore'),helpers);
+    assert.equal(session.getActiveToolNames().includes('verify'),helpers);
+    for(const tool of ['web_search','source_check','fetch_content','get_search_content']) assert.ok(!session.getActiveToolNames().includes(tool),tool);
   }
 });
 test('Explorer returns only a schema-checked compact result to the parent', async()=>{
