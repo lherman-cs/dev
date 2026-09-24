@@ -61,7 +61,9 @@ fn phase_args(config: &Roles, phase: &str, prompt: &[String]) -> Result<Vec<Stri
         "--thinking".into(),
         effort.into(),
     ];
-    if !prompt.is_empty() {
+    if phase == "ship" {
+        args.extend(["--".into(), if prompt.is_empty() { "/dev-ship".into() } else { format!("/dev-ship {}", prompt.join(" ")) }]);
+    } else if !prompt.is_empty() {
         args.extend(["--".into(), format!("/dev-{phase} {}", prompt.join(" "))]);
     }
     Ok(args)
@@ -154,12 +156,14 @@ mod tests {
         assert_eq!(roles().roles["assessor"], "openai/gpt-6-luna:high");
     }
     #[test]
-    fn every_phase_is_interactive_until_invoked() {
-        for phase in ["spec", "build", "review", "ship"] {
+    fn reasoning_phases_are_interactive_and_ship_runs_immediately() {
+        for phase in ["spec", "build", "review"] {
             let args = phase_args(&roles(), phase, &[]).unwrap();
             assert_eq!(args.len(), 6);
             assert_eq!(&args[..2], &["--provider", "openai-codex"]);
         }
+        let ship = phase_args(&roles(), "ship", &[]).unwrap();
+        assert_eq!(ship.last().unwrap(), "/dev-ship");
     }
     #[test]
     fn supporting_roles_are_not_public_phases() {
