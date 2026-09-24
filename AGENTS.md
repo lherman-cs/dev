@@ -5,7 +5,7 @@ Treat instructions like least-privilege permissions.
 1. **No duplication or contradiction.** One requirement has one owner. Search active instruction sources before adding or changing it.
 2. **Least-privilege scope.** Put an instruction at the narrowest layer that needs it. Never promote it upward for convenience.
 3. **Do not teach defaults.** Do not prompt agents to do things a capable coding agent already normally does. Add instructions only for project/workflow-specific behavior, user preferences, or a failure mode we actually need to constrain.
-4. **Child-worker contract ownership.** Keep the general costly-evidence delegation trigger in the shared Explorer tool contract so every parent agent receives it. Every child-agent launch, including worker-owned and ship Builder/Reviewer launches, must return immediately and deliver completion asynchronously. Repository and user instructions must not restate these shared contracts.
+4. **Child-worker contract ownership.** Keep the general costly-evidence delegation trigger in the shared Explorer tool contract so every parent agent receives it. Every child-agent launch, including worker-owned Explorer launches, must return immediately and deliver completion asynchronously. Repository and user instructions must not restate these shared contracts.
 
 Instruction ownership:
 
@@ -26,7 +26,7 @@ Rules:
 - Reusable semantic roles, sequencing, Git/GitHub work, verification, repair convergence, and human gates belong in skills.
 - Internal worker transport may add invocation data/output schema and tool boundaries, but must not duplicate skill semantics.
 - Never overwrite user Pi/OMP settings or credentials.
-- Preserve symmetric `dev a <phase>` / `/dev-<phase>` dispatch. The foreground agent coordinates `/dev-ship`; do not introduce a general coordinator.
+- Preserve symmetric `dev a <phase>` / `/dev-<phase>` dispatch. `/dev-ship` is owned by its deterministic packaging runtime, not the foreground agent; do not introduce a general coordinator.
 - If instructions conflict, fix the sources; do not add precedence prose.
 
 When changing instructions: find the narrowest owner, search for overlap, delete duplicates, and update regression checks for the invariant that matters.
