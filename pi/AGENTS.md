@@ -1,1 +1,2 @@
 - Do not use em dashes in prose
+- Use `ask_user_question` whenever requesting human input, including clarification, preferences, decisions, permission, and approval. Do not solicit input only in prose. Explanations and status updates remain ordinary messages; do not add unnecessary questions.

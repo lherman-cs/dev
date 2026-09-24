@@ -35,40 +35,61 @@ test("three stage contracts keep approval, local review, and history ownership d
   assert.match(skill("dev-build"), /Diagnose uncertain or interrupted writes from live state/);
   assert.match(skill("dev-ship"), /fixed local comparison base and exact candidate scope/);
   const ship = skill("dev-ship");
-  assert.ok(ship.indexOf("**Orient and walk through.**") < ship.indexOf("**Review the settled candidate.**"));
+  assert.ok(ship.indexOf("**Open with a living review brief.**") < ship.indexOf("**Review the settled candidate.**"));
   assert.ok(ship.indexOf("**Review the settled candidate.**") < ship.indexOf("**Confirm, then refine.**"));
   for (const requirement of [
-    /short map of resulting behavior/, /one meaningful topic at a time/, /concrete scenario/,
-    /recommend a direction, then pause for the human's questions/, /skip settled or routine details/,
-    /`ask_user_question` for every interaction that solicits human input/,
-    /including walkthrough pauses, consequential decisions, permission for a second reviewer, and final convergence/,
-    /recommended option first and label it `\(Recommended\)`/,
-    /Never ask for input only in prose or treat silence as agreement/,
+    /compact, decision-ready account/, /practical outcome/, /consequential choices and rationale/,
+    /evidence and its limits/, /risks or tradeoffs/, /recommendation/, /Scale depth to the change/,
+    /verified facts, assumptions, and unknowns/, /without reconstructing the diff/,
+    /Follow the human's questions or redirects/, /without restarting a tour/,
+    /resurface consequential ones before closing/, /Ask only when a real decision requires human input/,
+    /Do not create routine continuation prompts or section-by-section checkpoints/,
     /Fix clear in-scope defects directly/, /Discuss consequential changes .* before implementing them/,
+    /report material changes to behavior, risk, evidence, or the assessment/,
+    /Reopen an earlier decision only when new evidence or changes materially affect its premise/,
     /one independent read-only `review` on the stable agreed candidate/,
+    /meaningful findings and their resolution into the assessment/,
     /reopen only the relevant human discussion/, /Do not automatically launch another reviewer/,
     /obtain human permission first/, /A resumed session alone does not justify repeating a reviewer launch/,
-    /Material repairs invalidate affected evidence/, /explicitly ask the human whether meaningful feedback is exhausted/,
+    /Material repairs invalidate affected evidence/, /consolidated brief for the actual resulting candidate/,
+    /Explicitly ask the human whether review is complete/, /Do not infer convergence from silence/,
     /Only then create a recoverable pre-cleanup reference/, /verify tree equivalence/,
     /History-only changes preserving the reviewed tree do not require another human approval/,
     /Do not fetch, push, mutate remote review state, or merge/,
   ]) assert.match(ship, requirement);
-  assert.doesNotMatch(ship, /every human decision and review checkpoint|re-review interactions|Re-run it only when repairs materially change/);
+  assert.doesNotMatch(ship, /topic at a time|walkthrough pauses|`ask_user_question`|re-review interactions/);
   assert.match(skill("dev-review"), /uncommitted changes are not supplied/);
   assert.match(text("references/reconcile.md"), /except for dev-ship's explicitly bounded cleanup/);
   assert.doesNotMatch(skill("dev-ship"), /PR readiness|mandatory reviewer|ship_builder/i);
 });
 
-test("ship documentation describes human-first walkthrough and one stable review", () => {
+test("user-wide input preference has one owner and skills retain phase decisions", () => {
+  const user = text("AGENTS.md");
+  for (const request of ["clarification", "preferences", "decisions", "permission", "approval"]) assert.match(user, new RegExp(request));
+  assert.match(user, /Use `ask_user_question` whenever requesting human input/);
+  assert.match(user, /Do not solicit input only in prose/);
+  assert.match(user, /Explanations and status updates remain ordinary messages; do not add unnecessary questions/);
+  for (const name of ["dev-spec", "dev-build", "dev-ship", "dev-review", "dev-explore"]) {
+    assert.doesNotMatch(skill(name), /`ask_user_question`/);
+  }
+  assert.match(skill("dev-spec"), /Ask one focused question at a time, ordered by decision leverage/);
+  assert.match(skill("dev-spec"), /explicit human approval/);
+  assert.match(skill("dev-ship"), /obtain human permission first/);
+  assert.match(skill("dev-ship"), /Explicitly ask the human whether review is complete/);
+});
+
+test("ship documentation describes living review and one stable independent review", () => {
   const workflow = readFileSync(fileURLToPath(new URL("../../WORKFLOW.md", import.meta.url)), "utf8");
   const readme = readFileSync(fileURLToPath(new URL("../../README.md", import.meta.url)), "utf8");
-  assert.match(workflow, /one concrete topic at a time/);
-  assert.match(workflow, /Every request for human input uses `ask_user_question` with a recommended choice/);
-  assert.match(workflow, /invoke it once after the human walkthrough and known repairs settle/);
+  assert.match(workflow, /compact, decision-ready assessment/);
+  assert.match(workflow, /tracking unresolved concerns/);
+  assert.match(workflow, /present the consolidated assessment and seek explicit human confirmation/);
+  assert.match(workflow, /invoke it once after discussion and known repairs settle/);
   assert.match(workflow, /without an automatic second review/);
   assert.match(workflow, /obtaining human permission/);
   assert.match(workflow, /reuse review evidence still applicable/);
-  assert.match(readme, /topic-by-topic human walkthrough/);
+  assert.match(readme, /concise, decision-ready assessment/);
+  assert.match(readme, /discussion follows the human's questions rather than a fixed tour/);
   assert.doesNotMatch(readme, /Shipper may request read-only review/);
 });
 

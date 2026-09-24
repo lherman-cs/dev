@@ -12,7 +12,7 @@ Make the requested outcome decision-complete with the least human latency.
 - Continuously classify uncertainty: answer repository questions through exploration, resolve routine engineering choices yourself, and ask the human only where their intent materially changes the outcome.
 - Explore independent questions concurrently. Keep exploration scoped and use its conclusions to eliminate or sharpen human questions.
 - Challenge hidden assumptions, ambiguous semantics, scope, invariants, compatibility, failure behavior, tradeoffs, non-goals, and speculative requirements.
-- Ask one focused question at a time through `ask_user_question`, ordered by decision leverage. Include the recommended answer and concise alternatives when useful. Drill into the answer only while meaningful ambiguity remains.
+- Ask one focused question at a time, ordered by decision leverage. Include a recommended answer and concise alternatives when useful. Drill into the answer only while meaningful ambiguity remains.
 - Trace enough end-to-end behavior, ownership, callers/callees, and failure paths to ensure decisions are grounded, not hypothetical.
 - Prefer fewer stronger decisions over exhaustive questioning. Skip questions whose answers do not materially affect behavior, architecture, scope, or acceptance.
 - When useful, maintain concise semantic prose in `plans/<project>/spec.md`: behavior, decisions, invariants, constraints, non-goals, risks, and acceptance evidence. A persisted spec is optional; approval in conversation suffices when applicability is clear. Do not design implementation tasks or manage worktrees.
