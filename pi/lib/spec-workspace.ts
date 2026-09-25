@@ -2,9 +2,10 @@ import { createHash, randomUUID } from "node:crypto";
 import { readFile, writeFile, rename, mkdir } from "node:fs/promises";
 import { dirname, resolve, relative } from "node:path";
 import type { ReviewMessage } from "./review-workspace.ts";
+import type { Attention } from "./attention.ts";
 
 export type SpecSection = { id: string; title: string; kind: "motivation" | "requirement" | "question" | "scope" | "evidence"; body: string };
-export type SpecDecision = { id: string; subject: string; recommendation: string; consequence: string; status: "open" | "accepted"; version: string };
+export type SpecDecision = Attention & { id: string; subject: string; recommendation: string; consequence: string; status: "open" | "accepted"; version: string };
 export type SpecDocument = { version: string; digest: string; sections: SpecSection[]; decisions: SpecDecision[]; recommendation: string; markdown: string; at: number };
 export type SpecState = { schema: 1; current?: SpecDocument; pending?: SpecDocument; updates: SpecDocument[]; discussions: ReviewMessage[]; drafts: Record<string, string>; selection: string; needsSync?: boolean; changeRequest?: { version: string; id: string; at: number }; approval?: { digest: string; version: string; at: number }; recovered: boolean; notice?: string };
 const empty = (): SpecState => ({ schema: 1, updates: [], discussions: [], drafts: {}, selection: "general", recovered: false });
@@ -91,6 +92,7 @@ export class SpecWorkspace {
   async approve(expectedVersion?: string) {
     const check = await this.check(); if (!check.current || !this.state.current || (expectedVersion && this.state.current.version !== expectedVersion)) throw new Error(`Approval unavailable: ${check.reason}. Displayed revision may be stale.`);
     const version = this.state.current.version;
+    if (this.state.discussions.some(m => m.author === "human" && m.status === "queued" && m.version === version)) throw new Error("Wait for the agent's answer before approval.");
     const actual = await readFile(this.path, "utf8");
     if (digest(actual) !== check.digest || this.state.pending || this.state.current?.version !== version) throw new Error("Spec changed during approval");
     // Status recording is not a semantic revision. Recheck immediately before and after writing.
@@ -110,7 +112,9 @@ export class SpecWorkspace {
   async addHuman(subject: string, text: string) {
     if (!text.trim()) throw new Error("Write a question or request first");
     const message: ReviewMessage = { id: randomUUID(), subject, version: this.state.current?.version || "unassessed", author: "human", text, status: "queued" };
-    this.state.discussions.push(message); await this.persist(); return message;
+    this.state.discussions.push(message);
+    if (message.version === this.state.current?.version) delete this.state.approval;
+    await this.persist(); return message;
   }
   async fail(id: string, reason: string) {
     const m = this.state.discussions.find(m => m.id === id && m.status === "queued");

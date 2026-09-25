@@ -5,10 +5,11 @@ import { join, resolve, relative, basename } from "node:path";
 import { homedir } from "node:os";
 import { readFile } from "node:fs/promises";
 import { SpecWorkspace } from "./spec-workspace.ts";
+import { attention } from "./attention.ts";
 import { WorkspaceWeb } from "./workspace-web.ts";
 
 const section = Type.Object({ id: Type.String({ minLength: 1 }), title: Type.String({ minLength: 1 }), kind: Type.Union([Type.Literal("motivation"), Type.Literal("requirement"), Type.Literal("question"), Type.Literal("scope"), Type.Literal("evidence")]), body: Type.String({ minLength: 1 }) });
-const decision = Type.Object({ id: Type.String({ minLength: 1 }), subject: Type.String({ minLength: 1 }), recommendation: Type.String({ minLength: 1 }), consequence: Type.String({ minLength: 1 }) });
+const decision = Type.Object({ id: Type.String({ minLength: 1 }), subject: Type.String({ minLength: 1 }), recommendation: Type.String({ minLength: 1 }), consequence: Type.String({ minLength: 1 }), ...attention });
 export function registerSpecWorkspace(pi: ExtensionAPI, specActive: () => boolean, web: WorkspaceWeb) {
   let store: SpecWorkspace | undefined, session = "", restoring: Promise<void> = Promise.resolve();
   const marker = (next: ExtensionContext) => [...next.sessionManager.getBranch()].reverse().find(e => e.type === "custom" && e.customType === "dev-spec-workspace");
@@ -48,7 +49,7 @@ export function registerSpecWorkspace(pi: ExtensionAPI, specActive: () => boolea
   pi.registerCommand("dev-spec-view", { description: "Open local web Spec workspace", handler: async (_args, next) => { void show(next).catch(error => next.ui.notify(String(error), "error")); } });
   pi.registerShortcut("alt+s", { description: "Open local web Spec workspace", handler: next => { void show(next).catch(error => next.ui.notify(String(error), "error")); } });
   pi.registerTool({ name: "spec_publish", label: "Publish evolving spec", parameters: Type.Object({ sections: Type.Array(section, { minItems: 1 }), decisions: Type.Array(decision), recommendation: Type.String({ minLength: 1 }), requestId: Type.Optional(Type.String()), reply: Type.Optional(Type.String()) }),
-    description: "Publish the durable Markdown spec with contextual motivation, settled requirements, scope, open decisions, and recommendation to the local Spec webpage. If answering a pending request, include requestId and reply. Updates await inspection.",
+    description: "Publish the durable Markdown spec and concise decision items to the local Spec webpage. Each consequential decision needs a human-readable subject, consequence and recommendation; optionally add item-specific context and a semantic visual. Keep evidence and code hidden until requested. If answering a pending request, include requestId and reply. Updates await inspection.",
     async execute(_id, args, _signal, _update, next) {
       if (!specActive()) throw new Error("Only an active dev-spec goal may publish."); await setContext(next);
       if (!store) throw new Error("Spec workspace unavailable");

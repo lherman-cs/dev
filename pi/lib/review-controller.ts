@@ -1,6 +1,7 @@
 import { Type } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { ReviewWorkspace } from "./review-workspace.ts";
+import { attention } from "./attention.ts";
 import { WorkspaceWeb } from "./workspace-web.ts";
 import { createHash } from "node:crypto";
 import { join } from "node:path";
@@ -8,7 +9,7 @@ import { homedir } from "node:os";
 
 const section = Type.Object({ id: Type.String({ minLength: 1 }), title: Type.String({ minLength: 1 }),
   kind: Type.Union([Type.Literal("outcome"), Type.Literal("design"), Type.Literal("evidence"), Type.Literal("risk"), Type.Literal("system"), Type.Literal("code")]), body: Type.String({ minLength: 1 }) });
-const decision = Type.Object({ id: Type.String({ minLength: 1 }), subject: Type.String({ minLength: 1 }), recommendation: Type.String({ minLength: 1 }), consequence: Type.String({ minLength: 1 }), kind: Type.Union([Type.Literal("choice"), Type.Literal("risk")]) });
+const decision = Type.Object({ id: Type.String({ minLength: 1 }), subject: Type.String({ minLength: 1 }), recommendation: Type.String({ minLength: 1 }), consequence: Type.String({ minLength: 1 }), kind: Type.Union([Type.Literal("choice"), Type.Literal("risk")]), ...attention });
 const schema = Type.Object({ sections: Type.Array(section, { minItems: 2 }), decisions: Type.Array(decision), recommendation: Type.String({ minLength: 1 }), requestId: Type.Optional(Type.String()), reply: Type.Optional(Type.String()) });
 export function registerReviewWorkspace(pi: ExtensionAPI, reviewActive: () => boolean, web: WorkspaceWeb = new WorkspaceWeb()) {
   let store: ReviewWorkspace | undefined, session = "", restoring: Promise<void> = Promise.resolve();
@@ -44,7 +45,7 @@ export function registerReviewWorkspace(pi: ExtensionAPI, reviewActive: () => bo
   pi.registerCommand("dev-review-view", { description: "Open local web review workspace", handler: async (_args, next) => { void show(next).catch(error => next.ui.notify(String(error), "error")); } });
   pi.registerShortcut("alt+r", { description: "Open local web review workspace", handler: next => { void show(next).catch(error => next.ui.notify(String(error), "error")); } });
   pi.registerTool({ name: "review_publish", label: "Publish review assessment", parameters: schema,
-    description: "Publish a contextual living engineering assessment in the local Review webpage. Provide outcome, evidence and recommendation. For a pending request include requestId and reply. Updates await human inspection and application.",
+    description: "Publish outcome, evidence and recommendation as a concise human decision surface. For each consequential decision provide a semantic subject, consequence and recommendation; optionally add item-specific context and a semantic visual. Keep code and detailed evidence in on-demand context. For a pending request include requestId and reply. Updates await human inspection and application.",
     async execute(_id, args, _signal, _update, next) {
       if (!reviewActive()) throw new Error("Only an active dev-review goal may publish."); await setContext(next);
       if (!store) throw new Error("Review workspace unavailable");

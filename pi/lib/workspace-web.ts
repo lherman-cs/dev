@@ -57,7 +57,7 @@ export class WorkspaceWeb {
       const check = await target.store.check();
       res.writeHead(200, { ...headers, "Content-Type": "application/json; charset=utf-8" });
       return res.end(JSON.stringify({ phase: target.phase, project: target.project, path: target.phase === "spec" ? target.store.path : target.store.cwd, workspace: target.store.file,
-        state: target.store.state, gate: check.reason, canApprove: check.current && !target.store.state.current?.decisions.some(d => d.status === "open"), active: target.active() }));
+        state: target.store.state, gate: check.reason, canApprove: check.current && !target.store.state.current?.decisions.some(d => d.status === "open") && !target.store.state.discussions.some(m => m.author === "human" && m.status === "queued" && m.version === target.store.state.current?.version), active: target.active() }));
     }
     if (req.method !== "POST" || route !== "action") return deny(404, "Not found");
     if (req.headers.origin !== origin || req.headers["content-type"]?.split(";")[0] !== "application/json" || req.headers["x-workspace-request"] !== this.token) return deny(403, "Unauthorized origin or request");

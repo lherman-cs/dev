@@ -56,8 +56,10 @@ test("a submitted change request blocks approval until a new assessment is appli
 test("restoration preserves drafts and version-bound discussions but revokes approval and uncertain submissions", async t => {
   const f = fixture(t); await f.store.restore(); const first = await f.publish();
   f.store.state.drafts["outcome"] = "A question not yet sent";
-  const pending = await f.store.addHuman("outcome", "Why this architecture?");
   await f.store.decide("tiny", "accepted"); await f.store.approve();
+  const pending = await f.store.addHuman("outcome", "Why this architecture?");
+  assert.equal(f.store.state.approval, undefined);
+  await assert.rejects(f.store.approve(), /Wait for the agent/);
   const again = new ReviewWorkspace(f.cwd, f.store.file); await again.restore();
   assert.equal(again.state.drafts["outcome"], "A question not yet sent");
   assert.equal(again.state.discussions[0]?.version, first.version);

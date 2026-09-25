@@ -1,6 +1,10 @@
 export type Phase = "spec" | "review"
 export type Section = { id: string; title: string; kind: string; body: string }
-export type Decision = { id: string; subject: string; recommendation: string; consequence: string; kind?: "choice" | "risk"; status: "open" | "accepted" | "waived"; version: string }
+export type AttentionVisual =
+  | { type: "option_comparison"; options: { label: string; benefit: string; cost: string }[] }
+  | { type: "sequence_flow" | "state_machine" | "evidence_chain" | "dependency_path"; steps: string[] }
+  | { type: "architecture_delta" | "semantic_diff"; before: string; after: string }
+export type Decision = { id: string; subject: string; recommendation: string; consequence: string; kind?: "choice" | "risk"; status: "open" | "accepted" | "waived"; version: string; context?: { explanation?: string; mentalModel?: string; architecture?: string; evidence?: string[]; code?: string[] }; visual?: AttentionVisual }
 export type Discussion = { id: string; subject: string; version: string; author: "human" | "agent"; text: string; status?: "queued" | "answered" | "failed" }
 export type Document = { version: string; sections: Section[]; decisions: Decision[]; recommendation: string; markdown?: string; candidate?: { head: string; main: string; clean: boolean }; at: number }
 export type Workspace = {

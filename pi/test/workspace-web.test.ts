@@ -83,9 +83,30 @@ test("local service rejects forged requests, stale URLs and untrusted content st
   assert.equal((await fetch(url + "state")).status, 403);
 }));
 
-test("discussion retains version, failed delivery and draft on restart without replay", async () => fixture(async ({ store, post }) => {
+test("semantic attention data survives publication, revision and restoration without changing approval gates", async () => fixture(async ({ store, path, post, url }) => {
+  const item = { id: "handoff", subject: "New owner may start too soon", recommendation: "Wait for acknowledgement; slower recovery is safer", consequence: "Two owners could write concurrently",
+    context: { mentalModel: "Placement is intent; ownership is fact", explanation: "A timeout is not proof the old owner stopped", evidence: ["handoff timeout test"], code: ["src/handoff.ts:31"] },
+    visual: { type: "sequence_flow" as const, steps: ["Old owner active", "Timeout", "New owner starts"] } };
+  const doc = await publish(store, first, [item]);
+  const state = await (await fetch(url + "state")).json() as { state: { current: { decisions: typeof doc.decisions } } };
+  assert.deepEqual(state.state.current.decisions[0]?.visual, item.visual);
+  assert.deepEqual(doc.decisions[0]?.context, item.context);
+  assert.deepEqual(doc.decisions[0]?.visual, item.visual);
+  assert.equal((await post({ action: "approve", version: doc.version })).status, 409);
+  const revised = first.replace("scope and exclusions", "scope and a timeout invariant");
+  await writeFile(path, revised); await publish(store, revised, [item]);
+  assert.deepEqual(store.state.pending?.decisions[0]?.visual, item.visual);
+  const restored = new SpecWorkspace(store.path, store.file, store.cwd); await restored.restore();
+  assert.deepEqual(restored.state.pending?.decisions[0]?.context, item.context);
+  assert.equal((await restored.check()).current, false);
+}));
+
+test("discussion retains version, failed delivery and draft on restart without replay", async () => fixture(async ({ store, post, url }) => {
   const doc = await publish(store); const version = doc.version;
-  const msg = await store.addHuman("intent", "Could we change this?"); await store.fail(msg.id, "offline");
+  const msg = await store.addHuman("intent", "Could we change this?");
+  assert.equal((await (await fetch(url + "state")).json() as { canApprove: boolean }).canApprove, false);
+  assert.equal((await post({ action: "approve", version })).status, 409);
+  await store.fail(msg.id, "offline");
   assert.equal((await post({ action: "draft", version, subject: "intent", text: "unsent" })).status, 200);
   const restored = new SpecWorkspace(store.path, store.file, store.cwd); await restored.restore();
   assert.equal(restored.state.discussions[0]?.status, "failed"); assert.equal(restored.state.drafts['intent'], "unsent"); assert.equal(restored.state.approval, undefined);

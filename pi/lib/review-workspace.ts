@@ -4,10 +4,11 @@ import { promisify } from "node:util";
 import { readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { mkdir } from "node:fs/promises";
+import type { Attention } from "./attention.ts";
 
 const exec = promisify(execFile);
 export type ReviewSection = { id: string; title: string; kind: "outcome" | "design" | "evidence" | "risk" | "system" | "code"; body: string };
-export type ReviewDecision = { id: string; subject: string; recommendation: string; consequence: string; kind: "choice" | "risk"; status: "open" | "accepted" | "waived"; version: string };
+export type ReviewDecision = Attention & { id: string; subject: string; recommendation: string; consequence: string; kind: "choice" | "risk"; status: "open" | "accepted" | "waived"; version: string };
 export type ReviewMessage = { id: string; subject: string; version: string; author: "human" | "agent"; text: string; status?: "queued" | "answered" | "failed" };
 export type ReviewCandidate = { head: string; main: string; clean: boolean; fingerprint: string };
 export type ReviewAssessment = { version: string; candidate: ReviewCandidate; sections: ReviewSection[]; decisions: ReviewDecision[]; recommendation: string; at: number };
@@ -101,6 +102,7 @@ export class ReviewWorkspace {
     const before = await this.check();
     if (!before.current || !this.state.current || (expectedVersion && this.state.current.version !== expectedVersion)) throw new Error(`Approval unavailable: ${before.reason}. Displayed revision may be stale.`);
     const version = this.state.current.version;
+    if (this.state.discussions.some(m => m.author === "human" && m.status === "queued" && m.version === version)) throw new Error("Wait for the agent's answer before approval.");
     if (this.state.current.decisions.some(d => d.status === "open")) throw new Error("Resolve consequential decisions before approval.");
     const after = await reviewCandidate(this.cwd);
     if (!after.clean || after.fingerprint !== before.candidate.fingerprint || this.state.current?.version !== version || this.state.pending) throw new Error("Candidate or assessment changed during approval. Reassess it first.");
@@ -126,7 +128,9 @@ export class ReviewWorkspace {
   async addHuman(subject: string, text: string) {
     if (!text.trim()) throw new Error("Write a question or request first.");
     const message: ReviewMessage = { id: randomUUID(), subject, version: this.state.current?.version || "unassessed", author: "human", text, status: "queued" };
-    this.state.discussions.push(message); await this.persist(); return message;
+    this.state.discussions.push(message);
+    if (message.version === this.state.current?.version) delete this.state.approval;
+    await this.persist(); return message;
   }
   async fail(id: string, reason: string) {
     const message = this.state.discussions.find(m => m.id === id);
