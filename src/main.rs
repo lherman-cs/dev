@@ -1,5 +1,6 @@
 mod agent;
 mod agent_stats;
+mod brief;
 use anyhow::{Context, Result, anyhow, bail};
 use clap::{Parser, Subcommand};
 use regex::Regex;
@@ -31,6 +32,9 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
+    /// Generate or reopen a consequence-focused local brief (default: merge-base to current tree)
+    Brief(brief::BriefArgs),
+
     /// Initialize a new workspace configuration
     Init {
         /// Pattern to search for (will be wrapped in fd command)
@@ -180,6 +184,12 @@ enum Commands {
 enum AgentAction {
     /// Open the Specifier role, or run /dev-spec immediately when a prompt is given
     Spec { prompt: Vec<String> },
+    /// Open the Brief role, or run /dev-brief immediately when a prompt is given
+    #[command(trailing_var_arg = true)]
+    Brief {
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        prompt: Vec<String>,
+    },
     /// Open the Builder role, or run /dev-build immediately when a prompt is given
     Build { prompt: Vec<String> },
     /// Open the Reviewer role, or run /dev-review immediately when a prompt is given
@@ -1675,6 +1685,7 @@ fn cmd_agent(action: Option<AgentAction>) -> Result<()> {
     match action {
         None => agent::launch(None, vec![], None),
         Some(AgentAction::Spec { prompt }) => agent::launch(Some("spec"), prompt, None),
+        Some(AgentAction::Brief { prompt }) => agent::launch(Some("brief"), prompt, None),
         Some(AgentAction::Build { prompt }) => agent::launch(Some("build"), prompt, None),
         Some(AgentAction::Review { prompt }) => agent::launch(Some("review"), prompt, None),
         Some(AgentAction::Ship { prompt }) => agent::launch(Some("ship"), prompt, None),
@@ -1704,6 +1715,7 @@ fn main() {
     let cli = Cli::parse();
 
     let result = match cli.command {
+        Commands::Brief(args) => brief::run(args),
         Commands::Init { pattern } => cmd_init(pattern),
         Commands::Sync => cmd_sync(),
         Commands::Config => cmd_config(),

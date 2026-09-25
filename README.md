@@ -7,6 +7,10 @@ Personal developer tools with a Pi-first workflow. Pi owns sessions, authenticat
 ```sh
 dev a spec                         # select the configured model and open Pi
 # discuss normally, then /dev-spec when ready
+dev brief --base main              # captured worktree comparison, saved browser brief
+dev brief --range v1...v2         # exact committed comparison (no working edits)
+dev brief --open latest           # reopen without Pi
+dev a brief "Focus on rollout risk" # same brief through the Pi phase
 dev a build "Implement the approved media-signaling change"
 dev a review "Review the local media-signaling candidate"
 dev a ship "Package the reviewed candidate into clean commits"
@@ -14,7 +18,9 @@ dev a resume                       # interactive Pi session picker
 dev a stats                        # interactive Pi session dashboard
 ```
 
-`dev a resume` opens Pi's session picker; `dev a resume <session-id-or-path>` opens that session directly. The public phases are exactly `spec`, `build`, `review`, and `ship`. With no prompt, `dev a <phase>` opens the configured interactive Pi session. A prompt invokes the matching current-session `/dev-<phase>` alias. Each alias explicitly loads its `dev-<phase>` skill.
+`dev a resume` opens Pi's session picker; `dev a resume <session-id-or-path>` opens that session directly. The public phases are exactly `spec`, `brief`, `build`, `review`, and `ship`. With no prompt, `dev a <phase>` opens the configured interactive Pi session. A prompt invokes the matching current-session `/dev-<phase>` alias. Each alias explicitly loads its `dev-<phase>` skill.
+
+Brief is a read-only, optional communication phase, independent of Spec/Build/Review/Ship. `dev brief` captures the merge-base of the locally discoverable default branch and `HEAD` against the effective current tree (staged, unstaged, untracked; ignored files excluded). `--base <branch>` selects another local base; `--range A..B` compares the exact committed endpoint trees and `--range A...B` compares their merge-base to B, excluding working edits. No remote fetch, checkout, staging of the user's index, or commit occurs. If the default branch is missing or ambiguous, supply `--base`. `--spec <path>` adds explicit intent; it is not treated as evidence of implementation. The saved revision, bounded captured input, and feedback live outside the repository under XDG data storage. `--list` lists revisions and `--open <id|latest>` reopens without regeneration. The localhost viewer renders diagrams, keeps comment drafts per statement, marks stale snapshots, and exports compact Markdown feedback with revision IDs and code anchors. A general note explicitly has no code target. The local server lasts until `Ctrl+C`; commenting and exporting use the viewer, which requires a browser.
 
 Spec and Review are collaborative goal-bearing phases. Spec converges the smallest approved outcome. Build implements it. Review examines the existing diff, including relevant uncommitted work, against agreed intent; repairs and validates clear in-scope bugs; and obtains explicit human approval for all consequential changes, including spec-compliant behavior and major design choices. It does not require a new spec, merge, stage, or commit. The human prepares integration and commits, returning for review if integration materially changes reviewed effects. Review remains foreground rather than delegating judgment to a Reviewer sub-agent.
 

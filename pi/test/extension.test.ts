@@ -43,7 +43,7 @@ test("four current-session aliases and supporting tools register without work", 
     getActiveTools: () => ["read"],
     setActiveTools: () => undefined,
   });
-  assert.deepEqual([...commands.keys()].sort(), ["dev-build", "dev-goal", "dev-review", "dev-ship", "dev-spec"]);
+  assert.deepEqual([...commands.keys()].sort(), ["dev-brief", "dev-build", "dev-goal", "dev-review", "dev-ship", "dev-spec"]);
   assert.ok(shortcuts.has("alt+a"));
   assert.ok(tools.some(tool => tool.name === "verify"));
   assert.ok(tools.some(tool => tool.name === "explore"));
@@ -70,7 +70,7 @@ test("spec build and review activate goals while ship delegates to the determini
   }, { hub: new WorkerHub(), registerWorkerHubUI: (() => ({ setContext: noop, dispose: noop })) as never,
     packageReviewedCandidate: (async () => { packaged++; return "packaged"; }) as never });
   const context = { cwd: process.cwd(), hasUI: false, sessionManager: manager, ui: { notify: noop, setWidget: noop } } as never;
-  for (const phase of ["spec", "build"] as const) {
+  for (const phase of ["spec", "brief", "build"] as const) {
     await commands.get(`dev-${phase}`)!.handler(`${phase} request`, context);
     const goals = manager.getBranch().filter(entry => entry.type === "custom" && entry.customType === "dev-goal");
     assert.equal((goals.at(-1) as { data: { skill?: string } }).data.skill, phase);

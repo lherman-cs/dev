@@ -4,8 +4,9 @@ use serde::Deserialize;
 use std::{
     collections::HashMap,
     env,
+    io::Write,
     path::{Path, PathBuf},
-    process::Command,
+    process::{Command, Stdio},
 };
 
 #[derive(Deserialize)]
@@ -34,7 +35,7 @@ fn load_roles(package: &Path) -> Result<Roles> {
 }
 
 fn phase_args(config: &Roles, phase: &str, prompt: &[String]) -> Result<Vec<String>> {
-    if !["spec", "build", "review", "ship"].contains(&phase) {
+    if !["spec", "brief", "build", "review", "ship"].contains(&phase) {
         bail!("Unknown workflow phase: {phase}");
     }
     let selection = config
@@ -62,7 +63,14 @@ fn phase_args(config: &Roles, phase: &str, prompt: &[String]) -> Result<Vec<Stri
         effort.into(),
     ];
     if phase == "ship" {
-        args.extend(["--".into(), if prompt.is_empty() { "/dev-ship".into() } else { format!("/dev-ship {}", prompt.join(" ")) }]);
+        args.extend([
+            "--".into(),
+            if prompt.is_empty() {
+                "/dev-ship".into()
+            } else {
+                format!("/dev-ship {}", prompt.join(" "))
+            },
+        ]);
     } else if !prompt.is_empty() {
         args.extend(["--".into(), format!("/dev-{phase} {}", prompt.join(" "))]);
     }
@@ -111,6 +119,54 @@ fn run_pi(mut command: Command) -> Result<()> {
     }
 }
 
+pub fn generate_brief(root: &Path, input: &str) -> Result<String> {
+    let executable = installed_pi()?;
+    let package = executable
+        .parent()
+        .and_then(|p| p.parent())
+        .and_then(|p| p.parent())
+        .ok_or_else(|| anyhow!("Invalid Pi package path"))?;
+    let args = phase_args(&load_roles(package)?, "brief", &[])?;
+    let skill = package.join("skills/dev-brief/SKILL.md");
+    let mut child = Command::new(executable)
+        .current_dir(root)
+        .args(args)
+        .args([
+            "--no-session",
+            "--no-extensions",
+            "--no-skills",
+            "--no-context-files",
+            "--no-tools",
+            "--append-system-prompt",
+        ])
+        .arg(skill)
+        .args([
+            "--print",
+            "--",
+            "Produce the dev-brief JSON from the captured input. Do not use tools.",
+        ])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .context("Could not start Pi brief generation")?;
+    child
+        .stdin
+        .take()
+        .ok_or_else(|| anyhow!("Pi stdin unavailable"))?
+        .write_all(input.as_bytes())?;
+    let output = child
+        .wait_with_output()
+        .context("Pi brief generation failed")?;
+    if !output.status.success() {
+        bail!(
+            "Pi brief generation failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        );
+    }
+    String::from_utf8(output.stdout).context("Pi output was not UTF-8")
+}
+
 pub fn launch_pi(args: Vec<String>) -> Result<()> {
     let executable = installed_pi()?;
     let mut command = Command::new(executable);
@@ -157,7 +213,7 @@ mod tests {
     }
     #[test]
     fn reasoning_phases_are_interactive_and_ship_runs_immediately() {
-        for phase in ["spec", "build", "review"] {
+        for phase in ["spec", "brief", "build", "review"] {
             let args = phase_args(&roles(), phase, &[]).unwrap();
             assert_eq!(args.len(), 6);
             assert_eq!(&args[..2], &["--provider", "openai-codex"]);
@@ -167,12 +223,7 @@ mod tests {
     }
     #[test]
     fn supporting_roles_are_not_public_phases() {
-        for phase in [
-            "plan",
-            "explorer",
-            "assessor",
-            "escalated_builder",
-        ] {
+        for phase in ["plan", "explorer", "assessor", "escalated_builder"] {
             assert!(phase_args(&roles(), phase, &[]).is_err());
         }
     }
@@ -199,7 +250,7 @@ mod tests {
     #[test]
     fn public_model_and_effort_selections_are_preserved() {
         let config = roles();
-        for name in ["spec", "build", "review", "ship"] {
+        for name in ["spec", "brief", "build", "review", "ship"] {
             let args = phase_args(&config, name, &[]).unwrap();
             assert_eq!(
                 format!("openai/{}:{}", args[3], args[5]),

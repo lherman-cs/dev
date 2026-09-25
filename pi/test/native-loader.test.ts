@@ -17,14 +17,14 @@ test('native Pi loads pinned plugins, goal controls, phase aliases and skills wi
   const loaded = loader.getExtensions();
   assert.deepEqual(loaded.errors, [], JSON.stringify(loaded.errors));
   const commands = loaded.extensions.flatMap(e => [...e.commands.keys()]);
-  assert.deepEqual(commands.filter(name => name.startsWith('dev-')).sort(), ['dev-build', 'dev-goal', 'dev-review', 'dev-ship', 'dev-spec']);
+  assert.deepEqual(commands.filter(name => name.startsWith('dev-')).sort(), ['dev-brief', 'dev-build', 'dev-goal', 'dev-review', 'dev-ship', 'dev-spec']);
   const tools = loaded.extensions.flatMap(e => [...e.tools.keys()]);
   assert.ok(tools.includes('explore'));
   assert.ok(!tools.includes('fffind'));
   assert.ok(!tools.includes('ffgrep'));
   assert.ok(!tools.includes('subagent'));
   const names = loader.getSkills().skills.map(s => s.name);
-  for (const skill of ['dev-spec','dev-build','dev-ship','dev-review']) assert.ok(names.includes(skill), names.join(','));
+  for (const skill of ['dev-spec','dev-brief','dev-build','dev-ship','dev-review']) assert.ok(names.includes(skill), names.join(','));
   const explorer = loader.getSkills().skills.find(skill => skill.name === 'dev-explore');
   assert.equal(explorer?.disableModelInvocation, true, 'Main must not see Explorer skill metadata for automatic loading');
 });

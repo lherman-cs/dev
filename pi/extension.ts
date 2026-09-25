@@ -92,7 +92,7 @@ export default function extension(pi: ExtensionAPI, dependencies: ExtensionDepen
   pi.on("session_before_fork", stopForSessionChange);
   pi.on("session_before_tree", stopForSessionChange);
   pi.on("input", async (event, nextCtx) => {
-    const match = /^\/skill:dev-(spec|build|review|ship)(?:\s|$)/.exec(event.text);
+    const match = /^\/skill:dev-(spec|brief|build|review|ship)(?:\s|$)/.exec(event.text);
     if (!match?.[1]) return { action: "continue" };
     const next = match[1] as PublicPhase;
     if (next === "ship") {
@@ -108,7 +108,7 @@ export default function extension(pi: ExtensionAPI, dependencies: ExtensionDepen
     return { action: "continue" };
   });
 
-  for (const commandPhase of ["spec", "build", "review", "ship"] as const) pi.registerCommand(`dev-${commandPhase}`, {
+  for (const commandPhase of ["spec", "brief", "build", "review", "ship"] as const) pi.registerCommand(`dev-${commandPhase}`, {
     description: `Invoke dev-${commandPhase} in the current conversation`,
     handler: async (args, nextCtx) => {
       ctx = nextCtx;

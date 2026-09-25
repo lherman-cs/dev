@@ -15,6 +15,9 @@ spec = "openai/gpt-6-astra:medium"
 # Reason: Sol high is close to Astra-medium coding quality at substantially lower task cost.
 build = "openai/gpt-6-sol:high"
 
+# Role: Explain material branch consequences for human comprehension.
+brief = "openai/gpt-6-astra:medium"
+
 # Role: Review candidate changes against agreed intent, repair defects, and obtain consequential approvals.
 # Signals: FrontierCode, DeepSWE, AutomationBench, factual error.
 # Reason: Review judges consequential effects and discusses approval with the human.
