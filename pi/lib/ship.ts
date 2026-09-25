@@ -2,168 +2,144 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
-import { Type, type Static } from "@earendil-works/pi-ai";
-import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
+import { Type } from "@earendil-works/pi-ai";
 import type { RunWorker } from "./worker.ts";
 
-const commitParams = Type.Object({
-  message: Type.String({ minLength: 1, maxLength: 500 }),
-  paths: Type.Array(Type.String({ minLength: 1, maxLength: 2000 }), { minItems: 1, maxItems: 500 }),
-}, { additionalProperties: false });
+const messageSchema = Type.Object({ title: Type.String({ minLength: 1 }), body: Type.String({ minLength: 1 }) }, { additionalProperties: false });
+export type ShipMessage = { title: string; body: string };
+export type ShipDecision = "approve" | "cancel" | { tweak: string };
+const git = (cwd: string, args: string[]): string => execFileSync("git", args, { cwd, encoding: "utf8", stdio: ["pipe", "pipe", "pipe"], maxBuffer: 64 * 1024 * 1024 }).trim();
+const gitBytes = (cwd: string, args: string[]): Buffer => execFileSync("git", args, { cwd, stdio: ["pipe", "pipe", "pipe"], maxBuffer: 64 * 1024 * 1024 });
+const nul = (data: Buffer): string[] => data.toString("utf8").split("\0").filter(Boolean);
+const head = (cwd: string) => git(cwd, ["rev-parse", "HEAD"]);
+const tree = (cwd: string, rev: string) => git(cwd, ["rev-parse", `${rev}^{tree}`]);
 
-const git = (cwd: string, args: string[], input?: Buffer | string): string =>
-  execFileSync("git", args, { cwd, input, encoding: "utf8", stdio: ["pipe", "pipe", "pipe"], maxBuffer: 64 * 1024 * 1024 }).trim();
-
-const safeName = (value: string): string => {
-  const cleaned = value.trim().replace(/^ship\//, "").replace(/[^A-Za-z0-9._/-]+/g, "-").replace(/^[-/.]+|[-/.]+$/g, "");
-  if (!cleaned || cleaned.includes("..")) throw new Error("Shipping branch name is empty or unsafe.");
-  return cleaned;
-};
-
-const assertRelativePath = (value: string): string => {
-  const normalized = path.posix.normalize(value.replaceAll("\\", "/"));
-  if (!normalized || normalized === "." || normalized.startsWith("../") || normalized.includes("/../") || path.posix.isAbsolute(normalized)) {
-    throw new Error(`Unsafe shipping path: ${value}`);
+function clean(cwd: string, label: string): void {
+  if (gitBytes(cwd, ["status", "--porcelain=v1", "-z", "--untracked-files=all"]).length) throw new Error(`${label} must be clean (including staged, unstaged and untracked files). Prepare it manually before dev-ship.`);
+}
+function operations(cwd: string, label: string): void {
+  for (const name of ["MERGE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD", "REBASE_HEAD", "BISECT_LOG", "rebase-apply", "rebase-merge", "sequencer"]) {
+    if (fs.existsSync(path.resolve(cwd, git(cwd, ["rev-parse", "--git-path", name])))) throw new Error(`${label} has an unresolved Git operation (${name}); resolve it before dev-ship.`);
   }
-  return normalized;
-};
-
-function replaceTree(cwd: string, sourceRoot: string, revision: string): void {
-  for (const entry of fs.readdirSync(cwd)) if (entry !== ".git") fs.rmSync(path.join(cwd, entry), { recursive: true, force: true });
-  const archive = execFileSync("git", ["archive", "--format=tar", revision], { cwd: sourceRoot, maxBuffer: 256 * 1024 * 1024 });
-  execFileSync("tar", ["-xf", "-", "-C", cwd], { input: archive, stdio: ["pipe", "ignore", "pipe"], maxBuffer: 256 * 1024 * 1024 });
 }
-
-function tree(cwd: string, revision = "HEAD"): string {
-  return git(cwd, ["rev-parse", `${revision}^{tree}`]);
+function mainCheckout(root: string): string | undefined {
+  const records = nul(gitBytes(root, ["worktree", "list", "--porcelain", "-z"]));
+  const matches: string[] = [];
+  let location: string | undefined;
+  let branch = false, unsafe = false;
+  const flush = () => { if (branch) { if (!location || unsafe) throw new Error("Local main checkout is locked, unavailable or ambiguous; prepare it manually."); matches.push(location); } location = undefined; branch = false; unsafe = false; };
+  for (const record of records) {
+    if (record.startsWith("worktree ")) { flush(); location = record.slice(9); }
+    else if (record === "branch refs/heads/main") branch = true;
+    else if (record === "locked" || record.startsWith("locked ") || record === "prunable" || record.startsWith("prunable ")) unsafe = true;
+  }
+  flush();
+  if (matches.length > 1) throw new Error("Local main has ambiguous checkouts; prepare it manually.");
+  return matches[0];
 }
-
-function sourceState(cwd: string): { root: string; baseline: string; candidate: string; candidateTree: string; sourceBranch: string } {
+function checkoutSafe(root: string, checkout: string | undefined, base: string, candidate: string): void {
+  if (!checkout) return;
+  if (!fs.existsSync(checkout) || git(checkout, ["symbolic-ref", "-q", "HEAD"]) !== "refs/heads/main" || head(checkout) !== base) throw new Error("Local main checkout changed or is unavailable; restart dev-ship.");
+  operations(checkout, "Local main checkout");
+  clean(checkout, "Local main checkout");
+  // Git's fast-forward checkout may overwrite ignored files. Refuse every overlapping
+  // ignored path, including directories replaced by files and files replaced by trees.
+  const changed = nul(gitBytes(root, ["diff", "--name-only", "-z", base, candidate]));
+  const ignored = nul(gitBytes(checkout, ["ls-files", "--others", "--ignored", "--exclude-standard", "-z"]));
+  for (const file of ignored) if (changed.some(other => file === other || file.startsWith(`${other}/`) || other.startsWith(`${file}/`))) {
+    throw new Error(`Ignored file obstructs local main checkout: ${file}. Move it manually before dev-ship.`);
+  }
+}
+interface Captured { root: string; source: string; candidate: string; candidateTree: string; main: string; checkout: string | undefined; noop: boolean }
+function capture(cwd: string): Captured {
   const root = git(cwd, ["rev-parse", "--show-toplevel"]);
-  if (git(root, ["status", "--porcelain", "--untracked-files=all"])) throw new Error("Prepare a clean committed candidate before dev-ship; the human owns integration and commits after review.");
-  const sourceBranch = git(root, ["branch", "--show-current"]);
-  if (!sourceBranch) throw new Error("dev-ship requires a named source branch.");
-  const candidate = git(root, ["rev-parse", "HEAD"]);
-  const main = git(root, ["rev-parse", "main"]);
-  const baseline = git(root, ["merge-base", candidate, main]);
-  if (baseline !== main) throw new Error("Local main is not integrated into the candidate. Prepare and commit the integrated candidate before dev-ship; return to dev-review if integration materially changes reviewed effects.");
-  return { root, baseline, candidate, candidateTree: tree(root, candidate), sourceBranch };
+  clean(root, "Source feature branch");
+  const source = git(root, ["symbolic-ref", "-q", "--short", "HEAD"]);
+  if (!source || source === "main") throw new Error("dev-ship requires a named feature branch, not main or detached HEAD.");
+  operations(root, "Source feature branch");
+  const candidate = head(root), candidateTree = tree(root, candidate);
+  let main: string;
+  try { main = git(root, ["rev-parse", "--verify", "refs/heads/main^{commit}"]); }
+  catch { throw new Error("Local main is missing; create or prepare local main before dev-ship."); }
+  const checkout = mainCheckout(root);
+  checkoutSafe(root, checkout, main, candidate);
+  if (tree(root, main) === candidateTree) return { root, source, candidate, candidateTree, main, checkout, noop: true };
+  if (git(root, ["merge-base", candidate, main]) !== main) throw new Error("Local main is not integrated into the candidate. Prepare and commit an integrated candidate before dev-ship.");
+  return { root, source, candidate, candidateTree, main, checkout, noop: false };
 }
-
-function isolatedWorkspace(sourceRoot: string, baseline: string, candidate: string, candidateTree: string): { dir: string; baselineCommit: string; dispose(): void } {
-  const parent = fs.mkdtempSync(path.join(os.tmpdir(), "dev-ship-model-"));
-  const dir = path.join(parent, "repo");
-  fs.mkdirSync(dir);
-  git(dir, ["init", "-q", "-b", "ship-work"]);
-  git(dir, ["config", "user.name", "dev-ship"]);
-  git(dir, ["config", "user.email", "dev-ship@local"]);
-  replaceTree(dir, sourceRoot, baseline);
-  git(dir, ["add", "-A"]);
-  git(dir, ["commit", "-qm", "baseline"]);
-  const baselineCommit = git(dir, ["rev-parse", "HEAD"]);
-  replaceTree(dir, sourceRoot, candidate);
-  git(dir, ["add", "-A"]);
-  const preparedTree = git(dir, ["write-tree"]);
-  if (preparedTree !== candidateTree) throw new Error("Isolated candidate materialization does not exactly match the reviewed tree.");
-  git(dir, ["reset", "-q", baselineCommit]);
-  return { dir, baselineCommit, dispose: () => fs.rmSync(parent, { recursive: true, force: true }) };
-}
-
-function commitTool(cwd: string): ToolDefinition<typeof commitParams, unknown, any> {
-  return {
-    name: "ship_commit",
-    label: "Ship commit",
-    description: "Commit selected existing candidate paths without editing their content. Use each changed path exactly once.",
-    parameters: commitParams,
-    async execute(_id, args: Static<typeof commitParams>) {
-      const paths = [...new Set(args.paths.map(assertRelativePath))];
-      const raw = execFileSync("git", ["status", "--porcelain=v1", "-z", "--untracked-files=all"], { cwd, encoding: "utf8" });
-      const entries = raw.split("\0").filter(Boolean);
-      const changed = new Set<string>();
-      for (let i = 0; i < entries.length; i++) {
-        const entry = entries[i]!;
-        const status = entry.slice(0, 2), first = entry.slice(3);
-        changed.add(first);
-        if (status[0] === "R" || status[1] === "R") changed.add(entries[++i]!);
-      }
-      for (const p of paths) if (!changed.has(p)) throw new Error(`Path is not currently changed: ${p}`);
-      git(cwd, ["add", "--", ...paths]);
-      git(cwd, ["commit", "-qm", args.message.trim()]);
-      return { content: [{ type: "text" as const, text: `Committed ${paths.length} path(s).` }], details: {} };
-    },
-  };
-}
-
-function applyIsolatedHistory(sourceRoot: string, workspace: string, isolatedBaseline: string, baseline: string, branchName: string): { branch: string; head: string; worktree: string; dispose(): void } {
-  try { git(sourceRoot, ["show-ref", "--verify", "--quiet", `refs/heads/${branchName}`]); throw new Error(`Shipping branch already exists: ${branchName}`); }
-  catch (error) { if (error instanceof Error && error.message.startsWith("Shipping branch")) throw error; }
-
-  const parent = fs.mkdtempSync(path.join(os.tmpdir(), "dev-ship-final-"));
-  const worktree = path.join(parent, "worktree");
-  let created = false;
+function unchanged(state: Captured): void {
   try {
-    git(sourceRoot, ["worktree", "add", "-q", "-b", branchName, worktree, baseline]);
-    created = true;
-    const commits = git(workspace, ["rev-list", "--reverse", `${isolatedBaseline}..HEAD`]).split("\n").filter(Boolean);
-    if (!commits.length) throw new Error("Shipping model produced no commits.");
-    for (const commit of commits) {
-      const patch = execFileSync("git", ["format-patch", "--stdout", "--no-signature", "-1", commit], { cwd: workspace, maxBuffer: 64 * 1024 * 1024 });
-      execFileSync("git", ["am", "-q"], { cwd: worktree, input: patch, stdio: ["pipe", "pipe", "pipe"], maxBuffer: 64 * 1024 * 1024 });
+    clean(state.root, "Source feature branch");
+    operations(state.root, "Source feature branch");
+    if (git(state.root, ["symbolic-ref", "-q", "--short", "HEAD"]) !== state.source || head(state.root) !== state.candidate || tree(state.root, state.candidate) !== state.candidateTree ||
+      git(state.root, ["rev-parse", "--verify", "refs/heads/main^{commit}"]) !== state.main || mainCheckout(state.root) !== state.checkout) throw new Error("ref or checkout changed");
+    checkoutSafe(state.root, state.checkout, state.main, state.candidate);
+  } catch (error) { throw new Error(`Approval invalidated by source or local main state change; restart dev-ship with fresh approval. ${error instanceof Error ? error.message : String(error)}`); }
+}
+function normalize(message: ShipMessage): ShipMessage {
+  const title = message.title.trim(), body = message.body.trim();
+  if (!title || !body || /[\r\n\0]/.test(title) || body.includes("\0")) throw new Error("Model supplied an invalid commit title or body; no integration occurred.");
+  return { title, body };
+}
+function prepare(state: Captured, message: ShipMessage): { commit: string; dispose(): void } {
+  const parent = fs.mkdtempSync(path.join(os.tmpdir(), "dev-ship-"));
+  const worktree = path.join(parent, "candidate");
+  let attached = false;
+  try {
+    git(state.root, ["worktree", "add", "--detach", "--quiet", worktree, state.candidate]); attached = true;
+    git(worktree, ["reset", "--soft", state.main]);
+    // Relative hooksPath is normally resolved from the source worktree root.
+    let hooksPath: string | undefined;
+    try { hooksPath = git(state.root, ["config", "--get", "core.hooksPath"]); } catch {}
+    const hookConfig = hooksPath && !path.isAbsolute(hooksPath) ? ["-c", `core.hooksPath=${path.resolve(state.root, hooksPath)}`] : [];
+    // git commit runs ordinary hooks and signing in a temporary linked worktree.
+    git(worktree, [...hookConfig, "commit", "-m", message.title, "-m", message.body]);
+    const commit = head(worktree);
+    if (git(worktree, ["rev-parse", `${commit}^`]) !== state.main || tree(worktree, commit) !== state.candidateTree ||
+      git(worktree, ["show", "-s", "--format=%B", commit]).trimEnd() !== `${message.title}\n\n${message.body}` ||
+      gitBytes(worktree, ["status", "--porcelain=v1", "-z", "--untracked-files=all"]).length) {
+      throw new Error("Commit hooks changed the approved message, candidate tree or temporary checkout. Nothing was published to main.");
     }
-    return { branch: branchName, head: git(worktree, ["rev-parse", "HEAD"]), worktree,
-      dispose() { try { git(sourceRoot, ["worktree", "remove", "--force", worktree]); } finally { fs.rmSync(parent, { recursive: true, force: true }); } } };
+    return { commit, dispose: () => { git(state.root, ["worktree", "remove", worktree]); fs.rmSync(parent, { recursive: true, force: true }); } };
   } catch (error) {
-    if (created) {
-      try { git(sourceRoot, ["worktree", "remove", "--force", worktree]); } catch {}
-      try { git(sourceRoot, ["branch", "-D", branchName]); } catch {}
+    if (attached || fs.existsSync(worktree)) {
+      try { git(state.root, ["worktree", "remove", worktree]); }
+      catch { throw new Error(`${error instanceof Error ? error.message : String(error)} Temporary checkout retained for recovery: ${worktree}`); }
     }
     fs.rmSync(parent, { recursive: true, force: true });
     throw error;
   }
 }
-
-export async function packageReviewedCandidate(options: { cwd: string; name?: string; run: RunWorker }): Promise<string> {
-  const source = sourceState(options.cwd);
-  const suffix = safeName(options.name || source.sourceBranch);
-  const branch = `ship/${suffix}`;
-  const isolated = isolatedWorkspace(source.root, source.baseline, source.candidate, source.candidateTree);
-  try {
-    const beforeTree = tree(source.root, source.candidate);
-    if (beforeTree !== source.candidateTree) throw new Error("Reviewed candidate changed before shipping started.");
-
-    await options.run({
-      cwd: isolated.dir,
-      name: "ship",
-      skill: "dev-ship",
-      task: "Group the existing candidate changes into the fewest coherent shippable commits. Do not edit files. Use ship_commit for every commit, then finish.",
-      tools: ["read", "grep", "find", "ls"],
-      scopedTools: [commitTool(isolated.dir)],
-      metadata: { phase: "ship", label: "Shipper · commit packaging" },
-    });
-
-    if (git(isolated.dir, ["status", "--porcelain", "--untracked-files=all"])) throw new Error("Shipping model left uncommitted candidate content.");
-    if (tree(isolated.dir) !== source.candidateTree) throw new Error("Shipping model changed candidate content; no shipping branch was created.");
-    if (git(source.root, ["rev-parse", "HEAD"]) !== source.candidate || git(source.root, ["branch", "--show-current"]) !== source.sourceBranch ||
-      git(source.root, ["status", "--porcelain", "--untracked-files=all"])) throw new Error("Source development worktree changed while shipping ran.");
-
-    const final = applyIsolatedHistory(source.root, isolated.dir, isolated.baselineCommit, source.baseline, branch);
+export async function packageReviewedCandidate(options: { cwd: string; run: RunWorker; decide: (message: ShipMessage) => Promise<ShipDecision> }): Promise<string> {
+  const state = capture(options.cwd);
+  if (state.noop) return `Nothing to ship: local main (${state.main}) already has the exact candidate tree.`;
+  const diff = git(state.root, ["diff", "--stat", state.main, state.candidate]);
+  const patch = git(state.root, ["diff", "--no-ext-diff", state.main, state.candidate]).slice(0, 100_000);
+  let tweak = "", previous = "";
+  for (;;) {
+    const message = normalize(await options.run({ cwd: state.root, name: "ship", schema: messageSchema, tools: [], metadata: { phase: "ship", label: "Shipper · message proposal" },
+      task: `Propose ONLY a concise Conventional Commit title and brief body for shipping this candidate to local main. Return title and body. Do not modify files.\nSummary:\n${diff}\nPatch (possibly truncated):\n${patch}\n${previous ? `Previous message:\n${previous}\nRequested tweak: ${tweak}\n` : ""}` }));
+    unchanged(state);
+    const decision = await options.decide(message);
+    if (decision === "cancel") return "Shipping to local main cancelled; main was not advanced.";
+    if (decision !== "approve") { previous = `${message.title}\n\n${message.body}`; tweak = decision.tweak; continue; }
+    unchanged(state);
+    const prepared = prepare(state, message);
+    let failure: unknown;
     try {
-      const finalTree = tree(final.worktree);
-      const diff = git(source.root, ["diff", "--exit-code", source.candidate, final.head]);
-      if (finalTree !== source.candidateTree || diff) throw new Error("Final shipping branch is not tree-equivalent to the reviewed candidate.");
-      if (git(final.worktree, ["status", "--porcelain", "--untracked-files=all"])) throw new Error("Final shipping worktree is not clean.");
-      if (git(source.root, ["rev-parse", "HEAD"]) !== source.candidate || git(source.root, ["branch", "--show-current"]) !== source.sourceBranch ||
-        git(source.root, ["status", "--porcelain", "--untracked-files=all"])) throw new Error("Source development worktree changed during final packaging.");
-      const parents = git(source.root, ["rev-list", "--parents", `${source.baseline}..${final.head}`]).split("\n").filter(Boolean);
-      if (parents.some(line => line.trim().split(/\s+/).length !== 2)) throw new Error("Shipping history is not linear.");
-      final.dispose();
-      return `Created ${final.branch} with ${parents.length} clean commit(s). Tree equivalence to the reviewed candidate is exact.`;
-    } catch (error) {
-      try { git(source.root, ["worktree", "remove", "--force", final.worktree]); } catch {}
-      try { git(source.root, ["branch", "-D", final.branch]); } catch {}
-      throw error;
-    }
-  } finally {
-    isolated.dispose();
+      unchanged(state);
+      if (state.checkout) git(state.checkout, ["merge", "--ff-only", "--no-edit", prepared.commit]);
+      else git(state.root, ["update-ref", "refs/heads/main", prepared.commit, state.main]);
+      if (git(state.root, ["rev-parse", "refs/heads/main"]) !== prepared.commit) throw new Error("Local main did not reach the prepared commit.");
+      if (state.checkout) {
+        if (head(state.checkout) !== prepared.commit) throw new Error("Local main checkout HEAD did not reach the prepared commit.");
+        clean(state.checkout, "Local main checkout after integration");
+      }
+    } catch (error) { failure = error; }
+    try { prepared.dispose(); }
+    catch (error) { failure = failure ? new Error(`${String(failure)}; cleanup: ${String(error)}`) : error; }
+    const actual = git(state.root, ["rev-parse", "refs/heads/main"]);
+    if (failure || actual !== prepared.commit) throw new Error(`Shipping interrupted or failed. Local main is ${actual}; prepared commit was ${prepared.commit}. Inspect local main and its checkout before retrying. ${failure instanceof Error ? failure.message : String(failure ?? "Main changed during integration")}`);
+    return `Shipped ${prepared.commit} to local main. Source branch ${state.source} was not changed.`;
   }
 }

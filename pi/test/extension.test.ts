@@ -90,6 +90,29 @@ test("spec build and review activate goals while ship delegates to the determini
   assert.equal(packaged, 1);
 });
 
+test("ship displays the exact message, defaults to cancel and treats tweaks as non-approval", async () => {
+  const commands = new Map<string, Omit<RegisteredCommand, "name" | "sourceInfo">>();
+  const shown: string[] = [], decisions: unknown[] = [], noop = () => undefined;
+  const choices = ["Request a tweak", "Approve and ship to local main"];
+  load({ registerCommand: (name, command) => { commands.set(name, command); }, registerShortcut: noop as ExtensionAPI["registerShortcut"],
+    registerTool: noop as ExtensionAPI["registerTool"], on: (() => noop) as ExtensionAPI["on"], sendMessage: noop as ExtensionAPI["sendMessage"],
+    sendUserMessage: noop as ExtensionAPI["sendUserMessage"], getActiveTools: () => ["read"], setActiveTools: noop as ExtensionAPI["setActiveTools"],
+  }, { hub: new WorkerHub(), registerWorkerHubUI: (() => ({ setContext: noop, dispose: noop })) as never,
+    packageReviewedCandidate: (async ({ decide }: { decide: (message: { title: string; body: string }) => Promise<unknown> }) => {
+      for (let i = 0; i < 2; i++) decisions.push(await decide({ title: "feat: exact", body: "Full body" }));
+      return "shipped";
+    }) as never });
+  const context = { cwd: process.cwd(), hasUI: true, sessionManager: SessionManager.inMemory(process.cwd()), ui: {
+    notify: noop, setWidget: noop, select: async (title: string, items: string[]) => {
+      shown.push(title); assert.equal(items[0], "Cancel"); return choices.shift();
+    }, input: async () => "shorter please",
+  } } as never;
+  await commands.get("dev-ship")!.handler("", context);
+  assert.deepEqual(decisions, [{ tweak: "shorter please" }, "approve"]);
+  assert.equal(shown.length, 2);
+  assert.match(shown[0]!, /Ship to local main.*feat: exact\n\nFull body/s);
+});
+
 test("session change cancels active evidence work without vetoing or transferring ownership", async () => {
   let stops = 0;
   const run = Object.assign(async () => "unused", {

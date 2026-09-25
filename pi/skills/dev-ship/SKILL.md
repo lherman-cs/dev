@@ -1,15 +1,9 @@
 ---
 name: dev-ship
-description: Group an already-isolated reviewed candidate into a few coherent commits.
+description: Ship a clean committed candidate to local main with an approved squash message.
 disable-model-invocation: true
 ---
 
 # dev-ship
 
-You are inside a disposable repository prepared by the deterministic ship runtime. You cannot rely on or inspect the source development worktree.
-
-The candidate content is already fixed. Do not edit files, investigate product behavior, run validation, merge branches, resolve conflicts, or make semantic changes.
-
-Inspect only enough of the existing diff to choose the fewest coherent shippable commits. Use `ship_commit` to commit changed paths with concise Conventional Commit messages. Prefer one commit unless separating changes materially improves coherence or independent shippability.
-
-Finish only when no candidate changes remain uncommitted. The runtime independently verifies exact tree equivalence and constructs the real `ship/<name>` branch outside this workspace.
+Use `/dev-ship` or `dev a ship`. The deterministic runtime checks source and local main, proposes a Conventional Commit message, obtains explicit human approval of the exact message and local integration, then safely fast-forwards main to one squash commit with the candidate tree. A tweak is not approval. The feature branch is left untouched. No remote operation or shipping branch is created.

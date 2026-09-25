@@ -61,18 +61,10 @@ test("dev-review reviews the observed diff, repairs bugs, and obtains consequent
   assert.doesNotMatch(review, /Reviewer PASS|repair audit|clean, fully committed reviewed candidate/i);
 });
 
-test("dev-ship model is only an isolated commit grouper", () => {
+test("dev-ship describes only the guarded local main operation", () => {
   const ship = skill("dev-ship");
-  for (const requirement of [
-    /disposable repository prepared by the deterministic ship runtime/,
-    /cannot rely on or inspect the source development worktree/,
-    /Do not edit files/,
-    /fewest coherent shippable commits/,
-    /Use `ship_commit`/,
-    /Prefer one commit unless/,
-    /runtime independently verifies exact tree equivalence/,
-  ]) assert.match(ship, requirement);
-  assert.doesNotMatch(ship, /references\/reconcile|Read `\.\.\/\.\.\/references|Create an isolated|source branch history/i);
+  for (const requirement of [/deterministic runtime/, /Conventional Commit/, /explicit human approval/, /fast-forwards main/, /feature branch is left untouched/]) assert.match(ship, requirement);
+  assert.doesNotMatch(ship, /ship_commit|commit grouping|ship\/\<name\>|references\/reconcile/i);
 });
 
 
@@ -82,7 +74,7 @@ test("documentation exposes the four phase boundary", () => {
   for (const doc of [workflow, readme]) {
     for (const phase of ["spec", "build", "review", "ship"]) assert.match(doc, new RegExp(phase, "i"));
     assert.match(doc, /Review.*foreground|foreground.*Review/is);
-    assert.match(doc, /ship\/<name>/);
+    assert.match(doc, /local `main`/);
   }
   assert.match(workflow, /Spec, Build, and Review activate a session-native goal/);
   assert.match(workflow, /Ship does not activate a goal/);

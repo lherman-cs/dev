@@ -96,7 +96,7 @@ export default function extension(pi: ExtensionAPI, dependencies: ExtensionDepen
     if (!match?.[1]) return { action: "continue" };
     const next = match[1] as PublicPhase;
     if (next === "ship") {
-      nextCtx?.ui.notify("dev-ship runs through /dev-ship so the runtime can isolate and guard the packaging workspace.", "warning");
+      nextCtx?.ui.notify("dev-ship runs through /dev-ship so the runtime can guard local main integration.", "warning");
       return { action: "handled" };
     }
     if (event.source !== "extension" && nextCtx?.sessionManager) {
@@ -116,7 +116,16 @@ export default function extension(pi: ExtensionAPI, dependencies: ExtensionDepen
         if (guard.currentSkill()) { nextCtx.ui.notify("Finish or abandon the active goal before dev-ship.", "warning"); return; }
         hubUI.setContext(nextCtx);
         try {
-          const result = await (dependencies.packageReviewedCandidate || packageReviewedCandidate)({ cwd: nextCtx.cwd, run, ...(args.trim() ? { name: args.trim() } : {}) });
+          const result = await (dependencies.packageReviewedCandidate || packageReviewedCandidate)({ cwd: nextCtx.cwd, run, decide: async message => {
+            if (!nextCtx.hasUI) throw new Error("Shipping to local main requires interactive message approval.");
+            const action = await nextCtx.ui.select(`Ship to local main with this exact commit message?\n\n${message.title}\n\n${message.body}`, ["Cancel", "Request a tweak", "Approve and ship to local main"]);
+            if (action === "Approve and ship to local main") return "approve";
+            if (action === "Request a tweak") {
+              const tweak = await nextCtx.ui.input("Describe the message tweak (not approval)");
+              return tweak?.trim() ? { tweak: tweak.trim() } : "cancel";
+            }
+            return "cancel";
+          } });
           pi.sendMessage({ customType: "dev-ship-result", content: result, display: true }, { triggerTurn: false });
         } catch (error) {
           nextCtx.ui.notify(`dev-ship: ${error instanceof Error ? error.message : String(error)}`, "warning");

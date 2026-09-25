@@ -11,7 +11,7 @@ Pi is the harness. The request, repository evidence, applicable approved decisio
 | Spec | Converge the smallest coherent outcome the human actually wants. Resolve consequential semantics and scope with explicit human approval. |
 | Build | Implement the approved outcome, validate it, and commit locally. Resolve ordinary engineering choices autonomously. |
 | Review | Review the existing candidate diff against agreed intent; repair clear in-scope defects; obtain human approval for all consequential changes, including spec-compliant behavior and major design choices. |
-| Ship | Package the reviewed tree into a clean local `ship/<name>` branch with a minimal linear commit history. Do not change candidate content. |
+| Ship | Approve a generated commit message and integrate the exact committed candidate tree into local `main` as one squash commit. |
 
 Spec, Build, and Review activate a session-native goal. Spec and Review are collaborative goals: ordinary human conversation keeps the same goal active. Ship does not activate a goal.
 
@@ -33,21 +33,11 @@ Ship is a guarded packaging operation, not a general-purpose foreground engineer
 
 The human must prepare a clean, fully committed candidate with the current local `main` integrated before Ship. The runtime mechanically captures its exact tree and requires `main` to equal the candidate's merge-base with `main`; if it has advanced, shipping stops until the human prepares the candidate and returns for review if integration materially changes it.
 
-Before any Ship model runs, the runtime creates a disposable standalone Git repository containing only the reviewed baseline and reviewed candidate content. It has no remotes and no source-worktree reference. The model is never given the source repository path or source branch. It receives read-only inspection tools plus one `ship_commit` primitive that can commit existing changed paths but cannot author file content.
+Before the message model runs, Ship requires a named clean feature branch, local `main`, no unresolved Git operations, and a safe clean checkout of main if one exists. An identical candidate/main tree is a no-op, even after a previous squash. Otherwise main must be an ancestor of the candidate. No fetch or automatic preparation occurs.
 
-The model's only judgment is commit grouping and Conventional Commit wording. Prefer one commit unless separating changes materially improves coherence or independent shippability. It does not merge, repair, validate, explore, edit files, or make product decisions.
+The model proposes only a Conventional Commit title and body from the candidate delta. The human sees the full message and explicitly approves shipping to local main, requests repeated tweaks, or cancels. Tweaks never imply approval. Ship rechecks captured source and main identities and checkout safety after discussion and immediately before integration. Changed state requires a fresh invocation and approval.
 
-After the isolated model workspace is clean, the runtime compares its final tree hash with the captured reviewed candidate tree. Only then does the host create a real local `ship/<name>` worktree from the exact reviewed `main` baseline and replay the isolated commits. The host then mechanically verifies:
-
-- the source development branch still points to the same reviewed candidate;
-- the final shipping tree exactly equals the reviewed candidate tree;
-- the base-to-candidate diff is identical;
-- every shipping commit has one parent, so history is linear;
-- the final worktree is clean.
-
-Any mismatch deletes the provisional shipping branch/worktree and leaves the source branch untouched. A successful run removes its temporary workspaces and leaves only the verified local `ship/<name>` branch.
-
-Ship does not fetch, push, deploy, open or mutate remote review state, or merge into another branch.
+A temporary linked worktree constructs the single-parent commit with normal hooks and configured signing. Hook-induced message or tree drift blocks publication. The runtime fast-forwards main, updating its clean checkout when present, and leaves the feature branch untouched. Failures report actual main state for recovery; checkout and ref updates are not promised to be atomic. Ship does not fetch, push, deploy, or open remote review state.
 
 ## Supporting evidence
 
