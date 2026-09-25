@@ -61,6 +61,8 @@ struct Revision {
     spec_digest: Option<String>,
     worktree: bool,
     omissions: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    change_stats: Option<ChangeStats>,
     markdown: String,
     bottom_line: String,
     closing: String,
@@ -69,6 +71,12 @@ struct Revision {
     targets: Vec<Target>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     document: Option<Document>,
+}
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+struct ChangeStats {
+    files: usize,
+    added: usize,
+    removed: usize,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -100,6 +108,8 @@ struct BriefSection {
     id: String,
     #[serde(default)]
     title: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    nav: String,
     #[serde(default)]
     kind: SectionKind,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -139,6 +149,20 @@ enum BriefBlock {
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         anchors: Vec<String>,
     },
+    IconList {
+        #[serde(default, skip_serializing_if = "String::is_empty")]
+        label: String,
+        items: Vec<IconItem>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        anchors: Vec<String>,
+    },
+    Timeline {
+        #[serde(default, skip_serializing_if = "String::is_empty")]
+        label: String,
+        tracks: Vec<TimelineTrack>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        anchors: Vec<String>,
+    },
     Table {
         #[serde(default, skip_serializing_if = "String::is_empty")]
         label: String,
@@ -147,18 +171,35 @@ enum BriefBlock {
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         anchors: Vec<String>,
     },
+    Transition {
+        #[serde(default, skip_serializing_if = "String::is_empty")]
+        label: String,
+        before: Vec<String>,
+        after: Vec<String>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        anchors: Vec<String>,
+    },
     Comparison {
         #[serde(default, skip_serializing_if = "String::is_empty")]
         label: String,
         before: String,
         after: String,
+        #[serde(default)]
+        format: ComparisonFormat,
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         anchors: Vec<String>,
     },
     Flow {
         #[serde(default, skip_serializing_if = "String::is_empty")]
         label: String,
-        steps: Vec<String>,
+        steps: Vec<FlowStep>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        anchors: Vec<String>,
+    },
+    Architecture {
+        #[serde(default, skip_serializing_if = "String::is_empty")]
+        label: String,
+        nodes: Vec<ArchitectureNode>,
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         anchors: Vec<String>,
     },
@@ -188,6 +229,85 @@ enum BriefBlock {
         anchors: Vec<String>,
     },
 }
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum ComparisonFormat {
+    #[default]
+    Prose,
+    Code,
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+enum FlowStep {
+    Short(String),
+    Detailed(DetailedFlowStep),
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct DetailedFlowStep {
+    title: String,
+    detail: String,
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ArchitectureNode {
+    title: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    detail: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    icon: Option<ItemIcon>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    notes: Vec<String>,
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct IconItem {
+    icon: ItemIcon,
+    text: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    detail: String,
+    #[serde(default)]
+    tone: ItemTone,
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum ItemIcon {
+    Check,
+    Warning,
+    Question,
+    Info,
+    Clock,
+    Gear,
+    People,
+    Shield,
+    File,
+    Link,
+    Dot,
+    Cloud,
+}
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum ItemTone {
+    #[default]
+    Neutral,
+    Positive,
+    Caution,
+    Negative,
+    Info,
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct TimelineTrack {
+    label: String,
+    events: Vec<TimelineEvent>,
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct TimelineEvent {
+    label: String,
+    #[serde(default)]
+    tone: ItemTone,
+}
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 enum CodeStatus {
@@ -207,9 +327,13 @@ impl BriefBlock {
             Self::Columns { anchors, .. }
             | Self::Text { anchors, .. }
             | Self::List { anchors, .. }
+            | Self::IconList { anchors, .. }
+            | Self::Timeline { anchors, .. }
             | Self::Table { anchors, .. }
             | Self::Comparison { anchors, .. }
+            | Self::Transition { anchors, .. }
             | Self::Flow { anchors, .. }
+            | Self::Architecture { anchors, .. }
             | Self::Diagram { anchors, .. }
             | Self::Code { anchors, .. }
             | Self::Callout { anchors, .. } => anchors,
@@ -229,9 +353,13 @@ impl BriefBlock {
             Self::Columns { label, .. }
             | Self::Text { label, .. }
             | Self::List { label, .. }
+            | Self::IconList { label, .. }
+            | Self::Timeline { label, .. }
             | Self::Table { label, .. }
             | Self::Comparison { label, .. }
+            | Self::Transition { label, .. }
             | Self::Flow { label, .. }
+            | Self::Architecture { label, .. }
             | Self::Diagram { label, .. }
             | Self::Code { label, .. }
             | Self::Callout { label, .. } => label,
@@ -442,6 +570,7 @@ struct Capture {
     context: String,
     omissions: Vec<String>,
     captured: String,
+    stats: ChangeStats,
     allowed: HashMap<String, Vec<(usize, usize)>>,
 }
 fn capture(root: &Path, args: &BriefArgs, spec: Option<(&str, &str)>) -> Result<Capture> {
@@ -495,6 +624,7 @@ fn capture(root: &Path, args: &BriefArgs, spec: Option<(&str, &str)>) -> Result<
     let mut evidence = String::new();
     let mut omissions = local_omissions;
     let mut allowed = HashMap::new();
+    let mut stats = ChangeStats::default();
     let hunk = Regex::new(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")?;
     const MAX_FILE: usize = 36_000;
     const MAX_TOTAL: usize = 210_000;
@@ -575,6 +705,15 @@ fn capture(root: &Path, args: &BriefArgs, spec: Option<(&str, &str)>) -> Result<
                 continue;
             }
         };
+        stats.files += 1;
+        stats.added += patch
+            .lines()
+            .filter(|line| line.starts_with('+') && !line.starts_with("+++"))
+            .count();
+        stats.removed += patch
+            .lines()
+            .filter(|line| line.starts_with('-') && !line.starts_with("---"))
+            .count();
         evidence.push_str(&format!("\n### {status} {path}\n{patch}\n"));
         let ranges = patch
             .lines()
@@ -631,6 +770,7 @@ fn capture(root: &Path, args: &BriefArgs, spec: Option<(&str, &str)>) -> Result<
         context,
         omissions,
         captured: identity,
+        stats,
         allowed,
     })
 }
@@ -741,9 +881,9 @@ fn validate_document(
             BriefBlock::Columns {
                 columns, widths, ..
             } => {
-                if (!widths.is_empty()
+                if !widths.is_empty()
                     && (widths.len() != columns.len()
-                        || widths.iter().any(|w| !(1..=4).contains(w))))
+                        || widths.iter().any(|w| !(1..=4).contains(w)))
                 {
                     bail!("Column widths must be 1–4 for each column");
                 }
@@ -764,12 +904,51 @@ fn validate_document(
             BriefBlock::Text { text: body, .. } | BriefBlock::Callout { text: body, .. } => {
                 text(body, 5000)?
             }
-            BriefBlock::List { items, .. } | BriefBlock::Flow { steps: items, .. } => {
+            BriefBlock::List { items, .. } => {
                 if items.is_empty() || items.len() > 20 {
-                    bail!("Invalid list or flow length");
+                    bail!("Invalid list length");
                 }
                 for item in items {
                     text(item, 500)?;
+                }
+            }
+            BriefBlock::IconList { items, .. } => {
+                if items.is_empty() || items.len() > 20 {
+                    bail!("Invalid icon list length");
+                }
+                for item in items {
+                    text(&item.text, 500)?;
+                    if !item.detail.is_empty() {
+                        text(&item.detail, 500)?;
+                    }
+                }
+            }
+            BriefBlock::Timeline { tracks, .. } => {
+                if tracks.is_empty() || tracks.len() > 3 {
+                    bail!("Invalid timeline tracks");
+                }
+                for track in tracks {
+                    text(&track.label, 100)?;
+                    if !(2..=8).contains(&track.events.len()) {
+                        bail!("Invalid timeline events");
+                    }
+                    for event in &track.events {
+                        text(&event.label, 200)?;
+                    }
+                }
+            }
+            BriefBlock::Flow { steps, .. } => {
+                if steps.is_empty() || steps.len() > 20 {
+                    bail!("Invalid flow length");
+                }
+                for step in steps {
+                    match step {
+                        FlowStep::Short(body) => text(body, 500)?,
+                        FlowStep::Detailed(step) => {
+                            text(&step.title, 100)?;
+                            text(&step.detail, 400)?;
+                        }
+                    }
                 }
             }
             BriefBlock::Table { columns, rows, .. } => {
@@ -788,6 +967,31 @@ fn validate_document(
             BriefBlock::Comparison { before, after, .. } => {
                 text(before, 2500)?;
                 text(after, 2500)?;
+            }
+            BriefBlock::Transition { before, after, .. } => {
+                if !(1..=6).contains(&before.len()) || !(1..=6).contains(&after.len()) {
+                    bail!("Transition needs 1–6 items per side");
+                }
+                for item in before.iter().chain(after) {
+                    text(item, 200)?;
+                }
+            }
+            BriefBlock::Architecture { nodes, .. } => {
+                if !(2..=5).contains(&nodes.len()) {
+                    bail!("Architecture needs 2–5 nodes");
+                }
+                for node in nodes {
+                    text(&node.title, 100)?;
+                    if !node.detail.is_empty() {
+                        text(&node.detail, 300)?;
+                    }
+                    if node.notes.len() > 4 {
+                        bail!("Architecture notes exceed limit");
+                    }
+                    for note in &node.notes {
+                        text(note, 200)?;
+                    }
+                }
             }
             BriefBlock::Diagram {
                 mermaid, takeaway, ..
@@ -837,6 +1041,9 @@ fn validate_document(
             bail!("Invalid or duplicate section ID");
         }
         text(&section.title, 120)?;
+        if !section.nav.is_empty() {
+            text(&section.nav, 50)?;
+        }
         anchors(&section.anchors, allowed)?;
         if section.blocks.is_empty() || section.blocks.len() > 12 {
             bail!("Section needs 1–12 blocks");
@@ -973,6 +1180,7 @@ fn generate(root: &Path, args: &BriefArgs, dir: &Path) -> Result<Revision> {
         spec_digest: spec.as_ref().map(|s| hash(s.1.as_bytes())),
         worktree: args.range.is_none(),
         omissions: capture.omissions,
+        change_stats: Some(capture.stats),
         markdown: source.to_owned(),
         bottom_line: document.lead.body.clone(),
         closing: String::new(),
@@ -1389,15 +1597,28 @@ mod tests {
             "Evidence incomplete"
         );
         assert!(
-            matches!(&parsed.sections[1].blocks[0], BriefBlock::Columns { columns, .. } if columns.len() == 2)
+            matches!(&parsed.sections[1].blocks[1], BriefBlock::Columns { columns, .. } if columns.len() == 2)
         );
-        let nested = parsed.sections[1].blocks[0].all_anchors();
+        let nested = parsed.sections[1].blocks[1].all_anchors();
         assert!(
             parsed.sections[1]
                 .anchors
                 .contains(&"docs/architecture.md:1".to_owned())
         );
         assert!(nested.contains(&"src/scream.rs:1".to_owned()));
+        assert!(
+            matches!(&parsed.sections[3].blocks[1], BriefBlock::Columns { columns, .. } if matches!(&columns[0][0], BriefBlock::Transition { before, after, .. } if before.len() == 4 && after.len() == 2))
+        );
+        assert!(
+            matches!(&parsed.sections[1].blocks[1], BriefBlock::Columns { columns, .. } if matches!(&columns[0][0], BriefBlock::Architecture { nodes, .. } if nodes.len() == 3))
+        );
+        let bad_architecture = source.replace("\"icon\":\"cloud\"", "\"icon\":\"script\"");
+        assert!(parse_document(&bad_architecture, &allowed, "").is_err());
+        let bad_transition = source.replace(
+            "\"before\":[\"Admission\",\"Scheduling\",\"Queue policy\",\"Retransmission\"]",
+            "\"before\":[]",
+        );
+        assert!(parse_document(&bad_transition, &allowed, "").is_err());
         let bad_widths = source.replace("\"widths\":[3,1]", "\"widths\":[3,0]");
         assert!(parse_document(&bad_widths, &allowed, "").is_err());
         let serialized = serde_json::to_string(&parsed).unwrap();
@@ -1444,6 +1665,29 @@ mod tests {
                 parse_document(&invalid, &allowed, "").is_err(),
                 "accepted invalid: {invalid}"
             );
+        }
+    }
+    #[test]
+    fn visual_primitives_are_typed_and_bounded() {
+        let allowed = HashMap::new();
+        let source = "# Branch consequence brief\n\n```brief-lead\n{\"title\":\"Bottom line\",\"body\":\"Observed state\"}\n```\n\n## Process\n\n```brief-section\n{\"id\":\"s-process\",\"nav\":\"Process\",\"blocks\":[{\"type\":\"timeline\",\"tracks\":[{\"label\":\"Before\",\"events\":[{\"label\":\"Sent\"},{\"label\":\"Lost\",\"tone\":\"negative\"}]}]},{\"type\":\"icon_list\",\"items\":[{\"icon\":\"check\",\"text\":\"Verified\",\"tone\":\"positive\"}]},{\"type\":\"flow\",\"steps\":[{\"title\":\"Observe\",\"detail\":\"Keep the report\"}]},{\"type\":\"comparison\",\"before\":\"old()\",\"after\":\"new()\",\"format\":\"code\"}]}\n```\n";
+        let parsed = parse_document(source, &allowed, "").unwrap();
+        assert_eq!(parsed.sections[0].nav, "Process");
+        assert!(matches!(
+            parsed.sections[0].blocks[0],
+            BriefBlock::Timeline { .. }
+        ));
+        for invalid in [
+            source.replace("\"tone\":\"negative\"", "\"tone\":\"scream\""),
+            source.replace("\"icon\":\"check\"", "\"icon\":\"html\""),
+            source.replace(
+                "\"detail\":\"Keep the report\"",
+                "\"detail\":\"Keep the report\",\"html\":\"<script>\"",
+            ),
+            source.replace("\"label\":\"Lost\"", "\"label\":\"\""),
+            source.replace("\"format\":\"code\"", "\"format\":\"markup\""),
+        ] {
+            assert!(parse_document(&invalid, &allowed, "").is_err());
         }
     }
     #[test]
@@ -1614,6 +1858,7 @@ mod tests {
             spec_digest: None,
             worktree: false,
             omissions: vec![],
+            change_stats: None,
             markdown: "INTERNAL_NARRATIVE".into(),
             bottom_line: "Bottom line".into(),
             closing: String::new(),

@@ -56,7 +56,11 @@
   async function diagram(source, takeaway, host, index) {
     try {
       if (!window.mermaid) throw Error('Mermaid library unavailable');
-      window.mermaid.initialize({ startOnLoad: false, securityLevel: 'strict', theme: 'neutral' });
+      window.mermaid.initialize({ startOnLoad: false, securityLevel: 'strict', theme: 'base',
+        themeVariables: { fontFamily: 'system-ui, sans-serif', fontSize: '11px', primaryColor: '#e7f6ef', primaryTextColor: '#193339', primaryBorderColor: '#9bd4c3', secondaryColor: '#eef5fc', secondaryTextColor: '#193339', secondaryBorderColor: '#b7d3e9', tertiaryColor: '#fff6e9', lineColor: '#418a82' },
+        flowchart: { nodeSpacing: 18, rankSpacing: 20, curve: 'linear', padding: 5 },
+        state: { fontSize: 11 }
+      });
       const result = await window.mermaid.render(`diagram-${index}`, source);
       // SVG in an image cannot execute scripts, even if a malformed graph reaches the renderer.
       const image = el('img'); image.alt = takeaway; image.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(result.svg);
@@ -84,6 +88,30 @@
         for (const item of block.items) list.append(el('li', '', item));
         panel.append(list); break;
       }
+      case 'icon_list': {
+        const list = el('ul', 'icon-list');
+        for (const item of block.items) {
+          const li = el('li', `item-${item.tone || 'neutral'}`);
+          const icon = el('span', `item-icon icon-${item.icon}`); icon.setAttribute('aria-hidden', 'true');
+          const words = el('span'); words.append(el('strong', '', item.text));
+          if (item.detail) words.append(el('span', 'item-detail', item.detail));
+          li.append(icon, words); list.append(li);
+        }
+        panel.append(list); break;
+      }
+      case 'timeline': {
+        const tracks = el('div', 'timeline-tracks');
+        for (const track of block.tracks) {
+          const row = el('div', 'timeline-track'); row.append(el('h4', '', track.label));
+          const list = el('ol', 'timeline-events');
+          for (const event of track.events) {
+            const li = el('li', `event-${event.tone || 'neutral'}`);
+            li.append(el('span', 'event-dot'), el('span', 'event-label', event.label)); list.append(li);
+          }
+          row.append(list); tracks.append(row);
+        }
+        panel.append(tracks); break;
+      }
       case 'table': {
         const scroll = el('div', 'table-scroll'); const table = el('table');
         const head = el('thead'); const row = el('tr');
@@ -93,15 +121,48 @@
         for (const cells of block.rows) { const tr = el('tr'); for (const cell of cells) tr.append(el('td', '', cell)); body.append(tr); }
         table.append(body); scroll.append(table); panel.append(scroll); break;
       }
+      case 'transition': {
+        const grid = el('div', 'transition-grid');
+        for (const [side, items] of [['Before', block.before], ['After', block.after]]) {
+          const group = el('div', 'transition-group'); group.append(el('strong', 'transition-heading', side));
+          for (const item of items) group.append(el('div', 'transition-item', item));
+          grid.append(group);
+        }
+        panel.append(grid); break;
+      }
       case 'comparison': {
-        const columns = el('div', 'comparison-grid');
+        const columns = el('div', `comparison-grid${block.format === 'code' ? ' compare-code' : ''}`);
         for (const [label, value] of [['Before', block.before], ['After', block.after]]) {
-          const side = el('div'); side.append(el('strong', '', label), el('p', 'body', value)); columns.append(side);
+          const side = el('div'); side.append(el('strong', '', label));
+          if (block.format === 'code') { const pre = el('pre'); pre.append(el('code', '', value)); side.append(pre); }
+          else side.append(el('p', 'body', value));
+          columns.append(side);
         }
         panel.append(columns); break;
       }
       case 'flow': {
-        const list = el('ol', 'flow-list'); for (const step of block.steps) list.append(el('li', '', step)); panel.append(list); break;
+        const list = el('ol', 'flow-list');
+        for (const step of block.steps) {
+          const li = el('li');
+          if (typeof step === 'string') li.append(el('span', '', step));
+          else { const content = el('span', 'step-content'); content.append(el('strong', '', step.title), el('span', 'step-detail', step.detail)); li.append(content); }
+          list.append(li);
+        }
+        panel.append(list); break;
+      }
+      case 'architecture': {
+        const track = el('div', 'architecture-track');
+        for (const [index, node] of block.nodes.entries()) {
+          if (index) { const arrow = el('span', 'architecture-arrow', '→'); arrow.setAttribute('aria-hidden', 'true'); track.append(arrow); }
+          const stage = el('div', 'architecture-node'); const card = el('div', 'architecture-card');
+          if (node.icon) { const icon = el('span', `architecture-icon icon-${node.icon}`); icon.setAttribute('aria-hidden', 'true'); card.append(icon); }
+          card.append(el('strong', '', node.title));
+          if (node.detail) card.append(el('span', 'architecture-detail', node.detail));
+          stage.append(card);
+          if (node.notes?.length) { const notes = el('ul', 'architecture-notes'); for (const note of node.notes) notes.append(el('li', '', note)); stage.append(notes); }
+          track.append(stage);
+        }
+        panel.append(track); break;
       }
       case 'diagram': {
         const graphic = el('div', 'diagram'); graphic.setAttribute('role', 'img'); graphic.setAttribute('aria-label', block.takeaway);
@@ -133,15 +194,19 @@
     main.replaceChildren(lead);
     const summary = el('a', 'nav-summary', 'Summary'); summary.href = '#summary'; nav.append(summary);
     document.sections.forEach((section, i) => {
-      const link = el('a', '', section.title); link.href = `#${section.id}`; nav.append(link);
+      const link = el('a', '', section.nav || section.title); link.href = `#${section.id}`; link.title = section.title;
+      const icons = { architecture: '◎', diagram: '◎', flow: '↪', timeline: '◷', table: '▤', code: '≡', comparison: '↔', transition: '↔', columns: '⊞', icon_list: '◉', list: '☷', callout: '⚠' };
+      link.dataset.icon = icons[section.blocks.find(block => block.type !== 'text')?.type] || '•'; nav.append(link);
       const node = el('section', `finding${section.kind === 'overview' ? ' overview' : ''}`); node.id = section.id;
       const heading = el('div', 'finding-heading');
       if (section.kind !== 'overview') heading.append(el('span', 'number', String(document.sections.slice(0, i + 1).filter(s => s.kind !== 'overview').length)));
       heading.append(el('h2', '', section.title)); node.append(heading);
       for (const block of section.blocks) node.append(blockView(block));
       const anchors = [...new Set([...(section.anchors || []), ...section.blocks.flatMap(blockAnchors)])];
-      if (anchors.length) node.append(evidence(anchors, section.title));
-      node.append(control(section.id, drafts[section.id], section.title));
+      if (section.kind !== 'overview' || drafts[section.id]) {
+        if (anchors.length) node.append(evidence(anchors, section.title));
+        node.append(control(section.id, drafts[section.id], section.title));
+      }
       main.append(node);
     });
   }
@@ -167,11 +232,13 @@
     const response = await fetch('/data'); if (!response.ok) throw Error(await response.text());
     const data = await response.json(); ({ token, revision } = data); drafts = data.feedback.notes || {};
     identity.textContent = 'View details';
-    document.querySelector('#comparison').textContent = revision.comparison;
-    document.querySelector('#created').textContent = `Generated ${revision.created}`;
-    document.querySelector('#change-count').textContent = revision.document ? `${revision.document.sections.length} sections` : `${revision.findings.length + revision.diagrams.length} items`;
+    document.querySelector('#base').textContent = revision.from.slice(0, 12);
+    document.querySelector('#endpoint').textContent = revision.to.slice(0, 12);
+    document.querySelector('#created').textContent = revision.created.replace('T', ' ').slice(0, 16);
+    document.querySelector('#files-count').textContent = revision.change_stats ? `${revision.change_stats.files} files${revision.omissions?.length ? ` · ${revision.omissions.length} omitted` : ''}` : 'Not recorded';
+    document.querySelector('#lines-count').textContent = revision.change_stats ? `+${revision.change_stats.added} / -${revision.change_stats.removed}` : 'Not recorded';
     revisionId.textContent = `Revision ${revision.id}`;
-    provenance.textContent = `Snapshot ${revision.captured} · from ${revision.from} · to ${revision.to} · HEAD ${revision.head}` + (revision.spec ? ` · spec ${revision.spec}` : '');
+    provenance.textContent = `${revision.comparison} · Snapshot ${revision.captured} · from ${revision.from} · to ${revision.to} · HEAD ${revision.head}` + (revision.spec ? ` · spec ${revision.spec}` : '');
     showStale(data.stale);
     if (revision.document) renderDocument(revision.document); else renderLegacy();
     // The document is loaded asynchronously, so the browser's initial hash jump

@@ -269,6 +269,9 @@ fn reference_markdown_drives_full_viewer_and_reopens_unchanged() {
     let id = data["revision"]["id"].as_str().unwrap().to_owned();
     let token = data["token"].as_str().unwrap();
     assert_eq!(data["revision"]["markdown"], source.trim());
+    assert!(data["revision"]["change_stats"]["files"].as_u64().unwrap() > 0);
+    assert!(data["revision"]["change_stats"]["added"].is_u64());
+    assert!(data["revision"]["change_stats"]["removed"].is_u64());
     assert_eq!(
         data["revision"]["document"]["sections"]
             .as_array()
@@ -281,7 +284,7 @@ fn reference_markdown_drives_full_viewer_and_reopens_unchanged() {
         "overview"
     );
     assert_eq!(
-        data["revision"]["document"]["sections"][1]["blocks"][0]["type"],
+        data["revision"]["document"]["sections"][1]["blocks"][1]["type"],
         "columns"
     );
     assert_eq!(
@@ -293,6 +296,8 @@ fn reference_markdown_drives_full_viewer_and_reopens_unchanged() {
     );
     let (_, app) = request(&url, "GET", "/app.js", &[], "");
     assert!(app.contains("case 'columns'"));
+    assert!(app.contains("case 'timeline'"));
+    assert!(app.contains("case 'icon_list'"));
     let feedback = json!({"notes":{"s-system-map":"Keep architecture distinction"}}).to_string();
     assert_eq!(
         request(
