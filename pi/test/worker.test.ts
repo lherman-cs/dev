@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { execFileSync } from "node:child_process";
 import { ModelRuntime, createAgentSession, type AgentSession } from "@earendil-works/pi-coding-agent";
 import { createAssistantMessageEventStream, type AssistantMessage } from "@earendil-works/pi-ai";
 import { Value } from "typebox/value";
@@ -24,7 +25,7 @@ async function fixture(t: TestContext, answer: Answer) {
   fs.writeFileSync(path.join(cwd,'AGENTS.md'),'Repository invariant: preserve the TEST_CANARY.\n');
   const runtime=await ModelRuntime.create();
   runtime.hasConfiguredAuth=()=>true;
-  const sessions: AgentSession[]=[], calls: Array<{model: StreamModel; context: StreamContext; options: StreamOptions}>=[];
+  const sessions: AgentSession[]=[], sessionCwds: string[]=[], calls: Array<{model: StreamModel; context: StreamContext; options: StreamOptions}>=[];
   runtime.streamSimple=(model,context,options={})=>{
     calls.push({model,context,options});
     const stream=createAssistantMessageEventStream();
@@ -34,10 +35,10 @@ async function fixture(t: TestContext, answer: Answer) {
   };
   const hub=new WorkerHub();
   const run=createWorkerRunner({runtime,hub,create:async options=>{
-    const result=await createAgentSession(options); sessions.push(result.session); return result;
+    sessionCwds.push(options?.cwd ?? '(unset)'); const result=await createAgentSession(options); sessions.push(result.session); return result;
   }});
   t.after(()=>hub.dispose());
-  return {cwd,runtime,run,sessions,calls,hub};
+  return {cwd,runtime,run,sessions,sessionCwds,calls,hub};
 }
 test('a writing child cannot acquire its parent worktree via a nested cwd', async () => {
   const run = createWorkerRunner({ hub: new WorkerHub(), ownerCwd: () => process.cwd() });
@@ -132,12 +133,39 @@ test('review schema requires concrete findings, repair directions and acceptance
   assert.equal(Value.Check(schema,{...result,findings:[{...result.findings[0],repair_direction:undefined}]}),false);
   assert.equal(Value.Check(schema,{...result,findings:[{...result.findings[0],acceptance_checks:[]}]}),false);
 });
-test('Explorer can investigate but has no Verifier, edit or recursive delegation' , async t=>{
+test('Explorer can investigate but has no shell, Verifier, edit or recursive delegation' , async t=>{
   const f=await fixture(t,(_n,_c,m)=>message(m,[{type:'text',text:'Conclusion: found it'}]));
-  await f.run({cwd:f.cwd,name:'explorer',task:'find it',tools:['edit','explore']});
+  await f.run({cwd:f.cwd,name:'explorer',task:'find it',tools:['bash','edit','explore']});
   const names=required(f.sessions[0],'session').getActiveToolNames();
-  for(const name of ['verify','explore','subagent','edit','write','lsp_fix','install','git']) assert.ok(!names.includes(name),name);
-  for(const name of ['bash','web_search','source_check','fetch_content','get_search_content']) assert.ok(names.includes(name),name);
+  for(const name of ['bash','verify','explore','subagent','edit','write','lsp_fix','install','git']) assert.ok(!names.includes(name),name);
+  for(const name of ['read','grep','find','ls','web_search','source_check','fetch_content','get_search_content']) assert.ok(names.includes(name),name);
+});
+test('Explorer reads ignored plans and dirty source directly from the live parent directory', async t=>{
+  const f=await fixture(t,(n,context,m)=>{
+    if(n===1) return message(m,[{type:'toolCall',id:'listing',name:'ls',arguments:{path:'plans'}}],'toolUse');
+    if(n===2) {
+      assert.match(JSON.stringify(context),/spec\.md/);
+      return message(m,[{type:'toolCall',id:'plan',name:'read',arguments:{path:'plans/spec.md'}}],'toolUse');
+    }
+    if(n===3) {
+      assert.match(JSON.stringify(context),/ignored plan evidence/);
+      return message(m,[{type:'toolCall',id:'source',name:'read',arguments:{path:'AGENTS.md'}}],'toolUse');
+    }
+    assert.match(JSON.stringify(context),/dirty source evidence/);
+    return message(m,[{type:'text',text:'Both live files visible'}]);
+  });
+  execFileSync('git',['init','-q'],{cwd:f.cwd});
+  fs.writeFileSync(path.join(f.cwd,'.gitignore'),'plans/\n');
+  execFileSync('git',['add','AGENTS.md','.gitignore'],{cwd:f.cwd});
+  execFileSync('git',['-c','user.name=Test','-c','user.email=test@example.test','commit','-qm','initial'],{cwd:f.cwd});
+  fs.mkdirSync(path.join(f.cwd,'plans'));
+  fs.writeFileSync(path.join(f.cwd,'plans/spec.md'),'ignored plan evidence\n');
+  fs.writeFileSync(path.join(f.cwd,'AGENTS.md'),'dirty source evidence\n');
+  assert.equal(execFileSync('git',['check-ignore','plans/spec.md'],{cwd:f.cwd,encoding:'utf8'}).trim(),'plans/spec.md');
+  assert.equal(await f.run({cwd:f.cwd,name:'explorer',task:'inspect live evidence'}),'Both live files visible');
+  assert.deepEqual(f.sessionCwds,[f.cwd]);
+  assert.equal(fs.readFileSync(path.join(f.cwd,'plans/spec.md'),'utf8'),'ignored plan evidence\n');
+  assert.equal(fs.readFileSync(path.join(f.cwd,'AGENTS.md'),'utf8'),'dirty source evidence\n');
 });
 test('ship worker is minimal while normal writing workers retain helpers', async t=>{
   const f=await fixture(t,(_n,_c,m)=>message(m,[{type:'text',text:'done'}]));

@@ -224,7 +224,7 @@ export function createWorkerRunner(options: RunnerOptions): WorkerRunner {
       const model = models.getModel(selected.provider, selected.model);
       if (!model) throw new Error(`Pi does not list ${selected.provider}/${selected.model}; no model fallback is allowed.`);
       if (!models.hasConfiguredAuth(selected.provider)) throw new Error(`No login for ${selected.provider}. Use Pi /login; no model/provider fallback was attempted.`);
-      if (readonly) snapshot = readOnlySnapshot(cwd, name === "review" && typeof metadata["candidate"] === "string" ? metadata["candidate"] : undefined);
+      if (readonly && !explorer) snapshot = readOnlySnapshot(cwd, name === "review" && typeof metadata["candidate"] === "string" ? metadata["candidate"] : undefined);
       const workerCwd = snapshot?.cwd ?? cwd;
       const assignedSkill = explorer ? "dev-explore" : skill;
       const settings = settingsFor(cwd, model);
@@ -265,7 +265,7 @@ export function createWorkerRunner(options: RunnerOptions): WorkerRunner {
       };
       const verifier = !explorer && name !== "review" && name !== "ship" ? createVerifierTool(publishNestedCompletion, { track: trackDetachedCompletion, ownerCwd: () => cwd }) : undefined;
       signal.addEventListener("abort", () => verifier?.cancelAll(), { once: true });
-      const customTools: ToolDefinition[] = [...(name === "review" ? [] : scopedTools), ...(explorer || name === "review" || name === "ship" ? [] : [asyncExploreTool(childRun, publishNestedCompletion, quietReport, trackDetachedCompletion, { parentId: id, owner: metadata.owner, phase: metadata.phase }) as unknown as ToolDefinition, ...(verifier ? [verifier.tool] : [])])];
+      const customTools: ToolDefinition[] = [...(name === "review" || explorer ? [] : scopedTools), ...(explorer || name === "review" || name === "ship" ? [] : [asyncExploreTool(childRun, publishNestedCompletion, quietReport, trackDetachedCompletion, { parentId: id, owner: metadata.owner, phase: metadata.phase }) as unknown as ToolDefinition, ...(verifier ? [verifier.tool] : [])])];
       if (askHuman && !readonly && metadata.phase !== "ship") {
         const askSchema = Type.Object({ question: Type.String(), choices: Type.Optional(Type.Array(Type.String())) });
         customTools.push({ name: "ask_human", label: "Ask human", description: "Ask a bounded question and wait for the human to respond explicitly in Main.",
@@ -284,7 +284,7 @@ export function createWorkerRunner(options: RunnerOptions): WorkerRunner {
           value = args; valueEpoch = inputEpoch; return explorer ? terminalToolResult("Result recorded.") : toolResult("Result recorded.");
         } });
       const allowed = explorer
-        ? [...readers, "bash", "web_search", "source_check", "fetch_content", "get_search_content", ...scopedTools.map(tool => tool.name)]
+        ? [...readers, "web_search", "source_check", "fetch_content", "get_search_content"]
         : name === "review" ? readers
             : tools || [...readers, ...(!readonly ? ["bash", "edit", "write", "lsp_diagnostics", "lsp_fix", "chrome_devtools_load", "chrome_devtools_list_pages", "chrome_devtools_select_page", "chrome_devtools_navigate", "chrome_devtools_evaluate", "chrome_devtools_screenshot"] : [])];
       const created = await create({ cwd: workerCwd, model, thinkingLevel: selected.thinking, modelRuntime: models,
@@ -443,7 +443,7 @@ export function exploreTool(run: RunWorker, report: (text: string) => void = () 
     promptGuidelines: [
       "Delegate read-only evidence gathering when it is reasonably expected to take material time or produce substantial raw output, including broad repository or web research.",
       "Keep quick known-target reads in the parent when delegation would cost more than it saves.",
-      "The Explorer works in a separate HEAD snapshot, not the owner's dirty worktree; request live uncommitted investigative evidence explicitly or inspect it in the parent.",
+      "Explorer reads the parent's live worktree, including ignored plans and uncommitted edits, using read-only file tools; it has no shell or file-writing tools. Concurrent changes may affect its evidence.",
       "Keep edits, installs, Git mutation, interactive or privileged work, and project decisions in the parent.",
       "Give each explore call one self-contained scope: state the factual question or command, boundaries, sibling exclusions, and expected evidence.",
       "Use separate calls for independent scopes; run dependent follow-ups only after their prerequisite result.",
