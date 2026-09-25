@@ -10,21 +10,28 @@
 </head>
 <body>
   <a class="skip" href="#brief">Skip to brief</a>
-  <header class="masthead">
-    <div class="masthead-row"><span class="brand">DEV <span aria-hidden="true">/</span> BRIEF</span><span class="edition">Branch consequence brief</span></div>
-    <details class="identity"><summary id="identity">Revision details</summary><p id="revision-id"></p></details>
-    <p class="stale" id="stale" role="status" hidden></p>
-  </header>
-  <main id="brief" tabindex="-1"><p>Loading brief…</p></main>
-  <aside class="feedback" aria-label="Revision feedback">
-    <div class="section-label">Your perspective</div>
-    <h2>Revision note</h2>
-    <p class="feedback-intro">For anything the brief misses or misstates overall.</p>
-    <label for="general">General feedback</label>
-    <textarea id="general" rows="4"></textarea>
-    <p class="save-state" id="general-state" role="status"></p>
-    <div class="export-row"><button id="export" type="button">Export feedback Markdown</button><p id="export-state" role="status"></p></div>
-  </aside>
-  <footer><details class="provenance"><summary>Snapshot provenance</summary><p id="provenance"></p></details></footer>
+  <div class="layout">
+    <aside class="rail" aria-label="Brief navigation">
+      <div class="brand">DEV <span aria-hidden="true">/</span> BRIEF</div>
+      <div class="edition">Branch consequence brief</div>
+      <nav id="section-nav" aria-label="Sections"></nav>
+    </aside>
+    <div class="document">
+      <header class="masthead">
+        <div class="masthead-row"><div class="masthead-meta"><span id="comparison"></span><span id="created"></span><span id="change-count"></span></div><details class="identity"><summary id="identity">View details</summary><p id="revision-id"></p><p id="provenance"></p></details></div>
+        <p class="stale" id="stale" role="status" hidden></p>
+      </header>
+      <main id="brief" tabindex="-1"><p>Loading brief…</p></main>
+      <aside class="feedback" aria-label="Revision feedback">
+        <div class="section-label">Your perspective</div>
+        <h2>Revision note</h2>
+        <p class="feedback-intro">For anything the brief misses or misstates overall.</p>
+        <label for="general">General feedback</label>
+        <textarea id="general" rows="4"></textarea>
+        <p class="save-state" id="general-state" role="status"></p>
+        <div class="export-row"><button id="export" type="button">Export feedback Markdown</button><p id="export-state" role="status"></p></div>
+      </aside>
+    </div>
+  </div>
 </body>
 </html>

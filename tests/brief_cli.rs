@@ -45,7 +45,23 @@ fn fixture() -> (PathBuf, PathBuf, PathBuf) {
     )
     .unwrap();
     let script = bin.join("pi");
-    fs::write(&script,"#!/bin/sh\ncat > \"$BRIEF_TEST_INPUT\"\nif [ -n \"${BRIEF_TEST_WAIT_FOR:-}\" ]; then while [ ! -f \"$BRIEF_TEST_WAIT_FOR\" ]; do sleep 0.05; done; fi\nprintf '%s\\n' '{\"bottom_line\":\"Behavior changes at entry\",\"findings\":[{\"title\":\"Entry point\",\"body\":\"The caller receives a new outcome.\",\"anchors\":[\"change.txt:1\"]}],\"diagrams\":[{\"title\":\"Before and after\",\"takeaway\":\"New flow\",\"mermaid\":\"flowchart LR\\nA-->B\",\"anchors\":[\"change.txt:1\"]}],\"closing\":\"Check rollout.\"}'\n").unwrap();
+    fs::write(&script, r#"#!/bin/sh
+cat > "$BRIEF_TEST_INPUT"
+if [ -n "${BRIEF_TEST_WAIT_FOR:-}" ]; then while [ ! -f "$BRIEF_TEST_WAIT_FOR" ]; do sleep 0.05; done; fi
+cat <<'BRIEF'
+# Branch consequence brief
+
+```brief-lead
+{"title":"Bottom line","body":"Behavior changes at entry","anchors":["change.txt:1"]}
+```
+
+## Entry point
+
+```brief-section
+{"id":"s-entry","title":"Entry point","anchors":["change.txt:1"],"blocks":[{"type":"text","label":"Why it matters","text":"The caller receives a new outcome.","anchors":["change.txt:1"]},{"type":"diagram","label":"Before and after","takeaway":"New flow","mermaid":"flowchart LR\nA-->B","anchors":["change.txt:1"]}]}
+```
+BRIEF
+"#).unwrap();
     let mut perms = fs::metadata(&script).unwrap().permissions();
     perms.set_mode(0o755);
     fs::set_permissions(&script, perms).unwrap();
@@ -194,6 +210,46 @@ fn generation_reports_progress_before_pi_finishes() {
 }
 
 #[test]
+fn invalid_directives_leave_existing_revision_untouched() {
+    let (root, repo, pkg) = fixture();
+    let (mut child, url, dir) = start(&repo, &root, &pkg, &["--base", "main"]);
+    let (_, body) = request(&url, "GET", "/data", &[], "");
+    let saved: Value = serde_json::from_str(&body).unwrap();
+    let id = saved["revision"]["id"].as_str().unwrap();
+    let original = fs::read(Path::new(&dir).join(format!("{id}.json"))).unwrap();
+    child.kill().unwrap();
+    child.wait().unwrap();
+    let script = pkg.join("node_modules/.bin/pi");
+    fs::write(&script, "#!/bin/sh\nprintf '# Branch consequence brief\\n\\n```brief-lead\\n{\\\"title\\\":\\\"Bottom line\\\",\\\"body\\\":\\\"Unsafe\\\",\\\"anchors\\\":[]}\\n```\\n\\n## Bad\\n\\n```brief-section\\n{\\\"id\\\":\\\"s-bad\\\",\\\"title\\\":\\\"Bad\\\",\\\"anchors\\\":[],\\\"blocks\\\":[{\\\"type\\\":\\\"html\\\",\\\"label\\\":\\\"Unsafe\\\",\\\"anchors\\\":[]}]}\\n```\\n'\n").unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_dev"))
+        .current_dir(&repo)
+        .args(["brief", "--base", "main"])
+        .env("DEV_PI_PACKAGE", &pkg)
+        .env("XDG_DATA_HOME", root.join("data"))
+        .env("BRIEF_TEST_INPUT", root.join("model-input.txt"))
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    assert!(
+        String::from_utf8_lossy(&output.stdout).contains("invalid typed Markdown"),
+        "{}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    let revisions: Vec<_> = fs::read_dir(&dir)
+        .unwrap()
+        .filter_map(|entry| {
+            let name = entry.unwrap().file_name().to_string_lossy().into_owned();
+            (name.ends_with(".json") && !name.ends_with("-feedback.json")).then_some(name)
+        })
+        .collect();
+    assert_eq!(revisions, vec![format!("{id}.json")]);
+    assert_eq!(
+        fs::read(Path::new(&dir).join(format!("{id}.json"))).unwrap(),
+        original
+    );
+    fs::remove_dir_all(root).unwrap();
+}
+#[test]
 fn cli_generation_feedback_reopen_and_export_do_not_regenerate() {
     let (root, repo, pkg) = fixture();
     let (mut child, url, dir) = start(&repo, &root, &pkg, &["--base", "main"]);
@@ -202,7 +258,10 @@ fn cli_generation_feedback_reopen_and_export_do_not_regenerate() {
     let data: Value = serde_json::from_str(&body).unwrap();
     let id = data["revision"]["id"].as_str().unwrap();
     let token = data["token"].as_str().unwrap();
-    assert_eq!(data["revision"]["findings"][0]["title"], "Entry point");
+    assert_eq!(
+        data["revision"]["document"]["sections"][0]["title"],
+        "Entry point"
+    );
     for (path, marker) in [
         ("/", "Branch consequence brief"),
         ("/style.css", ".comment-button"),
@@ -238,7 +297,7 @@ fn cli_generation_feedback_reopen_and_export_do_not_regenerate() {
         403
     );
     let notes =
-        json!({"notes":{"f0":"Preserve this precise comment","general":"Cross-cutting concern"}})
+        json!({"notes":{"s-entry":"Preserve this precise comment","general":"Cross-cutting concern"}})
             .to_string();
     assert_eq!(
         request(
@@ -263,7 +322,7 @@ fn cli_generation_feedback_reopen_and_export_do_not_regenerate() {
     assert_eq!(status, 200);
     let data: Value = serde_json::from_str(&body).unwrap();
     assert_eq!(
-        data["feedback"]["notes"]["f0"],
+        data["feedback"]["notes"]["s-entry"],
         "Preserve this precise comment"
     );
     assert!(

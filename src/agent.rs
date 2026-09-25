@@ -143,7 +143,7 @@ pub fn generate_brief(root: &Path, input: &str) -> Result<String> {
         .args([
             "--print",
             "--",
-            "Produce the dev-brief JSON from the captured input. Do not use tools.",
+            "Produce the dev-brief typed Markdown from the captured input. Do not use tools.",
         ])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
