@@ -48,6 +48,17 @@ export function registerSpecWorkspace(pi: ExtensionAPI, specActive: () => boolea
   };
   pi.registerCommand("dev-spec-view", { description: "Open local web Spec workspace", handler: async (_args, next) => { void show(next).catch(error => next.ui.notify(String(error), "error")); } });
   pi.registerShortcut("alt+s", { description: "Open local web Spec workspace", handler: next => { void show(next).catch(error => next.ui.notify(String(error), "error")); } });
+  pi.registerTool({ name: "spec_ask", label: "Ask in Spec webpage", parameters: Type.Object({ motivation: Type.String({ minLength: 1 }), decision, requestId: Type.Optional(Type.String()), reply: Type.Optional(Type.String()) }),
+    description: "Ask the first consequential Spec question in the webpage before a Markdown spec exists. The question and recommended answer appear immediately; no approval target exists yet. Later publish the durable spec with spec_publish. Use requestId and reply to answer a pending human request.",
+    async execute(_id, args, _signal, _update, next) {
+      if (!specActive()) throw new Error("Only an active dev-spec goal may ask."); await setContext(next);
+      if (!store) throw new Error("Spec workspace unavailable");
+      if (args.requestId && (!args.reply?.trim() || !store.state.discussions.some(m => m.id === args.requestId && m.status === "queued"))) throw new Error("Pending request and contextual reply required");
+      const prompt = await store.ask({ motivation: args.motivation, decision: args.decision });
+      if (args.requestId) await store.answer(args.requestId, args.reply!);
+      return { content: [{ type: "text" as const, text: `Spec question ${prompt.version} visible in webpage. No durable approval target yet.` }], details: { version: prompt.version } };
+    },
+  });
   pi.registerTool({ name: "spec_publish", label: "Publish evolving spec", parameters: Type.Object({ sections: Type.Array(section, { minItems: 1 }), decisions: Type.Array(decision), recommendation: Type.String({ minLength: 1 }), requestId: Type.Optional(Type.String()), reply: Type.Optional(Type.String()) }),
     description: "Publish the durable Markdown spec and concise decision items to the local Spec webpage. Each consequential decision needs a human-readable subject, consequence and recommendation; optionally add item-specific context and a semantic visual. Keep evidence and code hidden until requested. If answering a pending request, include requestId and reply. Updates await inspection.",
     async execute(_id, args, _signal, _update, next) {

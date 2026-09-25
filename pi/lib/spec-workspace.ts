@@ -7,8 +7,8 @@ import type { Attention } from "./attention.ts";
 export type SpecSection = { id: string; title: string; kind: "motivation" | "requirement" | "question" | "scope" | "evidence"; body: string };
 export type SpecDecision = Attention & { id: string; subject: string; recommendation: string; consequence: string; status: "open" | "accepted"; version: string };
 export type SpecDocument = { version: string; digest: string; sections: SpecSection[]; decisions: SpecDecision[]; recommendation: string; markdown: string; at: number };
-export type SpecState = { schema: 1; current?: SpecDocument; pending?: SpecDocument; updates: SpecDocument[]; discussions: ReviewMessage[]; drafts: Record<string, string>; selection: string; needsSync?: boolean; changeRequest?: { version: string; id: string; at: number }; approval?: { digest: string; version: string; at: number }; recovered: boolean; notice?: string };
-const empty = (): SpecState => ({ schema: 1, updates: [], discussions: [], drafts: {}, selection: "general", recovered: false });
+export type SpecState = { schema: 1; prompt?: { motivation: string; decision: SpecDecision }; promptVersions?: string[]; current?: SpecDocument; pending?: SpecDocument; updates: SpecDocument[]; discussions: ReviewMessage[]; drafts: Record<string, string>; selection: string; needsSync?: boolean; changeRequest?: { version: string; id: string; at: number }; approval?: { digest: string; version: string; at: number }; recovered: boolean; notice?: string };
+const empty = (): SpecState => ({ schema: 1, promptVersions: [], updates: [], discussions: [], drafts: {}, selection: "general", recovered: false });
 // Approval status is metadata, not part of the semantic target, even when the
 // starting Markdown had no status line and approval adds one.
 export const semantic = (text: string) => text.replace(/^Status:[^\r\n]*\r?\n(?:\r?\n)?/, "");
@@ -30,7 +30,7 @@ export class SpecWorkspace {
     try {
       const saved: unknown = JSON.parse(await readFile(this.file, "utf8"));
       if (!saved || typeof saved !== "object" || (saved as SpecState).schema !== 1 || !Array.isArray((saved as SpecState).discussions) || !(saved as SpecState).drafts) throw new Error("Invalid spec workspace format");
-      this.state = { ...saved as SpecState, updates: Array.isArray((saved as SpecState).updates) ? (saved as SpecState).updates : [], recovered: true,
+      this.state = { ...saved as SpecState, promptVersions: (saved as SpecState).promptVersions || ((saved as SpecState).prompt ? [(saved as SpecState).prompt!.decision.version] : []), updates: Array.isArray((saved as SpecState).updates) ? (saved as SpecState).updates : [], recovered: true,
         notice: "Restored spec discussion. Agent reconciliation is required before approval." };
       delete this.state.approval;
       for (const m of this.state.discussions) if (m.status === "queued") m.status = "failed";
@@ -50,12 +50,34 @@ export class SpecWorkspace {
     });
     this.changed(); return this.writes;
   }
+  async ask(input: { motivation: string; decision: Omit<SpecDecision, "status" | "version"> }) {
+    if (this.state.current) throw new Error("A durable spec exists. Publish an updated revision instead.");
+    if (!input.motivation.trim() || !input.decision.recommendation.trim()) throw new Error("A motivation and recommended answer are required.");
+    const previous = this.state.prompt?.decision;
+    const unchanged = previous && JSON.stringify({ ...previous, version: "", status: "" }) === JSON.stringify({ ...input.decision, version: "", status: "" });
+    this.state.prompt = { motivation: input.motivation, decision: { ...input.decision, status: unchanged ? previous.status : "open", version: unchanged ? previous.version : randomUUID() } };
+    this.state.selection = input.decision.id;
+    if (!this.state.promptVersions?.includes(this.state.prompt.decision.version)) (this.state.promptVersions ||= []).push(this.state.prompt.decision.version);
+    delete this.state.approval;
+    await this.persist();
+    return this.state.prompt.decision;
+  }
   async publish(input: { sections: SpecSection[]; decisions: Omit<SpecDecision, "status" | "version">[]; recommendation: string; markdown: string }) {
     if (!input.sections.some(s => s.kind === "motivation") || !input.recommendation.trim() || !input.markdown.trim()) throw new Error("Spec needs motivation, recommendation and Markdown.");
     const actual = await readFile(this.path, "utf8").catch(() => "");
     if (semantic(actual) !== semantic(input.markdown)) throw new Error("Publish the exact Markdown saved at the spec path first.");
     const version = randomUUID();
     const doc: SpecDocument = { ...input, digest: digest(actual), version, at: Date.now(), decisions: input.decisions.map(d => ({ ...d, version, status: "open" as const })) };
+    const current = this.state.current;
+    // Evidence-only refreshes do not change the durable target or ask for renewed consent.
+    const nonbinding = current && !this.state.pending && !this.state.approval && current.digest === doc.digest && current.recommendation === doc.recommendation &&
+      JSON.stringify(current.decisions.map(({ status, version, ...d }) => d)) === JSON.stringify(input.decisions) &&
+      JSON.stringify(current.sections.filter(s => s.kind !== "evidence")) === JSON.stringify(input.sections.filter(s => s.kind !== "evidence"));
+    if (nonbinding) {
+      current.sections = input.sections; current.at = doc.at;
+      this.state.notice = "Evidence updated on the current spec revision.";
+      await this.persist(); return current;
+    }
     if (this.state.current) { if (this.state.pending) this.state.updates.push(doc); else this.state.pending = doc; }
     else { this.state.current = doc; this.state.selection = input.sections[0]?.id || "general"; }
     this.state.recovered = false; this.state.needsSync = false; delete this.state.approval;
@@ -92,7 +114,7 @@ export class SpecWorkspace {
   async approve(expectedVersion?: string) {
     const check = await this.check(); if (!check.current || !this.state.current || (expectedVersion && this.state.current.version !== expectedVersion)) throw new Error(`Approval unavailable: ${check.reason}. Displayed revision may be stale.`);
     const version = this.state.current.version;
-    if (this.state.discussions.some(m => m.author === "human" && m.status === "queued" && m.version === version)) throw new Error("Wait for the agent's answer before approval.");
+    if (this.state.discussions.some(m => m.author === "human" && m.status === "queued" && (m.version === version || m.version === "unassessed" || this.state.promptVersions?.includes(m.version)))) throw new Error("Wait for the agent's answer before approval.");
     const actual = await readFile(this.path, "utf8");
     if (digest(actual) !== check.digest || this.state.pending || this.state.current?.version !== version) throw new Error("Spec changed during approval");
     // Status recording is not a semantic revision. Recheck immediately before and after writing.
@@ -111,7 +133,7 @@ export class SpecWorkspace {
   }
   async addHuman(subject: string, text: string) {
     if (!text.trim()) throw new Error("Write a question or request first");
-    const message: ReviewMessage = { id: randomUUID(), subject, version: this.state.current?.version || "unassessed", author: "human", text, status: "queued" };
+    const message: ReviewMessage = { id: randomUUID(), subject, version: this.state.current?.version || this.state.prompt?.decision.version || "unassessed", author: "human", text, status: "queued" };
     this.state.discussions.push(message);
     if (message.version === this.state.current?.version) delete this.state.approval;
     await this.persist(); return message;

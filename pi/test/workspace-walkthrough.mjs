@@ -16,6 +16,7 @@ await mkdir(join(root, "plans", "new-brief"), { recursive: true });
 await writeFile(earlyPath, "Status: DRAFT\n\n# New brief\n\nThe intended outcome is not yet settled.\n");
 const early = new SpecWorkspace(earlyPath, join(root, "early-state.json"), root);
 await early.restore();
+await early.ask({ motivation: "The handoff needs a clear owner so a teammate knows what to do next.", decision: { id: "ownership", subject: "Who should own the next action?", title: "Who owns the next action?", summary: "Pick one accountable teammate", recommendation: "The teammate accepting the handoff owns it until they explicitly reassign it.", consequence: "An explicit acceptance adds one step, but avoids ownership gaps.", recommendedOptionId: "accept", options: [{ id: "accept", label: "Require acceptance", summary: "No silent ownership change" }, { id: "automatic", label: "Assign automatically", summary: "Faster, but may surprise the new owner" }] } });
 const original = "Status: DRAFT\n\n# Atlas product brief\n\n## Outcome\nBring incident handoffs into one shared workspace.\n\n## Scope\n- Capture ownership and the next action.\n- Exclude on-call scheduling and paging.\n";
 const evolved = original.replace("Capture ownership and the next action.", "Capture ownership, the next action, and a timestamped handoff history.");
 await writeFile(specPath, original);

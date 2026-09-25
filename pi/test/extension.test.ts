@@ -47,6 +47,7 @@ test("four current-session aliases and supporting tools register without work", 
   assert.ok(shortcuts.has("alt+a"));
   assert.ok(shortcuts.has("alt+r"));
   assert.ok(shortcuts.has("alt+s"));
+  assert.ok(tools.some(tool => tool.name === "spec_ask"));
   assert.ok(tools.some(tool => tool.name === "spec_publish"));
   assert.ok(tools.some(tool => tool.name === "spec_reply"));
   assert.ok(tools.some(tool => tool.name === "review_publish"));

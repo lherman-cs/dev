@@ -18,7 +18,7 @@ export type Discussion = { id: string; subject: string; version: string; author:
 export type Document = { version: string; sections: Section[]; decisions: Decision[]; recommendation: string; markdown?: string; candidate?: { head: string; main: string; clean: boolean }; at: number }
 export type Workspace = {
   phase: Phase; project: string; path: string; workspace: string; active: boolean; gate: string; canApprove: boolean
-  state: { current?: Document; pending?: Document; updates: Document[]; discussions: Discussion[]; drafts: Record<string, string>; selection: string; notice?: string; approval?: { version: string } }
+  state: { prompt?: { motivation: string; decision: Decision }; promptVersions?: string[]; current?: Document; pending?: Document; updates: Document[]; discussions: Discussion[]; drafts: Record<string, string>; selection: string; notice?: string; approval?: { version: string } }
 }
 export type Action = { action: "submit" | "request_changes" | "draft" | "decide" | "approve" | "apply"; version: string; subject?: string; text?: string; id?: string; status?: "accepted" | "waived" }
 const token = location.pathname.split("/")[1]

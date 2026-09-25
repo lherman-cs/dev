@@ -23,7 +23,7 @@ test("spec flow gates decisions, revisions, external edits, status recording and
   const original = await publish(store, first, [{ id: "tradeoff", subject: "Data storage", recommendation: "Keep local", consequence: "No remote account" }]);
   let state = await (await fetch(url + "state")).json() as { canApprove: boolean }; assert.equal(state.canApprove, false);
   assert.equal((await post({ action: "approve", version: original.version })).status, 409);
-  assert.equal((await post({ action: "decide", id: "tradeoff", version: original.version })).status, 200);
+  assert.equal((await post({ action: "decide", id: "tradeoff", status: "accepted", version: original.version })).status, 200);
   const newer = first.replace("scope and exclusions", "scope, exclusions and new behavior");
   await writeFile(path, newer); await publish(store, newer);
   assert.equal((await post({ action: "approve", version: original.version })).status, 409);
@@ -116,6 +116,74 @@ test("focused decision metadata and subject-bound alternatives survive revisions
   const restored = new SpecWorkspace(store.path, store.file, store.cwd); await restored.restore();
   assert.deepEqual(restored.state.pending?.decisions[0]?.context, choice.context);
   assert.equal(restored.state.discussions.at(-1)?.subject, "storage");
+}));
+
+test("first-run Spec question survives publication and keeps approval blocked until answered", async () => fixture(async ({ store, post, url }) => {
+  const prompt = await store.ask({ motivation: "Choose who owns the handoff", decision: { id: "owner", subject: "Who owns a handoff?", recommendation: "The current teammate", consequence: "The owner must be explicit" } });
+  assert.equal(store.state.current, undefined);
+  assert.equal((await post({ action: "decide", id: "owner", status: "waived", version: prompt.version })).status, 409);
+  assert.equal((await post({ action: "submit", subject: "owner", text: "What happens offline?", version: prompt.version })).status, 200);
+  const message = store.state.discussions.at(-1)!;
+  const changedPrompt = await store.ask({ motivation: "Clarify offline behavior", decision: { id: "offline", subject: "Who owns an offline handoff?", recommendation: "Keep the last confirmed owner", consequence: "Offline edits must reconcile" } });
+  assert.notEqual(changedPrompt.version, prompt.version);
+  const doc = await publish(store);
+  const state = await (await fetch(url + "state")).json() as { canApprove: boolean; state: { prompt: { decision: { version: string } } } };
+  assert.equal(state.state.prompt.decision.version, changedPrompt.version);
+  assert.equal(state.canApprove, false);
+  assert.equal((await post({ action: "approve", version: doc.version })).status, 409);
+  await store.answer(message.id, "Offline owner remains the same until reconnected.");
+  assert.equal((await post({ action: "approve", version: doc.version })).status, 200);
+}));
+
+test("changed first-run question does not inherit consent or silently move an old answer", async () => fixture(async ({ store, post, url }) => {
+  const original = await store.ask({ motivation: "Who is responsible?", decision: { id: "owner", subject: "Who owns it?", recommendation: "The current teammate", consequence: "One owner" } });
+  assert.equal((await post({ action: "decide", id: "owner", status: "accepted", version: original.version })).status, 200);
+  assert.equal(store.state.prompt?.decision.status, "accepted");
+  const revised = await store.ask({ motivation: "Clarify the change", decision: { id: "owner", subject: "Who owns it?", recommendation: "The next teammate", consequence: "Transfer may be delayed" } });
+  assert.notEqual(revised.version, original.version);
+  assert.equal(revised.status, "open");
+  assert.equal((await post({ action: "decide", id: "owner", status: "accepted", version: original.version })).status, 409);
+  const state = await (await fetch(url + "state")).json() as { state: { discussions: Array<{ version: string; status: string }> } };
+  assert.equal(state.state.discussions[0]?.version, original.version);
+  assert.equal(state.state.discussions[0]?.status, "queued");
+}));
+
+test("failed Spec decision delivery leaves the decision open and a recoverable notice", async () => fixture(async ({ store, web, post, url }) => {
+  const doc = await publish(store, first, [{ id: "owner", subject: "Who owns it?", recommendation: "Current teammate", consequence: "One owner" }]);
+  await web.open({ phase: "spec", store, project: "product", active: () => true, send: () => { throw new Error("No agent channel"); } });
+  const response = await post({ action: "decide", id: "owner", status: "accepted", version: doc.version });
+  assert.equal(response.status, 409);
+  assert.equal(store.state.current?.decisions[0]?.status, "open");
+  assert.equal(store.state.discussions.at(-1)?.status, "failed");
+  assert.match(store.state.notice || "", /Not delivered/);
+  assert.equal((await (await fetch(url + "state")).json() as { canApprove: boolean }).canApprove, false);
+}));
+
+test("nonbinding evidence refreshes in place while changed meaning requires application", async () => fixture(async ({ store, path }) => {
+  const firstDoc = await publish(store);
+  const info = [...firstDoc.sections, { id: "links", kind: "evidence" as const, title: "Evidence", body: "First source" }];
+  const unchanged = await store.publish({ sections: info, decisions: [], recommendation: firstDoc.recommendation, markdown: first });
+  assert.equal(unchanged.version, firstDoc.version, "only evidence is added; the target stays current");
+  const pendingVersion = () => store.state.pending?.version;
+  assert.equal(pendingVersion(), undefined);
+  assert.equal(store.state.current?.sections[2]?.body, "First source");
+  const altered = first.replace("scope and exclusions", "a different scope");
+  await writeFile(path, altered);
+  const next = await publish(store, altered);
+  assert.notEqual(next.version, firstDoc.version);
+  assert.equal(pendingVersion(), next.version);
+  assert.equal(store.state.current?.sections[2]?.body, "First source");
+}));
+
+test("accepted Spec decisions never silently transfer to a republished revision", async () => fixture(async ({ store, path, post }) => {
+  const choice = { id: "owner", subject: "Who owns it?", recommendation: "Current teammate", consequence: "One owner" };
+  const doc = await publish(store, first, [choice]);
+  assert.equal((await post({ action: "decide", id: choice.id, status: "accepted", version: doc.version })).status, 200);
+  const next = first.replace("scope and exclusions", "scope and an explicit owner");
+  await writeFile(path, next); await publish(store, next, [choice]);
+  assert.equal((await post({ action: "apply", version: doc.version })).status, 200);
+  assert.equal(store.state.current?.decisions[0]?.status, "open");
+  assert.equal((await post({ action: "approve", version: store.state.current?.version })).status, 409);
 }));
 
 test("discussion retains version, failed delivery and draft on restart without replay", async () => fixture(async ({ store, post, url }) => {

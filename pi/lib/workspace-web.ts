@@ -55,9 +55,10 @@ export class WorkspaceWeb {
       if (route !== "state") return deny(404, "Not found");
       const target = this.target;
       const check = await target.store.check();
+      const promptVersions = target.phase === "spec" ? target.store.state.promptVersions : undefined;
       res.writeHead(200, { ...headers, "Content-Type": "application/json; charset=utf-8" });
       return res.end(JSON.stringify({ phase: target.phase, project: target.project, path: target.phase === "spec" ? target.store.path : target.store.cwd, workspace: target.store.file,
-        state: target.store.state, gate: check.reason, canApprove: check.current && !target.store.state.current?.decisions.some(d => d.status === "open") && !target.store.state.discussions.some(m => m.author === "human" && m.status === "queued" && m.version === target.store.state.current?.version), active: target.active() }));
+        state: target.store.state, gate: check.reason, canApprove: check.current && !target.store.state.current?.decisions.some(d => d.status === "open") && !target.store.state.discussions.some(m => m.author === "human" && m.status === "queued" && (m.version === target.store.state.current?.version || target.phase === "spec" && (m.version === "unassessed" || promptVersions?.includes(m.version)))), active: target.active() }));
     }
     if (req.method !== "POST" || route !== "action") return deny(404, "Not found");
     if (req.headers.origin !== origin || req.headers["content-type"]?.split(";")[0] !== "application/json" || req.headers["x-workspace-request"] !== this.token) return deny(403, "Unauthorized origin or request");
@@ -69,7 +70,7 @@ export class WorkspaceWeb {
     const execute = async () => {
       if (target !== this.target) throw new Error("Workspace changed; reopen its URL");
       const store = target.store;
-      const version = store.state.current?.version || "unassessed";
+      const version = store.state.current?.version || (target.phase === "spec" ? target.store.state.prompt?.decision.version : undefined) || "unassessed";
       if (payload.version !== version) throw new Error("Displayed revision is stale; inspect the update first");
       if (payload.action === "draft") {
         if (typeof payload.subject !== "string" || typeof payload.text !== "string" || payload.text.length > 20000) throw new Error("Invalid draft");
@@ -95,10 +96,19 @@ export class WorkspaceWeb {
         if (!target.active()) throw new Error("Agent unavailable; resume the goal before deciding");
         if (!payload.id) throw new Error("Choose a decision");
         if (target.phase === "spec") {
-          const decision = target.store.state.current?.decisions.find(d => d.id === payload.id);
-          await target.store.decide(payload.id, payload.version);
-          const message = await target.store.addHuman(payload.id, `Accepted recommendation: ${decision?.recommendation || payload.id}. Reflect this consequential decision in the durable spec before approval.`);
-          try { target.send(message.id, message.subject, message.text, version); } catch (error) { await target.store.fail(message.id, String(error)); throw error; }
+          if (payload.status !== "accepted") throw new Error("Invalid Spec decision");
+          const prompt = !target.store.state.current ? target.store.state.prompt?.decision : undefined;
+          const decision = prompt || target.store.state.current?.decisions.find(d => d.id === payload.id);
+          if (!decision || decision.id !== payload.id || decision.status !== "open") throw new Error("Decision not open on displayed revision");
+          if (!prompt) {
+            const check = await target.store.check();
+            if (!["Current spec", "Resolve consequential decisions"].includes(check.reason)) throw new Error(`${check.reason}. Displayed revision may be stale.`);
+          }
+          const message = await target.store.addHuman(payload.id, `Accepted recommendation: ${decision.recommendation}. Reflect this consequential decision in the durable spec before approval.`);
+          try { target.send(message.id, message.subject, message.text, version); }
+          catch (error) { await target.store.fail(message.id, String(error)); throw error; }
+          if (prompt) { prompt.status = "accepted"; await target.store.persist(); }
+          else await target.store.decide(payload.id, payload.version);
         } else if (payload.status === "accepted" || payload.status === "waived") await target.store.decide(payload.id, payload.status, payload.version);
         else throw new Error("Invalid decision");
       } else if (payload.action === "approve") {
