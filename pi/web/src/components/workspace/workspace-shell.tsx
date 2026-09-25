@@ -1,0 +1,15 @@
+import { Check, Command, Moon, Sun } from "lucide-react"
+import type { ReactNode } from "react"
+import type { AttentionItem } from "@/lib/attention-items"
+
+export function WorkspaceShell({ children, items, selected, onSelect, project, phase, summary, dark, toggleTheme, commands, finish }: { children: ReactNode; items: AttentionItem[]; selected: string; onSelect: (id: string) => void; project: string; phase: "spec" | "review"; summary: { remaining: number; cleared: number; total: number; waiting: number; blockers: number }; dark: boolean; toggleTheme: () => void; commands: () => void; finish: () => void }) {
+  const progress = summary.total ? summary.cleared / summary.total * 100 : 100
+  return <div className="min-h-screen bg-background text-foreground">
+    <header className="workspace-topbar"><div className="flex min-w-0 items-center gap-2"><span className="brand-mark" aria-hidden="true">◆</span><strong>Dev {phase === "spec" ? "Spec" : "Review"}</strong><span className="text-muted-foreground">/</span><span className="truncate text-muted-foreground">{project}</span></div>
+      <div className="flex shrink-0 items-center gap-2"><div className="hidden text-right text-xs sm:block"><span>{summary.remaining} decision{summary.remaining === 1 ? "" : "s"} remaining · {summary.blockers} blocker{summary.blockers === 1 ? "" : "s"} · {summary.waiting} waiting</span><div className="mt-1 h-0.5 bg-muted" role="progressbar" aria-label="Decisions cleared" aria-valuemin={0} aria-valuemax={summary.total} aria-valuenow={summary.cleared}><div className="h-full bg-primary transition-[width] duration-200" style={{ width: `${progress}%` }}/></div></div><button type="button" className="icon-button" aria-label="Open commands" title="Commands · Ctrl/⌘ K" onClick={commands}><Command size={17}/></button><button type="button" className="icon-button" aria-label={dark ? "Use light theme" : "Use dark theme"} onClick={toggleTheme}>{dark ? <Sun size={17}/> : <Moon size={17}/>}</button><button type="button" className="quiet-link hidden sm:inline-flex" onClick={finish}>Finish review</button></div>
+    </header>
+    <div className="workspace-body"><nav className="progress-rail" aria-label="Review progress">{items.map((item, index) => <button type="button" key={item.id} onClick={() => onSelect(item.id)} className={`rail-step ${selected === item.id ? "rail-active" : ""} ${item.done ? "rail-done" : ""}`} aria-label={`${index + 1} of ${items.length}: ${item.title}${item.done ? ", done" : ""}`} aria-current={selected === item.id ? "step" : undefined} title={item.title}>{item.done ? <Check size={16}/> : item.kind === "finish" ? "◎" : item.kind === "waiting" ? "·" : index + 1}</button>)}</nav>
+      <main className="workspace-main"><div className="workspace-canvas"><p className="mb-7 text-xs font-medium text-muted-foreground sm:hidden" aria-label="Remaining work">{summary.remaining} decisions remaining · {summary.blockers} blockers · {summary.waiting} waiting</p>{children}</div></main>
+    </div>
+  </div>
+}

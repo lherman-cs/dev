@@ -83,10 +83,11 @@ export class WorkspaceWeb {
       } else if (payload.action === "request_changes") {
         if (!target.active()) throw new Error("Agent unavailable; draft retained. Resume the goal to request changes.");
         if (typeof payload.text !== "string" || !payload.text.trim() || payload.text.length > 20000) throw new Error("Summarize the requested changes first");
-        const message = await store.addHuman("general", `Changes requested: ${payload.text}`);
+        const subject = typeof payload.subject === "string" && store.state.current?.decisions.some(d => d.id === payload.subject) ? payload.subject : "general";
+        const message = await store.addHuman(subject, `Changes requested: ${payload.text}`);
         try {
           await store.requestChanges(message.id);
-          target.send(message.id, "general", message.text, version);
+          target.send(message.id, subject, message.text, version);
           store.state.drafts["general"] = ""; await store.persist();
         } catch (error) { await store.fail(message.id, String(error)); throw error; }
       } else if (payload.action === "apply") await store.applyUpdate();

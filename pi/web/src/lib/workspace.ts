@@ -1,10 +1,19 @@
 export type Phase = "spec" | "review"
 export type Section = { id: string; title: string; kind: string; body: string }
+export type VisualNode = { id: string; label: string; sublabel?: string; group?: string; emphasis?: "normal" | "primary" | "warning" }
+export type VisualEdge = { from: string; to: string; label?: string; emphasis?: "normal" | "warning" }
 export type AttentionVisual =
-  | { type: "option_comparison"; options: { label: string; benefit: string; cost: string }[] }
+  | { type: "option_comparison"; options: { id?: string; label: string; summary?: string; benefit?: string; cost?: string; benefits?: string[]; costs?: string[]; recommended?: boolean }[] }
+  | { type: "sequence_flow" | "dependency_path"; nodes: VisualNode[]; edges: VisualEdge[] }
+  | { type: "architecture_graph"; nodes: VisualNode[]; edges: VisualEdge[] }
+  | { type: "state_machine"; states: { id: string; label: string; emphasis?: VisualNode["emphasis"] }[]; transitions: VisualEdge[] }
+  | { type: "evidence_chain"; steps: ({ label: string; detail?: string; emphasis?: VisualNode["emphasis"] } | string)[] }
   | { type: "sequence_flow" | "state_machine" | "evidence_chain" | "dependency_path"; steps: string[] }
-  | { type: "architecture_delta" | "semantic_diff"; before: string; after: string }
-export type Decision = { id: string; subject: string; recommendation: string; consequence: string; kind?: "choice" | "risk"; status: "open" | "accepted" | "waived"; version: string; context?: { explanation?: string; mentalModel?: string; architecture?: string; evidence?: string[]; code?: string[] }; visual?: AttentionVisual }
+  | { type: "architecture_delta" | "semantic_diff"; before: string | { title?: string; summary: string; items?: string[] }; after: string | { title?: string; summary: string; items?: string[] } }
+export type EvidenceItem = string | { label?: string; summary: string; source?: string }
+export type CodeItem = string | { path?: string; lines?: string; symbol?: string; summary: string; excerpt?: string }
+export type DecisionOption = { id: string; label: string; summary: string; benefits?: string[]; costs?: string[] }
+export type Decision = { id: string; subject: string; title?: string; summary?: string; recommendation: string; recommendationReason?: string; recommendedOptionId?: string; options?: DecisionOption[]; consequence: string; kind?: "choice" | "risk"; status: "open" | "accepted" | "waived"; version: string; context?: { explanation?: string; mentalModel?: string; architecture?: string; remember?: string; evidence?: EvidenceItem[]; code?: CodeItem[] }; visual?: AttentionVisual }
 export type Discussion = { id: string; subject: string; version: string; author: "human" | "agent"; text: string; status?: "queued" | "answered" | "failed" }
 export type Document = { version: string; sections: Section[]; decisions: Decision[]; recommendation: string; markdown?: string; candidate?: { head: string; main: string; clean: boolean }; at: number }
 export type Workspace = {

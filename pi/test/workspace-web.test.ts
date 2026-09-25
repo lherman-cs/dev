@@ -101,6 +101,23 @@ test("semantic attention data survives publication, revision and restoration wit
   assert.equal((await restored.check()).current, false);
 }));
 
+test("focused decision metadata and subject-bound alternatives survive revisions", async () => fixture(async ({ store, path, post, url }) => {
+  const choice = { id: "storage", subject: "Where should data live?", title: "Choose local storage", summary: "Keep the handoff history on this device", recommendation: "Keep data local", recommendationReason: "No remote identity is required", recommendedOptionId: "local", options: [{ id: "local", label: "Local", summary: "No sync" }, { id: "cloud", label: "Cloud", summary: "Requires account ownership" }], consequence: "Local history is not shared", context: { evidence: [{ label: "Trial", summary: "Offline handoffs succeeded", source: "trial log" }], code: [{ path: "handoff.ts", lines: "20-31", summary: "Writes locally" }] }, visual: { type: "sequence_flow" as const, nodes: [{ id: "browser", label: "Browser" }, { id: "disk", label: "Disk" }], edges: [{ from: "browser", to: "disk" }] } };
+  const original = await publish(store, first, [choice]);
+  const response = await (await fetch(url + "state")).json() as { state: { current: { decisions: typeof original.decisions } } };
+  assert.equal(response.state.current.decisions[0]?.recommendedOptionId, "local");
+  assert.deepEqual(response.state.current.decisions[0]?.visual, choice.visual);
+  assert.equal((await post({ action: "request_changes", version: original.version, subject: "storage", text: "Choose alternative: Cloud" })).status, 200);
+  assert.equal(store.state.discussions.at(-1)?.subject, "storage");
+  assert.equal((await post({ action: "approve", version: original.version })).status, 409);
+  const revised = first.replace("scope and exclusions", "scope and cloud ownership");
+  await writeFile(path, revised); await publish(store, revised, [choice]);
+  assert.deepEqual(store.state.pending?.decisions[0]?.options, choice.options);
+  const restored = new SpecWorkspace(store.path, store.file, store.cwd); await restored.restore();
+  assert.deepEqual(restored.state.pending?.decisions[0]?.context, choice.context);
+  assert.equal(restored.state.discussions.at(-1)?.subject, "storage");
+}));
+
 test("discussion retains version, failed delivery and draft on restart without replay", async () => fixture(async ({ store, post, url }) => {
   const doc = await publish(store); const version = doc.version;
   const msg = await store.addHuman("intent", "Could we change this?");

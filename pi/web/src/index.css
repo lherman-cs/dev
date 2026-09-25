@@ -49,24 +49,24 @@
 }
 
 :root {
-    --background: oklch(1 0 0);
-    --foreground: oklch(0.145 0 0);
+    --background: #f6f7f9;
+    --foreground: #17181b;
     --card: oklch(1 0 0);
     --card-foreground: oklch(0.145 0 0);
     --popover: oklch(1 0 0);
     --popover-foreground: oklch(0.145 0 0);
-    --primary: oklch(0.205 0 0);
-    --primary-foreground: oklch(0.985 0 0);
+    --primary: #353641;
+    --primary-foreground: #ffffff;
     --secondary: oklch(0.97 0 0);
     --secondary-foreground: oklch(0.205 0 0);
-    --muted: oklch(0.973 0.003 260);
-    --muted-foreground: oklch(0.51 0.012 260);
-    --accent: oklch(0.97 0 0);
-    --accent-foreground: oklch(0.205 0 0);
+    --muted: #f0f1f4;
+    --muted-foreground: #666d79;
+    --accent: #efefff;
+    --accent-foreground: #4545ac;
     --destructive: oklch(0.577 0.245 27.325);
-    --border: oklch(0.91 0.005 260);
-    --input: oklch(0.91 0.005 260);
-    --ring: oklch(0.708 0 0);
+    --border: #e2e5e9;
+    --input: #d8dce2;
+    --ring: #5b5bd6;
     --chart-1: oklch(0.87 0 0);
     --chart-2: oklch(0.556 0 0);
     --chart-3: oklch(0.439 0 0);
@@ -84,8 +84,8 @@
 }
 
 .dark {
-    --background: oklch(0.145 0 0);
-    --foreground: oklch(0.985 0 0);
+    --background: #17191e;
+    --foreground: #f4f5f7;
     --card: oklch(0.205 0 0);
     --card-foreground: oklch(0.985 0 0);
     --popover: oklch(0.205 0 0);
@@ -94,14 +94,14 @@
     --primary-foreground: oklch(0.205 0 0);
     --secondary: oklch(0.269 0 0);
     --secondary-foreground: oklch(0.985 0 0);
-    --muted: oklch(0.269 0 0);
-    --muted-foreground: oklch(0.708 0 0);
-    --accent: oklch(0.269 0 0);
-    --accent-foreground: oklch(0.985 0 0);
+    --muted: #282b33;
+    --muted-foreground: #a5abb7;
+    --accent: #292b4b;
+    --accent-foreground: #c9c9ff;
     --destructive: oklch(0.704 0.191 22.216);
-    --border: oklch(1 0 0 / 10%);
-    --input: oklch(1 0 0 / 15%);
-    --ring: oklch(0.556 0 0);
+    --border: #343841;
+    --input: #454a55;
+    --ring: #a2a2fa;
     --chart-1: oklch(0.87 0 0);
     --chart-2: oklch(0.556 0 0);
     --chart-3: oklch(0.439 0 0);
@@ -148,5 +148,27 @@
   .queue-item small { @apply mt-1 block text-xs text-muted-foreground; }
   .flow { @apply flex flex-wrap items-center gap-2 border-y py-4 text-xs text-muted-foreground; }
   .flow span { @apply rounded-md border border-border px-2 py-1.5 text-foreground; }
+  .workspace-topbar { @apply sticky top-0 z-20 flex h-[52px] items-center justify-between gap-3 border-b bg-card px-4 text-sm sm:px-6; }
+  .brand-mark { @apply text-base text-accent-foreground; }
+  .workspace-body { @apply flex min-h-[calc(100vh-52px)]; }
+  .progress-rail { @apply sticky top-[52px] hidden h-[calc(100vh-52px)] w-[78px] shrink-0 flex-col items-center gap-5 border-r bg-card py-9 sm:flex; }
+  .rail-step { @apply flex size-8 items-center justify-center rounded-md text-xs text-muted-foreground hover:bg-muted; }
+  .rail-active { @apply bg-accent font-semibold text-accent-foreground outline outline-1 outline-ring; }
+  .rail-done { @apply text-emerald-700 dark:text-emerald-400; }
+  .workspace-main { @apply min-w-0 flex-1; }
+  .workspace-canvas { @apply mx-auto max-w-[980px] px-5 pt-[34px] pb-[90px] sm:px-10 lg:px-[54px]; }
+  .recommendation { @apply border-l-2 border-accent-foreground bg-card py-4 pr-5 pl-5; }
+  .decision-option { @apply rounded-lg border bg-card p-4 text-left transition-colors duration-150 hover:border-ring; }
+  .option-selected { @apply border-ring bg-accent/50 ring-1 ring-ring; }
+  .visual { @apply rounded-lg border bg-card p-4 text-sm; }
+  .visual-node { @apply block rounded-md border bg-background p-3 text-sm; }
+  .visual-node strong, .visual-node small { @apply block; }
+  .visual-node small { @apply mt-1 text-xs text-muted-foreground; }
+  .visual-warning { @apply border-amber-500; }
+  .visual-primary { @apply border-ring; }
+  .revision-subject { @apply rounded-md border bg-card p-4 text-sm; }
+  .revision-subject summary { @apply cursor-pointer font-medium; }
+  .drawer-scrim { @apply fixed inset-0 z-30 bg-black/20; }
+  .context-drawer { @apply fixed top-[52px] right-0 bottom-0 z-40 flex w-[min(360px,100vw)] flex-col border-l bg-card shadow-lg; }
   button:focus-visible, summary:focus-visible, input:focus-visible, textarea:focus-visible, .quiet-link:focus-visible { @apply outline-2 outline-offset-2 outline-ring; }
 }
