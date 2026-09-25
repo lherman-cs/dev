@@ -31,23 +31,34 @@ test("dev-spec converges on a narrow coherent build target", () => {
   ]) assert.match(spec, requirement);
 });
 
-test("dev-review owns technical convergence and CTO understanding", () => {
+test("dev-review reviews the observed diff, repairs bugs, and obtains consequential approvals", () => {
   const review = skill("dev-review");
   for (const requirement of [
-    /Merge the current local integration branch/,
-    /Keep the merge in the development history/,
-    /Resolve ordinary conflicts yourself/,
-    /Own technical convergence/,
-    /high-level mental model/,
-    /CTO level/,
-    /Repair clear in-scope defects directly/,
-    /Do not ask whether routine repairs are worth doing/,
-    /materially change approved behavior, architecture, scope, or accepted risk/,
-    /findings as working engineering evidence, not PASS\/FAIL judgments/,
-    /clean, fully committed reviewed candidate/,
-    /Do not rewrite history/,
+    /candidate diff, comparison scope, and applicable agreed specifications and intent/,
+    /including relevant uncommitted changes/,
+    /A newly written spec is not required/,
+    /consequentially ambiguous/,
+    /spec alignment and material correctness/,
+    /Avoid style-only cleanup, speculative refactoring, unrelated defects, and system-model teaching/,
+    /behavior, contracts, data and security effects, compatibility, operational risk/,
+    /major architecture, ownership, dependency, or maintainability choices/,
+    /Repair clearly incorrect in-scope code directly and validate/,
+    /without requesting permission/,
+    /explicit human approval for \*\*all consequential changes\*\*/,
+    /even spec-compliant behavior and major design choices/,
+    /high-level batches by outcome or decision/,
+    /alignment with agreed intent, why it matters, relevant evidence or uncertainty, and a recommended direction/,
+    /approval, requested changes, and deferral/,
+    /potentially intentional spec deviations/,
+    /Implement and validate approved requested changes yourself/,
+    /materially alter approved effects, revisit affected approvals and validation/,
+    /Deferral leaves an unresolved concern/,
+    /applicable validation passes, every required batch is approved, and material concerns are resolved/,
+    /Do not merge the integration branch, stage, commit/,
+    /human prepares integration and commits before Ship/,
+    /material changes introduced afterward need renewed review/,
   ]) assert.match(review, requirement);
-  assert.doesNotMatch(review, /Reviewer PASS|single broad `review`|repair audit/);
+  assert.doesNotMatch(review, /Reviewer PASS|repair audit|clean, fully committed reviewed candidate/i);
 });
 
 test("dev-ship model is only an isolated commit grouper", () => {
@@ -75,6 +86,10 @@ test("documentation exposes the four phase boundary", () => {
   }
   assert.match(workflow, /Spec, Build, and Review activate a session-native goal/);
   assert.match(workflow, /Ship does not activate a goal/);
+  for (const doc of [workflow, readme]) {
+    assert.match(doc, /human prepares integration and commits/i);
+    assert.doesNotMatch(doc, /Review then merges|Review owns technical convergence|Review reconstructs.*then merges/);
+  }
 });
 
 test("user-wide input preference has one owner", () => {

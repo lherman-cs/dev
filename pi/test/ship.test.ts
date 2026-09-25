@@ -63,7 +63,16 @@ test("ship rejects any model content drift before creating a shipping branch", a
   assert.equal(git(f.root, ["rev-parse", "HEAD^{tree}"]), f.candidateTree);
 });
 
-test("ship refuses a candidate after local main moves beyond the reviewed baseline", async t => {
+test("ship rejects uncommitted review repairs until the human commits them", async t => {
+  const f = fixture(t);
+  fs.writeFileSync(path.join(f.root, "a.txt"), "uncommitted repair\n");
+  let called = false;
+  const run: RunWorker = async () => { called = true; return "unused" as never; };
+  await assert.rejects(packageReviewedCandidate({ cwd: f.root, name: "dirty", run }), /Prepare a clean committed candidate.*human owns integration and commits/);
+  assert.equal(called, false);
+});
+
+test("ship refuses a candidate until the human integrates advanced local main", async t => {
   const f = fixture(t);
   git(f.root, ["switch", "-q", "main"]);
   fs.writeFileSync(path.join(f.root, "main.txt"), "later\n");
@@ -71,6 +80,6 @@ test("ship refuses a candidate after local main moves beyond the reviewed baseli
   git(f.root, ["switch", "-q", "feature"]);
   let called = false;
   const run: RunWorker = async () => { called = true; return "unused" as never; };
-  await assert.rejects(packageReviewedCandidate({ cwd: f.root, name: "stale", run }), /main moved beyond/);
+  await assert.rejects(packageReviewedCandidate({ cwd: f.root, name: "stale", run }), /main is not integrated.*Prepare and commit the integrated candidate.*return to dev-review if integration materially changes reviewed effects/);
   assert.equal(called, false);
 });

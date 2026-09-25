@@ -1,35 +1,15 @@
 # Representative dev-review interaction
 
-This is an interaction target for the foreground `dev-review` phase.
+This is an interaction target for foreground `dev-review`, not a second approval system.
 
-## Target relationship
+A candidate changes participant reconnection behavior. Review establishes the candidate diff and agreed intent, including uncommitted changes, without requiring a new spec or merging `main`.
 
-The Reviewer is the CTO's senior engineering partner. It owns deep technical inspection, ordinary repairs, and evidence gathering while progressively improving the CTO's high-level model of the affected system.
+The reviewer finds that delayed cleanup from an old connection can remove state owned by its replacement. This is a clear in-scope bug: the reviewer adds the narrow ownership guard and validates it without asking permission. A formatting-only edit needs no approval or style discussion.
 
-The CTO should spend attention on behavior, architecture, scope, and accepted risk, not on review bookkeeping or routine repair approval.
+The diff also intentionally changes reconnect grace time and moves reconnect-state ownership from connection to participant. Both may comply with the spec, but the grace time affects user-visible behavior and the ownership move is a major design choice. The reviewer groups related effects while keeping the distinct decisions visible:
 
-## Example
+> Reconnect now keeps participants for longer during a transport drop, as agreed, but may delay presence cleanup. I recommend approving this behavior; the reconnection check passes. The state ownership move also matches the agreed intent but changes who can remove shared state. I recommend retaining it because the replacement connection now owns cleanup. The old-connection cleanup bug is repaired and validated. Approve these changes, request revisions, or defer a decision?
 
-A candidate changes participant reconnection behavior.
+If the diff instead shortens the grace time contrary to the agreed intent, the reviewer flags the possible deliberate deviation with a recommendation before keeping or changing it. A requested revision is implemented and validated by the reviewer, and any materially changed effects are brought back for approval. A deferred material decision remains unresolved and prevents successful review.
 
-A useful Reviewer explanation is:
-
-> Participant identity survives individual transports, while connections are replaceable. This change is in the cleanup path between those two responsibilities. The important invariant is that delayed cleanup from an old connection must not remove state owned by its replacement. I found one path where that ownership check is missing. I can repair it locally without changing the approved semantics.
-
-The Reviewer should make that repair and verify it without asking whether the repair is worth doing.
-
-If the plausible repair changes an approved architectural boundary, the interaction changes:
-
-> Fixing this cleanly would move ownership of reconnect state from the connection to the participant. That changes the architecture rather than merely closing the defect. I recommend keeping ownership where it is and adding the narrow guard instead. Do you want to preserve the current ownership model or intentionally move it?
-
-The human decides that consequential tradeoff; Review then continues the same goal.
-
-## Integration
-
-Before review judgment, merge the current local integration branch into the development candidate. Conflicts are part of technical convergence. Ordinary conflicts are resolved by Review. A conflict that changes approved behavior, architecture, scope, or accepted risk becomes a focused CTO decision.
-
-The resulting merge commit may remain in development history. Dev-ship later discards development history and reconstructs a clean linear shipping history from the reviewed tree.
-
-## Endpoint
-
-Review ends with a technically converged candidate and a human who understands the changed system well enough to challenge or redirect consequential decisions. It does not produce PASS/FAIL verdicts or hand findings to another Shipper for interpretation.
+Review reports scope, approvals, repairs, validation, and remaining concerns. It neither merges `main`, stages, nor commits. The human prepares integration and commits before Ship and returns for review if integration materially changes the reviewed effects. Unchanged effects do not need reapproval merely because they were committed.

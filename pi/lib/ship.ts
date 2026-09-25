@@ -40,13 +40,13 @@ function tree(cwd: string, revision = "HEAD"): string {
 
 function sourceState(cwd: string): { root: string; baseline: string; candidate: string; candidateTree: string; sourceBranch: string } {
   const root = git(cwd, ["rev-parse", "--show-toplevel"]);
-  if (git(root, ["status", "--porcelain", "--untracked-files=all"])) throw new Error("dev-review must leave a clean committed candidate before dev-ship.");
+  if (git(root, ["status", "--porcelain", "--untracked-files=all"])) throw new Error("Prepare a clean committed candidate before dev-ship; the human owns integration and commits after review.");
   const sourceBranch = git(root, ["branch", "--show-current"]);
   if (!sourceBranch) throw new Error("dev-ship requires a named source branch.");
   const candidate = git(root, ["rev-parse", "HEAD"]);
   const main = git(root, ["rev-parse", "main"]);
   const baseline = git(root, ["merge-base", candidate, main]);
-  if (baseline !== main) throw new Error("Local main moved beyond the baseline integrated by dev-review. Run dev-review again.");
+  if (baseline !== main) throw new Error("Local main is not integrated into the candidate. Prepare and commit the integrated candidate before dev-ship; return to dev-review if integration materially changes reviewed effects.");
   return { root, baseline, candidate, candidateTree: tree(root, candidate), sourceBranch };
 }
 

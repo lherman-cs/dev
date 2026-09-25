@@ -15,9 +15,9 @@ spec = "openai/gpt-6-astra:medium"
 # Reason: Sol high is close to Astra-medium coding quality at substantially lower task cost.
 build = "openai/gpt-6-sol:high"
 
-# Role: Converge the built candidate with the CTO through deep review, repair, and system understanding.
+# Role: Review candidate changes against agreed intent, repair defects, and obtain consequential approvals.
 # Signals: FrontierCode, DeepSWE, AutomationBench, factual error.
-# Reason: Review is the highest-judgment engineering phase and the primary human technical interaction.
+# Reason: Review judges consequential effects and discusses approval with the human.
 review = "openai/gpt-6-astra:medium"
 # review = "openai/gpt-6-luna:high"
 
