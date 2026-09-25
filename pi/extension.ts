@@ -9,7 +9,7 @@ import { registerCompletionGuard } from "./lib/completion-guard.ts";
 import { createVerifierTool } from "./lib/verifier.ts";
 import { registerVerifier } from "./lib/verifier-hub.ts";
 import { packageReviewedCandidate } from "./lib/ship.ts";
-import { registerGoalHub } from "./lib/goal-hub.ts";
+import { openGoalHub } from "./lib/goal-hub.ts";
 
 export const explorerOnlyTools = new Set(["web_search", "source_check", "fetch_content", "get_search_content"]);
 type HubUI = ReturnType<typeof registerWorkerHubUI>;
@@ -42,7 +42,6 @@ export default function extension(pi: ExtensionAPI, dependencies: ExtensionDepen
   hub.onRelated = (record, text) => run.related(record, text);
   const hubUI: HubUI = (dependencies.registerWorkerHubUI || registerWorkerHubUI)(pi, hub);
   const guard = registerCompletionGuard(pi, run);
-  registerGoalHub(pi);
 
   pi.on("session_start", async (_event, nextCtx) => {
     ctx = nextCtx;
@@ -143,9 +142,10 @@ export default function extension(pi: ExtensionAPI, dependencies: ExtensionDepen
     },
   });
   pi.registerCommand("dev-goal", {
-    description: "Inspect or control the current goal: start <request>, pause, resume, abandon",
+    description: "Open Goal Hub; show text status or use start <request>, pause, resume, abandon",
     handler: async (args, nextCtx) => {
       const [action, ...rest] = args.trim().split(/\s+/);
+      if (!action && nextCtx.mode === "tui" && nextCtx.hasUI) { await openGoalHub(nextCtx); return; }
       if (action === "start") {
         const request = rest.join(" ") || (nextCtx.hasUI ? await nextCtx.ui.input("Goal request") : undefined);
         if (!request) { nextCtx.ui.notify("Provide a goal request: /dev-goal start <request>", "warning"); return; }
@@ -156,7 +156,7 @@ export default function extension(pi: ExtensionAPI, dependencies: ExtensionDepen
       if (action === "pause") guard.pause();
       else if (action === "resume") { guard.resume(nextCtx); setPhase(guard.currentSkill()); }
       else if (action === "abandon") guard.abandon();
-      else if (action && action !== "show") { nextCtx.ui.notify("Use /dev-goal [start <request>|pause|resume|abandon]", "warning"); return; }
+      else if (action && action !== "show") { nextCtx.ui.notify("Use /dev-goal [show|start <request>|pause|resume|abandon]", "warning"); return; }
       guard.show(nextCtx);
     },
   });

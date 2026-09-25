@@ -45,6 +45,7 @@ test("four current-session aliases and supporting tools register without work", 
   });
   assert.deepEqual([...commands.keys()].sort(), ["dev-brief", "dev-build", "dev-goal", "dev-review", "dev-ship", "dev-spec"]);
   assert.ok(shortcuts.has("alt+a"));
+  assert.equal(shortcuts.has("alt+g"), false);
   assert.ok(tools.some(tool => tool.name === "verify"));
   assert.ok(tools.some(tool => tool.name === "explore"));
   assert.ok(!tools.some(tool => tool.name === "review"), "review is a foreground phase, not a child tool");
@@ -52,6 +53,29 @@ test("four current-session aliases and supporting tools register without work", 
   const toolCall = handlers.get("tool_call"); assert.ok(toolCall);
   for (const toolName of explorerOnlyTools) assert.ok(toolCall({ toolName })?.reason);
   assert.equal(toolCall({ toolName: "edit" }), undefined);
+});
+
+test("bare dev-goal opens read-only hub in TUI; show and non-TUI preserve text status", async () => {
+  const commands = new Map<string, Omit<RegisteredCommand, "name" | "sourceInfo">>();
+  const noop = () => undefined, manager = SessionManager.inMemory(process.cwd()), messages: string[] = [];
+  let opened = 0;
+  load({ registerCommand: (name, command) => { commands.set(name, command); }, registerShortcut: noop as ExtensionAPI["registerShortcut"],
+    registerTool: noop as ExtensionAPI["registerTool"], on: (() => noop) as ExtensionAPI["on"], sendMessage: ((message: { content: string }) => { messages.push(message.content); }) as ExtensionAPI["sendMessage"],
+    sendUserMessage: noop as ExtensionAPI["sendUserMessage"], getActiveTools: () => ["read"], setActiveTools: noop as ExtensionAPI["setActiveTools"],
+  }, { hub: new WorkerHub(), registerWorkerHubUI: (() => ({ setContext: noop, dispose: noop })) as never });
+  const baseContext = { mode: "tui", cwd: process.cwd(), hasUI: true, sessionManager: manager, ui: {
+    notify: noop, setWidget: noop,
+    custom: async (factory: (tui: unknown, theme: unknown, keys: unknown, done: () => void) => { render: (width: number) => string[] }, options: { overlay: boolean }) => {
+      opened++; assert.equal(options.overlay, true);
+      assert.match(factory({ terminal: { rows: 24 }, requestRender: noop }, { fg: (_: string, value: string) => value }, undefined, noop).render(80).join("\n"), /No goals recorded/);
+    },
+  } };
+  const context = baseContext as never;
+  await commands.get("dev-goal")!.handler("", context); assert.equal(opened, 1); assert.equal(messages.length, 0);
+  await commands.get("dev-goal")!.handler("show", context); assert.match(messages.at(-1)!, /No current goal/);
+  await commands.get("dev-goal")!.handler("", { ...baseContext, mode: "rpc" } as never);
+  assert.match(messages.at(-1)!, /No current goal/); assert.equal(opened, 1);
+  assert.equal(manager.getBranch().filter(entry => entry.type === "custom" && entry.customType === "dev-goal").length, 0);
 });
 
 test("spec build and review activate goals while ship delegates to the deterministic packager", async () => {
