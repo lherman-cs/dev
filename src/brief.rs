@@ -82,18 +82,43 @@ struct Lead {
     title: String,
     body: String,
     anchors: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    aside: Option<LeadAside>,
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct LeadAside {
+    label: String,
+    text: String,
+    anchors: Vec<String>,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct BriefSection {
     id: String,
     title: String,
+    #[serde(default)]
+    kind: SectionKind,
     anchors: Vec<String>,
     blocks: Vec<BriefBlock>,
+}
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum SectionKind {
+    Overview,
+    #[default]
+    Finding,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 enum BriefBlock {
+    Columns {
+        label: String,
+        columns: Vec<Vec<BriefBlock>>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        widths: Vec<u8>,
+        anchors: Vec<String>,
+    },
     Text {
         label: String,
         text: String,
@@ -157,7 +182,8 @@ enum CalloutTone {
 impl BriefBlock {
     fn anchors(&self) -> &[String] {
         match self {
-            Self::Text { anchors, .. }
+            Self::Columns { anchors, .. }
+            | Self::Text { anchors, .. }
             | Self::List { anchors, .. }
             | Self::Table { anchors, .. }
             | Self::Comparison { anchors, .. }
@@ -167,9 +193,19 @@ impl BriefBlock {
             | Self::Callout { anchors, .. } => anchors,
         }
     }
+    fn all_anchors(&self) -> Vec<String> {
+        let mut result = self.anchors().to_vec();
+        if let Self::Columns { columns, .. } = self {
+            for block in columns.iter().flatten() {
+                result.extend(block.all_anchors());
+            }
+        }
+        result
+    }
     fn label(&self) -> &str {
         match self {
-            Self::Text { label, .. }
+            Self::Columns { label, .. }
+            | Self::Text { label, .. }
             | Self::List { label, .. }
             | Self::Table { label, .. }
             | Self::Comparison { label, .. }
@@ -667,9 +703,98 @@ fn validate_document(
         }
         Ok(())
     }
+    fn block(
+        value: &BriefBlock,
+        allowed: &HashMap<String, Vec<(usize, usize)>>,
+        excerpt_source: &str,
+        nested: bool,
+    ) -> Result<()> {
+        text(value.label(), 100)?;
+        anchors(value.anchors(), allowed)?;
+        match value {
+            BriefBlock::Columns {
+                columns, widths, ..
+            } => {
+                if (!widths.is_empty()
+                    && (widths.len() != columns.len()
+                        || widths.iter().any(|w| !(1..=4).contains(w))))
+                {
+                    bail!("Column widths must be 1–4 for each column");
+                }
+                if nested
+                    || !(2..=4).contains(&columns.len())
+                    || columns
+                        .iter()
+                        .any(|column| column.is_empty() || column.len() > 4)
+                {
+                    bail!(
+                        "Columns require 2–4 nonempty groups of at most 4 blocks; nesting is not supported"
+                    );
+                }
+                for child in columns.iter().flatten() {
+                    block(child, allowed, excerpt_source, true)?;
+                }
+            }
+            BriefBlock::Text { text: body, .. } | BriefBlock::Callout { text: body, .. } => {
+                text(body, 5000)?
+            }
+            BriefBlock::List { items, .. } | BriefBlock::Flow { steps: items, .. } => {
+                if items.is_empty() || items.len() > 20 {
+                    bail!("Invalid list or flow length");
+                }
+                for item in items {
+                    text(item, 500)?;
+                }
+            }
+            BriefBlock::Table { columns, rows, .. } => {
+                if columns.is_empty()
+                    || columns.len() > 8
+                    || rows.is_empty()
+                    || rows.len() > 30
+                    || rows.iter().any(|r| r.len() != columns.len())
+                {
+                    bail!("Invalid table dimensions");
+                }
+                for cell in columns.iter().chain(rows.iter().flatten()) {
+                    text(cell, 500)?;
+                }
+            }
+            BriefBlock::Comparison { before, after, .. } => {
+                text(before, 2500)?;
+                text(after, 2500)?;
+            }
+            BriefBlock::Diagram {
+                mermaid, takeaway, ..
+            } => {
+                text(mermaid, 8000)?;
+                text(takeaway, 1500)?;
+            }
+            BriefBlock::Code {
+                language,
+                status,
+                text: body,
+                anchors: evidence,
+                ..
+            } => {
+                text(language, 30)?;
+                text(body, 8000)?;
+                if matches!(status, CodeStatus::Excerpt)
+                    && (evidence.is_empty() || !excerpt_source.contains(body))
+                {
+                    bail!("Exact excerpt requires a snapshot anchor and literal captured text");
+                }
+            }
+        }
+        Ok(())
+    }
     text(&doc.lead.title, 100)?;
     text(&doc.lead.body, 4000)?;
     anchors(&doc.lead.anchors, allowed)?;
+    if let Some(aside) = &doc.lead.aside {
+        text(&aside.label, 100)?;
+        text(&aside.text, 1500)?;
+        anchors(&aside.anchors, allowed)?;
+    }
     if doc.sections.len() > 24 {
         bail!("Too many brief sections");
     }
@@ -690,62 +815,8 @@ fn validate_document(
         if section.blocks.is_empty() || section.blocks.len() > 12 {
             bail!("Section needs 1–12 blocks");
         }
-        for block in &section.blocks {
-            text(block.label(), 100)?;
-            anchors(block.anchors(), allowed)?;
-            match block {
-                BriefBlock::Text { text: body, .. } | BriefBlock::Callout { text: body, .. } => {
-                    text(body, 5000)?
-                }
-                BriefBlock::List { items, .. } | BriefBlock::Flow { steps: items, .. } => {
-                    if items.is_empty() || items.len() > 20 {
-                        bail!("Invalid list or flow length");
-                    }
-                    for item in items {
-                        text(item, 500)?;
-                    }
-                }
-                BriefBlock::Table { columns, rows, .. } => {
-                    if columns.is_empty()
-                        || columns.len() > 8
-                        || rows.is_empty()
-                        || rows.len() > 30
-                        || rows.iter().any(|r| r.len() != columns.len())
-                    {
-                        bail!("Invalid table dimensions");
-                    }
-                    for cell in columns.iter().chain(rows.iter().flatten()) {
-                        text(cell, 500)?;
-                    }
-                }
-                BriefBlock::Comparison { before, after, .. } => {
-                    text(before, 2500)?;
-                    text(after, 2500)?;
-                }
-                BriefBlock::Diagram {
-                    mermaid, takeaway, ..
-                } => {
-                    text(mermaid, 8000)?;
-                    text(takeaway, 1500)?;
-                }
-                BriefBlock::Code {
-                    language,
-                    status,
-                    text: body,
-                    anchors: evidence,
-                    ..
-                } => {
-                    text(language, 30)?;
-                    text(body, 8000)?;
-                    if matches!(status, CodeStatus::Excerpt) {
-                        if evidence.is_empty() || !excerpt_source.contains(body) {
-                            bail!(
-                                "Exact excerpt requires a snapshot anchor and literal captured text"
-                            );
-                        }
-                    }
-                }
-            }
+        for value in &section.blocks {
+            block(value, allowed, &excerpt_source, false)?;
         }
     }
     Ok(())
@@ -831,8 +902,8 @@ fn generate(root: &Path, args: &BriefArgs, dir: &Path) -> Result<Revision> {
             let anchors = section
                 .anchors
                 .iter()
-                .chain(section.blocks.iter().flat_map(BriefBlock::anchors))
                 .cloned()
+                .chain(section.blocks.iter().flat_map(BriefBlock::all_anchors))
                 .collect::<BTreeSet<_>>()
                 .into_iter()
                 .collect();
@@ -1276,6 +1347,42 @@ const STYLE: &str = include_str!("brief/style.css");
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn reference_sample_is_entirely_authored_in_typed_markdown() {
+        let source = include_str!("../tests/fixtures/brief-reference.md");
+        let allowed = HashMap::from([
+            ("src/scream.rs".into(), vec![(1, 2)]),
+            ("src/rtp.rs".into(), vec![(1, 1)]),
+            ("docs/architecture.md".into(), vec![(1, 1)]),
+        ]);
+        let parsed = parse_document(source, &allowed, "").unwrap();
+        assert_eq!(parsed.sections.len(), 22);
+        assert!(matches!(parsed.sections[0].kind, SectionKind::Overview));
+        assert_eq!(
+            parsed.lead.aside.as_ref().unwrap().label,
+            "Evidence incomplete"
+        );
+        assert!(
+            matches!(&parsed.sections[1].blocks[0], BriefBlock::Columns { columns, .. } if columns.len() == 2)
+        );
+        let nested = parsed.sections[1].blocks[0].all_anchors();
+        assert!(nested.contains(&"docs/architecture.md:1".to_owned()));
+        assert!(nested.contains(&"src/scream.rs:1".to_owned()));
+        let bad_widths = source.replace("\"widths\":[3,1]", "\"widths\":[3,0]");
+        assert!(parse_document(&bad_widths, &allowed, "").is_err());
+        let serialized = serde_json::to_string(&parsed).unwrap();
+        assert_eq!(
+            serde_json::from_str::<Document>(&serialized)
+                .unwrap()
+                .sections
+                .len(),
+            22
+        );
+        let invalid = source.replace("\"kind\":\"overview\"", "\"kind\":\"dashboard\"");
+        assert!(parse_document(&invalid, &allowed, "").is_err());
+        let invalid_nested = source.replacen("\"type\":\"diagram\"", "\"type\":\"columns\"", 1);
+        assert!(parse_document(&invalid_nested, &allowed, "").is_err());
+    }
     #[test]
     fn typed_markdown_is_strict_and_keeps_authored_blocks() {
         let allowed = HashMap::from([("src/a.rs".into(), vec![(3, 8)])]);

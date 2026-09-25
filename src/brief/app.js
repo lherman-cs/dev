@@ -60,8 +60,6 @@
       const result = await window.mermaid.render(`diagram-${index}`, source);
       // SVG in an image cannot execute scripts, even if a malformed graph reaches the renderer.
       const image = el('img'); image.alt = takeaway; image.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(result.svg);
-      const viewBox = result.svg.match(/\bviewBox="-?[\d.]+ -?[\d.]+ ([\d.]+) [\d.]+"/);
-      if (viewBox && Number(viewBox[1]) > 0) image.style.width = `${viewBox[1]}px`;
       host.replaceChildren(image);
     } catch (error) { host.replaceChildren(el('p', 'diagram-error', `Diagram unavailable: ${error.message}. ${takeaway}`)); }
   }
@@ -70,6 +68,16 @@
     const panel = el('div', `module module-${block.type}${block.tone ? ` tone-${block.tone}` : ''}`);
     panel.append(el('h3', 'module-label', block.label));
     switch (block.type) {
+      case 'columns': {
+        const grid = el('div', 'column-grid'); grid.style.setProperty('--column-count', block.columns.length);
+        if (block.widths?.length) grid.style.setProperty('--column-template', block.widths.map(width => `minmax(0, ${width}fr)`).join(' '));
+        for (const column of block.columns) {
+          const lane = el('div', 'column-lane');
+          for (const child of column) lane.append(blockView(child));
+          grid.append(lane);
+        }
+        panel.append(grid); break;
+      }
       case 'text': case 'callout': panel.append(el('p', 'body', block.text)); break;
       case 'list': {
         const list = el('ul', 'module-list');
@@ -107,19 +115,33 @@
     }
     return panel;
   }
+  function blockAnchors(block) {
+    return [...block.anchors, ...(block.type === 'columns' ? block.columns.flatMap(column => column.flatMap(blockAnchors)) : [])];
+  }
   function renderDocument(document) {
     const lead = el('section', 'lead'); lead.id = 'summary';
-    lead.append(el('div', 'section-label', 'The consequence'), el('h1', '', document.lead.title), el('p', 'body', document.lead.body));
+    const intro = el('div', 'lead-intro'); intro.append(el('div', 'section-label', 'The consequence'), el('h1', '', document.lead.title), el('p', 'body', document.lead.body));
+    const grid = el('div', 'lead-grid'); grid.append(intro);
+    if (document.lead.aside) {
+      const aside = el('aside', 'lead-aside');
+      aside.append(el('h2', '', document.lead.aside.label), el('p', 'body', document.lead.aside.text));
+      if (document.lead.aside.anchors.length) aside.append(evidence(document.lead.aside.anchors, document.lead.aside.label));
+      grid.append(aside);
+    }
+    lead.append(grid);
     if (document.lead.anchors.length) lead.append(evidence(document.lead.anchors, document.lead.title));
     main.replaceChildren(lead);
     const summary = el('a', 'nav-summary', 'Summary'); summary.href = '#summary'; nav.append(summary);
     document.sections.forEach((section, i) => {
       const link = el('a', '', section.title); link.href = `#${section.id}`; nav.append(link);
-      const node = el('section', 'finding'); node.id = section.id;
-      const heading = el('div', 'finding-heading'); heading.append(el('span', 'number', String(i + 1).padStart(2, '0')), el('h2', '', section.title)); node.append(heading);
+      const node = el('section', `finding${section.kind === 'overview' ? ' overview' : ''}`); node.id = section.id;
+      const heading = el('div', 'finding-heading');
+      if (section.kind !== 'overview') heading.append(el('span', 'number', String(document.sections.slice(0, i + 1).filter(s => s.kind !== 'overview').length)));
+      heading.append(el('h2', '', section.title)); node.append(heading);
       for (const block of section.blocks) node.append(blockView(block));
-      const anchors = [...new Set([...section.anchors, ...section.blocks.flatMap(block => block.anchors)])];
-      node.append(evidence(anchors, section.title), control(section.id, drafts[section.id], section.title));
+      const anchors = [...new Set([...section.anchors, ...section.blocks.flatMap(blockAnchors)])];
+      if (anchors.length) node.append(evidence(anchors, section.title));
+      node.append(control(section.id, drafts[section.id], section.title));
       main.append(node);
     });
   }

@@ -48,6 +48,7 @@ fn fixture() -> (PathBuf, PathBuf, PathBuf) {
     fs::write(&script, r#"#!/bin/sh
 cat > "$BRIEF_TEST_INPUT"
 if [ -n "${BRIEF_TEST_WAIT_FOR:-}" ]; then while [ ! -f "$BRIEF_TEST_WAIT_FOR" ]; do sleep 0.05; done; fi
+if [ -f "$BRIEF_TEST_SAMPLE" ]; then cat "$BRIEF_TEST_SAMPLE"; exit 0; fi
 cat <<'BRIEF'
 # Branch consequence brief
 
@@ -88,6 +89,7 @@ fn start(repo: &Path, home: &Path, pkg: &Path, args: &[&str]) -> (Child, String,
         .env("DEV_PI_PACKAGE", pkg)
         .env("XDG_DATA_HOME", home.join("data"))
         .env("BRIEF_TEST_INPUT", home.join("model-input.txt"))
+        .env("BRIEF_TEST_SAMPLE", home.join("sample.md"))
         .env(
             "PATH",
             format!("{}:{}", home.display(), std::env::var("PATH").unwrap()),
@@ -145,8 +147,28 @@ fn request(
     let mut out = String::new();
     stream.read_to_string(&mut out).unwrap();
     let status = out.split_whitespace().nth(1).unwrap().parse().unwrap();
-    let data = out.split_once("\r\n\r\n").unwrap().1.to_string();
-    (status, data)
+    let (response_headers, data) = out.split_once("\r\n\r\n").unwrap();
+    if response_headers
+        .to_ascii_lowercase()
+        .contains("transfer-encoding: chunked")
+    {
+        let mut input = data.as_bytes();
+        let mut decoded = Vec::new();
+        loop {
+            let end = input.windows(2).position(|w| w == b"\r\n").unwrap();
+            let size =
+                usize::from_str_radix(std::str::from_utf8(&input[..end]).unwrap(), 16).unwrap();
+            if size == 0 {
+                break;
+            }
+            input = &input[end + 2..];
+            decoded.extend_from_slice(&input[..size]);
+            input = &input[size + 2..];
+        }
+        (status, String::from_utf8(decoded).unwrap())
+    } else {
+        (status, data.to_string())
+    }
 }
 #[test]
 fn generation_reports_progress_before_pi_finishes() {
@@ -209,6 +231,110 @@ fn generation_reports_progress_before_pi_finishes() {
     fs::remove_dir_all(root).unwrap();
 }
 
+#[test]
+fn reference_markdown_drives_full_viewer_and_reopens_unchanged() {
+    let (root, repo, pkg) = fixture();
+    let source = include_str!("fixtures/brief-reference.md");
+    fs::write(root.join("sample.md"), source).unwrap();
+    fs::create_dir_all(repo.join("src")).unwrap();
+    fs::create_dir_all(repo.join("docs")).unwrap();
+    fs::write(
+        repo.join("src/scream.rs"),
+        "// base core\n// base feedback\n",
+    )
+    .unwrap();
+    fs::write(repo.join("src/rtp.rs"), "// base timing\n").unwrap();
+    fs::write(repo.join("docs/architecture.md"), "Base system map\n").unwrap();
+    git(&repo, &["add", "src", "docs"]);
+    git(&repo, &["commit", "-qm", "add sample source paths"]);
+    fs::write(
+        repo.join("src/scream.rs"),
+        "// illustrative controller policy\n// illustrative gap handling\n",
+    )
+    .unwrap();
+    fs::write(
+        repo.join("src/rtp.rs"),
+        "// illustrative clock confidence\n",
+    )
+    .unwrap();
+    fs::write(
+        repo.join("docs/architecture.md"),
+        "Illustrative sender to receiver path\n",
+    )
+    .unwrap();
+    let (mut child, url, dir) = start(&repo, &root, &pkg, &["--base", "main"]);
+    let (status, body) = request(&url, "GET", "/data", &[], "");
+    assert_eq!(status, 200);
+    let data: Value = serde_json::from_str(&body).unwrap();
+    let id = data["revision"]["id"].as_str().unwrap().to_owned();
+    let token = data["token"].as_str().unwrap();
+    assert_eq!(data["revision"]["markdown"], source.trim());
+    assert_eq!(
+        data["revision"]["document"]["sections"]
+            .as_array()
+            .unwrap()
+            .len(),
+        22
+    );
+    assert_eq!(
+        data["revision"]["document"]["sections"][0]["kind"],
+        "overview"
+    );
+    assert_eq!(
+        data["revision"]["document"]["sections"][1]["blocks"][0]["type"],
+        "columns"
+    );
+    assert_eq!(
+        data["revision"]["targets"][1]["anchors"]
+            .as_array()
+            .unwrap()
+            .len(),
+        3
+    );
+    let (_, app) = request(&url, "GET", "/app.js", &[], "");
+    assert!(app.contains("case 'columns'"));
+    let feedback = json!({"notes":{"s-system-map":"Keep architecture distinction"}}).to_string();
+    assert_eq!(
+        request(
+            &url,
+            "POST",
+            "/feedback",
+            &[
+                ("X-Brief-Token", token),
+                ("Content-Type", "application/json")
+            ],
+            &feedback
+        )
+        .0,
+        200
+    );
+    child.kill().unwrap();
+    child.wait().unwrap();
+    let (mut reopened, reopened_url, _) = start(&repo, &root, &pkg, &["--open", &id]);
+    let (_, reopened_body) = request(&reopened_url, "GET", "/data", &[], "");
+    let saved: Value = serde_json::from_str(&reopened_body).unwrap();
+    assert_eq!(saved["revision"]["markdown"], source.trim());
+    assert_eq!(
+        saved["feedback"]["notes"]["s-system-map"],
+        "Keep architecture distinction"
+    );
+    let reopened_token = saved["token"].as_str().unwrap();
+    let (_, exported) = request(
+        &reopened_url,
+        "POST",
+        "/export",
+        &[("X-Brief-Token", reopened_token)],
+        "",
+    );
+    let exported = fs::read_to_string(exported.trim().strip_prefix("Exported ").unwrap()).unwrap();
+    assert!(exported.contains("docs/architecture.md:1"));
+    assert!(exported.contains("src/scream.rs:1"));
+    assert!(exported.contains("Keep architecture distinction"));
+    reopened.kill().unwrap();
+    reopened.wait().unwrap();
+    assert!(Path::new(&dir).join(format!("{id}.json")).exists());
+    fs::remove_dir_all(root).unwrap();
+}
 #[test]
 fn invalid_directives_leave_existing_revision_untouched() {
     let (root, repo, pkg) = fixture();
