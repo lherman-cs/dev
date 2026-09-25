@@ -66,7 +66,7 @@
   let diagramIndex = 0;
   function blockView(block) {
     const panel = el('div', `module module-${block.type}${block.tone ? ` tone-${block.tone}` : ''}`);
-    panel.append(el('h3', 'module-label', block.label));
+    if (block.label) panel.append(el('h3', 'module-label', block.label));
     switch (block.type) {
       case 'columns': {
         const grid = el('div', 'column-grid'); grid.style.setProperty('--column-count', block.columns.length);
@@ -116,7 +116,7 @@
     return panel;
   }
   function blockAnchors(block) {
-    return [...block.anchors, ...(block.type === 'columns' ? block.columns.flatMap(column => column.flatMap(blockAnchors)) : [])];
+    return [...(block.anchors || []), ...(block.type === 'columns' ? block.columns.flatMap(column => column.flatMap(blockAnchors)) : [])];
   }
   function renderDocument(document) {
     const lead = el('section', 'lead'); lead.id = 'summary';
@@ -125,11 +125,11 @@
     if (document.lead.aside) {
       const aside = el('aside', 'lead-aside');
       aside.append(el('h2', '', document.lead.aside.label), el('p', 'body', document.lead.aside.text));
-      if (document.lead.aside.anchors.length) aside.append(evidence(document.lead.aside.anchors, document.lead.aside.label));
+      if (document.lead.aside.anchors?.length) aside.append(evidence(document.lead.aside.anchors, document.lead.aside.label));
       grid.append(aside);
     }
     lead.append(grid);
-    if (document.lead.anchors.length) lead.append(evidence(document.lead.anchors, document.lead.title));
+    if (document.lead.anchors?.length) lead.append(evidence(document.lead.anchors, document.lead.title));
     main.replaceChildren(lead);
     const summary = el('a', 'nav-summary', 'Summary'); summary.href = '#summary'; nav.append(summary);
     document.sections.forEach((section, i) => {
@@ -139,7 +139,7 @@
       if (section.kind !== 'overview') heading.append(el('span', 'number', String(document.sections.slice(0, i + 1).filter(s => s.kind !== 'overview').length)));
       heading.append(el('h2', '', section.title)); node.append(heading);
       for (const block of section.blocks) node.append(blockView(block));
-      const anchors = [...new Set([...section.anchors, ...section.blocks.flatMap(blockAnchors)])];
+      const anchors = [...new Set([...(section.anchors || []), ...section.blocks.flatMap(blockAnchors)])];
       if (anchors.length) node.append(evidence(anchors, section.title));
       node.append(control(section.id, drafts[section.id], section.title));
       main.append(node);

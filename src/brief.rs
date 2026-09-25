@@ -81,6 +81,7 @@ struct Document {
 struct Lead {
     title: String,
     body: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     anchors: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     aside: Option<LeadAside>,
@@ -90,15 +91,18 @@ struct Lead {
 struct LeadAside {
     label: String,
     text: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     anchors: Vec<String>,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct BriefSection {
     id: String,
+    #[serde(default)]
     title: String,
     #[serde(default)]
     kind: SectionKind,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     anchors: Vec<String>,
     blocks: Vec<BriefBlock>,
 }
@@ -113,56 +117,74 @@ enum SectionKind {
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 enum BriefBlock {
     Columns {
+        #[serde(default, skip_serializing_if = "String::is_empty")]
         label: String,
         columns: Vec<Vec<BriefBlock>>,
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         widths: Vec<u8>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
         anchors: Vec<String>,
     },
     Text {
+        #[serde(default, skip_serializing_if = "String::is_empty")]
         label: String,
         text: String,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
         anchors: Vec<String>,
     },
     List {
+        #[serde(default, skip_serializing_if = "String::is_empty")]
         label: String,
         items: Vec<String>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
         anchors: Vec<String>,
     },
     Table {
+        #[serde(default, skip_serializing_if = "String::is_empty")]
         label: String,
         columns: Vec<String>,
         rows: Vec<Vec<String>>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
         anchors: Vec<String>,
     },
     Comparison {
+        #[serde(default, skip_serializing_if = "String::is_empty")]
         label: String,
         before: String,
         after: String,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
         anchors: Vec<String>,
     },
     Flow {
+        #[serde(default, skip_serializing_if = "String::is_empty")]
         label: String,
         steps: Vec<String>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
         anchors: Vec<String>,
     },
     Diagram {
+        #[serde(default, skip_serializing_if = "String::is_empty")]
         label: String,
         mermaid: String,
         takeaway: String,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
         anchors: Vec<String>,
     },
     Code {
+        #[serde(default, skip_serializing_if = "String::is_empty")]
         label: String,
         language: String,
         status: CodeStatus,
         text: String,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
         anchors: Vec<String>,
     },
     Callout {
+        #[serde(default, skip_serializing_if = "String::is_empty")]
         label: String,
         tone: CalloutTone,
         text: String,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
         anchors: Vec<String>,
     },
 }
@@ -662,10 +684,12 @@ fn parse_document(
         let title = line
             .strip_prefix("## ")
             .ok_or_else(|| anyhow!("Expected ## section title"))?;
-        let section: BriefSection =
+        let mut section: BriefSection =
             serde_json::from_str(&directive(&mut lines, "```brief-section")?)
                 .context("Invalid brief section directive")?;
-        if title != section.title {
+        if section.title.is_empty() {
+            section.title = title.to_owned();
+        } else if title != section.title {
             bail!("Section heading does not match directive title");
         }
         sections.push(section);
@@ -709,7 +733,9 @@ fn validate_document(
         excerpt_source: &str,
         nested: bool,
     ) -> Result<()> {
-        text(value.label(), 100)?;
+        if !value.label().is_empty() {
+            text(value.label(), 100)?;
+        }
         anchors(value.anchors(), allowed)?;
         match value {
             BriefBlock::Columns {
@@ -1366,7 +1392,11 @@ mod tests {
             matches!(&parsed.sections[1].blocks[0], BriefBlock::Columns { columns, .. } if columns.len() == 2)
         );
         let nested = parsed.sections[1].blocks[0].all_anchors();
-        assert!(nested.contains(&"docs/architecture.md:1".to_owned()));
+        assert!(
+            parsed.sections[1]
+                .anchors
+                .contains(&"docs/architecture.md:1".to_owned())
+        );
         assert!(nested.contains(&"src/scream.rs:1".to_owned()));
         let bad_widths = source.replace("\"widths\":[3,1]", "\"widths\":[3,0]");
         assert!(parse_document(&bad_widths, &allowed, "").is_err());
@@ -1415,6 +1445,34 @@ mod tests {
                 "accepted invalid: {invalid}"
             );
         }
+    }
+    #[test]
+    fn minimal_directives_use_explicit_heading_and_section_evidence() {
+        let source = "# Branch consequence brief\n\n```brief-lead\n{\"title\":\"Bottom line\",\"body\":\"Changed accounting\"}\n```\n\n## Feedback accounting\n\n```brief-section\n{\"id\":\"s-feedback\",\"anchors\":[\"src/a.rs:3\"],\"blocks\":[{\"type\":\"text\",\"text\":\"A gap stays provisional.\"},{\"type\":\"flow\",\"steps\":[\"Detect gap\",\"Wait for report\"]}]}\n```\n";
+        let allowed = HashMap::from([("src/a.rs".into(), vec![(3, 3)])]);
+        let doc = parse_document(source, &allowed, "").unwrap();
+        assert_eq!(doc.sections[0].title, "Feedback accounting");
+        assert!(
+            doc.sections[0]
+                .blocks
+                .iter()
+                .all(|block| block.anchors().is_empty())
+        );
+        assert!(
+            doc.sections[0]
+                .blocks
+                .iter()
+                .all(|block| block.label().is_empty())
+        );
+        assert_eq!(doc.sections[0].anchors, ["src/a.rs:3"]);
+        assert!(
+            parse_document(
+                &source.replace("\"text\":\"A gap", "\"bogus\":true,\"text\":\"A gap"),
+                &allowed,
+                ""
+            )
+            .is_err()
+        );
     }
     #[test]
     fn range_rejects_missing_or_extra_endpoints() {
