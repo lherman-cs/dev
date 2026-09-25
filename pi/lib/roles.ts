@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import { parse } from "smol-toml";
 export type PublicPhase = "spec" | "brief" | "build" | "review" | "ship";
-export type RoleName = PublicPhase | "assessor" | "explorer" | "escalated_builder";
+export type RoleName = PublicPhase | "assessor" | "explorer";
 export type AuthProvider = "openai-codex" | "openai";
 export interface RoleConfig {
   authProvider: AuthProvider;
