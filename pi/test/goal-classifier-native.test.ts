@@ -9,12 +9,12 @@ import { createAgentSession, DefaultResourceLoader, ModelRuntime, SessionManager
 import { role } from "../lib/roles.ts";
 
 const cases = [
-  { label: "done", expected: "Completed" },
-  { label: "continue", expected: "Paused" },
-  { label: "blocked", expected: "Blocked" },
-  { label: "unclear", expected: "Paused" },
+  { label: "COMPLETE", expected: "Waiting" }, // A contradictory completion cannot settle unfinished work.
+  { label: "CONTINUE", expected: "Waiting" }, // The second foreground turn stops without a report.
+  { label: "WAIT", expected: "Waiting" },
+  { label: "unclear", expected: "Error" },
 ] as const;
-for (const { label, expected } of cases) test(`native ambiguous report accepts narrow assessor label ${label}`, { timeout: 20000 }, async t => {
+for (const { label, expected } of cases) test(`native compact assessor label ${label}`, { timeout: 20000 }, async t => {
   const cwd = mkdtempSync(join(tmpdir(), "goal-narrow-native-")); t.after(() => rmSync(cwd, { recursive: true, force: true }));
   const settings = SettingsManager.inMemory({ packages: [resolve(import.meta.dirname, "..") ] });
   const loader = new DefaultResourceLoader({ cwd, agentDir: cwd, settingsManager: settings }); await loader.reload();
@@ -24,15 +24,13 @@ for (const { label, expected } of cases) test(`native ambiguous report accepts n
     const stream = createAssistantMessageEventStream();
     const isAssessor = model.id === role("assessor").model;
     if (isAssessor) {
-      assert.equal(context.messages.length, 1);
-      assert.deepEqual(context.tools, []);
+      assert.equal(context.messages.length, 1); assert.deepEqual(context.tools, []);
       const serialized = (context.messages[0]!.content[0] as { text: string }).text;
-      const data = JSON.parse(serialized);
-      assert.deepEqual(Object.keys(data), ["progress", "remaining", "blocker"]);
+      assert.deepEqual(Object.keys(JSON.parse(serialized)), ["remaining", "nextAction", "dependency", "complete"]);
       observed.push(serialized);
     }
     const content: AssistantMessage["content"] = isAssessor ? [{ type: "text", text: label }] : foregroundCalls++ === 0
-      ? [{ type: "toolCall", id: "report", name: "stopping_report", arguments: { progress: "Implementation checkpoint", remaining: "unknown", blocker: null } }]
+      ? [{ type: "toolCall", id: "report", name: "stopping_report", arguments: { remaining: "unknown", nextAction: null, dependency: { kind: "unknown", detail: "Need clarification" }, complete: false } }]
       : [{ type: "text", text: "Waiting" }];
     const stopReason = content[0]?.type === "toolCall" ? "toolUse" : "stop";
     queueMicrotask(() => stream.push({ type: "done", reason: stopReason, message: {
@@ -52,5 +50,4 @@ for (const { label, expected } of cases) test(`native ambiguous report accepts n
   const last = manager.getBranch().filter(e => e.type === "custom" && e.customType === "dev-goal").at(-1);
   assert.equal(last?.type === "custom" && (last.data as { status: string }).status, expected);
   assert.equal(observed.length, 1);
-  if (label === "continue") assert.match(JSON.stringify(last), /Reported work remains/);
 });

@@ -166,7 +166,7 @@ test("late completion from an earlier session cannot steer the new owner", async
   assert.equal(messages.length, 0);
 });
 
-test("failed Explorer delivery pauses the active goal instead of silently settling", async () => {
+test("failed Explorer delivery reports a recoverable error instead of silently settling", async () => {
   let resolve!: (value: unknown) => void;
   const run = Object.assign(() => new Promise(done => { resolve = done; }), {
     hasActive: () => false, stopAll: async () => undefined, related: async () => "unused",
@@ -194,7 +194,7 @@ test("failed Explorer delivery pauses the active goal instead of silently settli
   resolve({ status: "FOUND", answer: "A", evidence: [{ claim: "A", anchor: "a.ts:1" }] });
   await new Promise(done => setImmediate(done));
   const goals = manager.getBranch().filter(entry => entry.type === "custom" && entry.customType === "dev-goal");
-  assert.equal((goals.at(-1) as { data: { status: string; reason: string } }).data.status, "Paused");
+  assert.equal((goals.at(-1) as { data: { status: string; reason: string } }).data.status, "Error");
   assert.match((goals.at(-1) as { data: { status: string; reason: string } }).data.reason, /delivery failed/);
 });
 

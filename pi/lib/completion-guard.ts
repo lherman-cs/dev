@@ -4,14 +4,13 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import { assessorBackend, classifyReport, reportSchema, validateReport, type ClassifierBackend, type StageEvent } from "./finish-classifier.ts";
 
 const entryType = "dev-goal";
-const finishParams = Type.Object({ outcome: Type.Union([Type.Literal("complete"), Type.Literal("blocked")]),
-  summary: Type.String({ minLength: 1, maxLength: 4000 }), evidence: Type.String({ minLength: 1, maxLength: 8000 }) }, { additionalProperties: false });
 type Task = { id: number; subject: string; status: string; description?: string };
 type Member = Task & { epoch: number };
-type Lifecycle = "Active" | "Classifying" | "Paused" | "Blocked" | "Completed" | "Abandoned";
+type Lifecycle = "Active" | "Classifying" | "Waiting" | "Paused" | "Error" | "Completed" | "Abandoned";
 type State = { id: string; session: string; request: string; skill: "spec" | "brief" | "build" | "review" | "ship" | undefined; clarifications: string[];
   status: Lifecycle; reason: string; generation: number; baseline: number[]; members: Member[]; tasks: Task[]; todoEpoch: number;
-  nextId: number | undefined; transitions: string[]; stages: StageEvent[]; outcome?: string };
+  nextId: number | undefined; transitions: string[]; stages: StageEvent[]; outcome?: string;
+  remaining?: string | null; dependency?: string | null; timeline?: { at: number; kind: string; detail: string; assessment?: StageEvent; action?: string }[] };
 const unfinished = (s: State) => s.status !== "Completed" && s.status !== "Abandoned";
 const isState = (v: unknown): v is State => !!v && typeof v === "object" && typeof (v as State).id === "string" &&
   typeof (v as State).request === "string" && Array.isArray((v as State).members) && Array.isArray((v as State).transitions);
@@ -34,10 +33,15 @@ export function registerCompletionGuard(pi: ExtensionAPI, _run?: unknown,
   let state: State | undefined, ctx: ExtensionContext | undefined, humanControlInput = false;
   let pending: { id: string; controller: AbortController } | undefined;
   const workerWaits = new Map<string, { owner: string; timer: ReturnType<typeof setTimeout> }>();
-  const workerOwner = () => state && unfinished(state) && state.status === "Active" ? `${state.id}:${state.generation}` : "";
+  const workerOwner = () => state && unfinished(state) && ["Active", "Waiting", "Error"].includes(state.status) ? `${state.id}:${state.generation}` : "";
   const currentSkill = () => state && unfinished(state) ? state.skill : undefined;
   const clearWorkerWaits = () => { for (const wait of workerWaits.values()) clearTimeout(wait.timer); workerWaits.clear(); };
   const save = () => { if (state) pi.appendEntry(entryType, structuredClone(state)); };
+  const record = (kind: string, detail: string, assessment?: StageEvent, action?: string) => {
+    if (!state) return;
+    (state.timeline ??= []).push({ at: Date.now(), kind, detail, ...(assessment ? { assessment } : {}), ...(action ? { action } : {}) });
+    save();
+  };
   const header = () => ctx?.ui.setWidget("dev-goal", state ? [`Goal: ${state.request.replace(/\s+/g, " ").slice(0, 55)} · ${state.status}${state.reason ? ` · ${state.reason.slice(0, 85)}` : ""}`] : undefined, { placement: "aboveEditor" });
   const announce = (text: string) => {
     try { pi.sendMessage({ customType: "dev-goal-event", content: text, display: true }, { triggerTurn: false }); }
@@ -46,20 +50,27 @@ export function registerCompletionGuard(pi: ExtensionAPI, _run?: unknown,
   const transition = (status: Lifecycle, reason: string, actor: string) => {
     if (!state) return;
     state.status = status; state.reason = reason;
-    const message = `Goal ${status}: ${reason} (${actor}). ${status === "Paused" || status === "Blocked" ? "Use /dev-goal resume to continue." : "Use /dev-goal for details."}`;
+    const message = `Goal ${status}: ${reason} (${actor}). ${status === "Paused" ? "Use /dev-goal resume to continue." : "Use /dev-goal for details."}`;
     state.transitions.push(message); state.transitions = state.transitions.slice(-20);
-    save(); header(); announce(message);
+    record(actor, message); header(); announce(message);
   };
   const invalidate = () => { clearWorkerWaits(); pending?.controller.abort(); pending = undefined; continuationScheduled = false; if (state) state.generation++; };
   const pause = (reason = "Interrupted by the human") => {
     replacement = undefined;
     if (!state || !unfinished(state) || state.status === "Paused") return;
+    if (pending) record("runtime", "Pending assessment invalidated; no decision applied", undefined, "suppressed");
     invalidate(); transition("Paused", reason, "human or interruption");
   };
-  const abandon = () => { if (state && unfinished(state)) { invalidate(); transition("Abandoned", "The human ended this obligation; its checklist remains in history", "human"); } };
+  const abandon = () => { if (state && unfinished(state)) {
+    if (pending) record("runtime", "Pending assessment invalidated; no decision applied", undefined, "suppressed");
+    invalidate(); transition("Abandoned", "The human ended this obligation; its checklist remains in history", "human");
+  } };
   const resume = (next: ExtensionContext) => {
-    if (!state || (state.status !== "Paused" && state.status !== "Blocked")) { next.ui.notify("Only a paused or blocked goal can resume.", "warning"); return; }
-    ctx = next; invalidate(); stagnant = 0;
+    if (!state || !(["Paused", "Waiting", "Error"].includes(state.status) ||
+      (humanControlInput && state.status === "Active" && state.reason.startsWith("Human replied")))) {
+      next.ui.notify("Only a stopped goal can resume.", "warning"); return;
+    }
+    ctx = next; invalidate();
     transition("Active", "Reconcile original request and uncertain side effects before proceeding", "human");
     try { pi.sendMessage({ customType: "dev-goal-resume", content: `Resume goal ${state.id}: ${state.request}. Reconcile observable work before continuing.`, display: true }, { triggerTurn: true, deliverAs: "steer" }); }
     catch { pause("Resume delivery failed"); }
@@ -73,9 +84,9 @@ export function registerCompletionGuard(pi: ExtensionAPI, _run?: unknown,
     announce(`Goal ${state.id}\nRequest: ${state.request}\nContract: ${state.skill ? `dev-${state.skill}` : "explicit goal"}\nClarifications: ${state.clarifications.join("; ") || "none"}\nState: ${state.status}. ${state.reason}\nAutomatic execution: ${state.status === "Active" ? "allowed" : "stopped"}\nChecklist: ${tasks.join("; ") || "none associated"}\nOutcome: ${state.outcome ?? "none"}\nClassifier history:\n${stages || "none"}\nRecent transitions:\n${state.transitions.join("\n")}\nControls: /dev-goal pause | resume | abandon | start <request>`);
   };
   const restore = (next: ExtensionContext) => {
-    invalidate(); replacement = undefined; ctx = next; stagnant = 0; humanControlInput = false;
+    invalidate(); replacement = undefined; ctx = next; humanControlInput = false;
     const entry = next.sessionManager.getBranch().reverse().find(e => e.type === "custom" && e.customType === entryType);
-    state = entry && entry.type === "custom" && isState(entry.data) ? { ...entry.data, members: [...entry.data.members], transitions: [...entry.data.transitions], stages: [...(entry.data.stages ?? [])] } : undefined;
+    state = entry && entry.type === "custom" && isState(entry.data) ? { ...entry.data, members: [...entry.data.members], transitions: [...entry.data.transitions], stages: [...(entry.data.stages ?? [])], timeline: [...(entry.data.timeline ?? [])] } : undefined;
     const forked = !!state && state.session !== next.sessionManager.getSessionId();
     if (state && forked) state = { ...state, session: next.sessionManager.getSessionId() };
     if (state && unfinished(state)) { invalidate(); transition("Paused", `${forked ? "Forked" : "Restored"} unfinished session; explicit resume required`, "recovery"); }
@@ -90,7 +101,7 @@ export function registerCompletionGuard(pi: ExtensionAPI, _run?: unknown,
     if (last?.role === "assistant" && last.stopReason === "aborted") pause("Turn interrupted (Escape or cancellation)"); });
   let replacement: { id: string; session: string; generation: number; request: string; skill: "spec" | "brief" | "build" | "review" | "ship" | undefined; questionCallId?: string; decision?: string } | undefined;
   const replacementOptions = ["Replace goal", "Refine existing goal", "Keep current goal"];
-  let stagnant = 0, continuationScheduled = false;
+  let continuationScheduled = false;
   const activate = (request: string, skill: "spec" | "brief" | "build" | "review" | "ship" | undefined, next: ExtensionContext, explicitReplacement = false): boolean => {
     ctx = next;
     if (state && unfinished(state)) {
@@ -108,7 +119,7 @@ export function registerCompletionGuard(pi: ExtensionAPI, _run?: unknown,
     state = { id: randomUUID(), session: next.sessionManager.getSessionId(), request, skill, clarifications: [], status: "Active",
       reason: "Foreground reports its own progress", generation: 1, baseline: todo.tasks.map(t => t.id), members: [], tasks: todo.tasks,
       todoEpoch: 0, nextId: todo.nextId, transitions: [], stages: [] };
-    stagnant = 0; humanControlInput = false;
+    humanControlInput = false;
     transition("Active", `Started: ${request}. Report the whole goal at a stopping point; /dev-goal shows controls`, "human activation");
     return true;
   };
@@ -116,18 +127,27 @@ export function registerCompletionGuard(pi: ExtensionAPI, _run?: unknown,
     if (event.source !== "interactive" && event.source !== "rpc") return;
     if (!state || !unfinished(state) || /^\/skill:dev-(?:spec|brief|build|review)(?:\s|$)/.test(event.text)) return;
     humanControlInput = true;
-    if ((state.skill === "spec" || state.skill === "review") && state.status === "Active") return;
-    if (state.status === "Active" || state.status === "Classifying") pause("New human input: resolve whether this refines, pauses or replaces the obligation");
+    // Ordinary replies and side questions do not control or expand the goal.
+    if (state.status === "Waiting" && !state.dependency?.startsWith("external:")) {
+      transition("Active", "Human replied; verify whether the dependency is satisfied", "human reply");
+    }
   });
   const workerStarted = (id: string, owner: string, timeoutMs = 120_000) => {
     if (!owner || owner !== workerOwner()) return;
-    const timer = setTimeout(() => { if (workerWaits.get(id)?.owner === owner && owner === workerOwner()) pause(`Asynchronous work ${id} stalled; inspect retained evidence before resuming`); }, timeoutMs);
+    const timer = setTimeout(() => { if (workerWaits.get(id)?.owner === owner && owner === workerOwner()) {
+      state!.dependency = `external: Work ${id} timed out`; transition("Error", `Asynchronous work ${id} timed out; inspect retained evidence or retry`, "runtime");
+    } }, timeoutMs);
     timer.unref(); workerWaits.set(id, { owner, timer });
   };
   const workerFinished = (id: string, owner: string) => { const wait = workerWaits.get(id);
     if (wait) { clearTimeout(wait.timer); workerWaits.delete(id); }
-    return owner === workerOwner() && (!owner || wait?.owner === owner); };
-  const workerDeliveryFailed = (owner: string, _error: unknown) => { if (owner && owner === workerOwner()) pause("Ordinary worker delivery failed; inspect Agent Hub before resuming"); };
+    return !owner || (owner === workerOwner() && wait?.owner === owner); };
+  const workerDeliveryFailed = (owner: string, _error: unknown) => { if (owner && owner === workerOwner()) transition("Error", "Worker delivery failed; inspect Agent Hub or retry", "runtime"); };
+  const workerReceived = (owner: string) => {
+    if (owner && owner === workerOwner() && ["Waiting", "Error"].includes(state?.status ?? "") && state?.dependency?.startsWith("external:")) {
+      state.dependency = null; transition("Active", "Relevant external result delivered", "runtime");
+    }
+  };
   pi.registerTool({ name: "goal_control", label: "Goal control", parameters: Type.Object({
     action: Type.Union([Type.Literal("resume"), Type.Literal("pause"), Type.Literal("abandon"), Type.Literal("adopt"), Type.Literal("clarify")]),
     taskId: Type.Optional(Type.Number()), reason: Type.Optional(Type.String()),
@@ -139,7 +159,7 @@ export function registerCompletionGuard(pi: ExtensionAPI, _run?: unknown,
       else if (args.action === "abandon") abandon();
       else if (args.action === "clarify") {
         if (!state || !unfinished(state) || !args.reason?.trim()) throw new Error("Specify a direct scope clarification for the unfinished goal.");
-        state.clarifications.push(args.reason.trim()); save(); announce(`Goal scope clarified: ${args.reason.trim()}. Explicit resume remains required.`);
+        state.clarifications.push(args.reason.trim()); record("human clarification", args.reason.trim()); announce(`Goal scope clarified: ${args.reason.trim()}.`);
       } else if (args.taskId !== undefined && state && unfinished(state)) {
         const task = state.tasks.find(t => t.id === args.taskId);
         if (!task) throw new Error("Todo not present in current native snapshot");
@@ -150,18 +170,13 @@ export function registerCompletionGuard(pi: ExtensionAPI, _run?: unknown,
       return { content: [{ type: "text" as const, text: `Goal: ${state?.status ?? "none"}. ${state?.reason ?? ""}` }], details: undefined };
     },
   });
-  pi.on("before_agent_start", () => { if (!state || (state.status !== "Paused" && state.status !== "Blocked")) return;
-    return { message: { customType: "dev-goal-control", content: `Goal ${state.id} is ${state.status}: ${state.reason}. Do not perform goal work until the human explicitly resumes or abandons it via goal_control or /dev-goal. Clarifications are not implicit authorization.`, display: true } }; });
   pi.on("tool_call", event => {
     if (replacement && event.toolName === "ask_user_question" && !replacement.questionCallId) {
       const questions = event.input?.["questions"];
       if (Array.isArray(questions) && questions.length === 1 && questions[0]?.header === "Goal intent" &&
         Array.isArray(questions[0]?.options) && replacementOptions.every(label => questions[0].options.some((o: { label?: string }) => o.label === label))) replacement.questionCallId = event.toolCallId;
     }
-    if (!state || !["Paused", "Blocked", "Classifying"].includes(state.status)) return;
-    const reads = ["read", "grep", "find", "ls", "lsp_diagnostics", "vcc_recall", "ask_user_question", "goal_control"];
-    if (reads.includes(event.toolName) || (event.toolName === "todo" && ["get", "list"].includes(String(event.input?.["action"])))) return;
-    return { block: true, reason: `Goal ${state.id} is ${state.status}. ${state.status === "Classifying" ? "Wait for the classifier or explicitly pause before further work." : "Obtain explicit resume or abandon before work."}` };
+    // Goal disposition never grants or revokes ordinary tool permissions.
   });
   pi.on("tool_result", event => {
     if (replacement && event.toolName === "ask_user_question" && event.toolCallId === replacement.questionCallId) {
@@ -169,7 +184,7 @@ export function registerCompletionGuard(pi: ExtensionAPI, _run?: unknown,
       const answer = !event.isError && !details?.cancelled && details?.answers?.length === 1 ? details.answers[0]?.answer : undefined;
       replacement.decision = answer && replacementOptions.includes(answer) ? answer : "dismissed"; return;
     }
-    if (!state || state.status !== "Active" || event.isError || ["finish", "stopping_report", "continue_goal", "goal_control"].includes(event.toolName)) return;
+    if (!state || state.status !== "Active" || event.isError || ["stopping_report", "goal_control"].includes(event.toolName)) return;
     if (event.toolName === "todo") {
       const data = snapshot(event.details); if (!data) return;
       if (event.input?.["action"] === "clear" || (data.nextId !== undefined && state.nextId !== undefined && data.nextId < state.nextId)) {
@@ -180,64 +195,57 @@ export function registerCompletionGuard(pi: ExtensionAPI, _run?: unknown,
       state.tasks = data.tasks; save();
     }
   });
-  const fixedContinue = "Continue only the work already authorized for this goal. Do not treat the classifier as a source of new requirements.";
   const continueGoal = () => {
-    try { pi.sendMessage({ customType: "dev-goal-continuation", content: fixedContinue, display: true }, { triggerTurn: true, deliverAs: "steer" }); }
-    catch { pause("Continuation delivery failed; resume after restoring message delivery"); }
+    if (!state || state.status !== "Active") return;
+    const id = state.id, generation = state.generation;
+    try {
+      pi.sendMessage({ customType: "dev-goal-continuation", content: "Continue only the work already authorized for this goal. Reconcile the current state.", display: true }, { triggerTurn: true, deliverAs: "steer" });
+      if (state?.id === id && state.generation === generation && state.status === "Active") record("runtime", "Continuation scheduled", undefined, "scheduled");
+    } catch { transition("Error", "Continuation delivery failed; retry or resume after restoring delivery", "runtime"); }
   };
-  pi.registerTool({ name: "continue_goal", label: "Continue goal", parameters: Type.Object({}, { additionalProperties: false }),
-    description: "Explicitly state that the current goal has work remaining you can pursue. No classifier runs; the runtime schedules a fixed continuation.",
-    async execute(_id, _args, _signal, _update, toolCtx) {
-      if (!state || state.status !== "Active" || state.session !== toolCtx.sessionManager.getSessionId()) throw new Error("No active goal.");
-      if (workerWaits.size) throw new Error("Wait for known asynchronous worker delivery before continuing.");
-      if (++stagnant > 2) pause("Repeated continuation without substantive progress; diagnose before resuming");
-      else { state.outcome = "Explicit continuation by foreground"; save(); continuationScheduled = true; continueGoal(); }
-      return { content: [{ type: "text" as const, text: "Explicit continuation accepted without classification." }], details: undefined };
-    },
-  });
-  pi.registerTool({ name: "finish", label: "Finish", parameters: finishParams,
-    description: "Declare the current goal complete or blocked. The foreground declaration is authoritative; no independent correctness assessment is run.",
-    async execute(_id, args, _signal, _update, toolCtx) {
-      if (!state || state.status !== "Active" || state.session !== toolCtx.sessionManager.getSessionId()) throw new Error("No active goal.");
-      if (workerWaits.size) throw new Error("Wait for known asynchronous worker delivery before declaring finish.");
-      const outcome = args.outcome === "complete" ? "Completed" : "Blocked";
-      state.outcome = `Reported ${args.outcome} by foreground`; invalidate();
-      transition(outcome, `${state.outcome}: ${args.summary.slice(0, 150)}`, "foreground declaration");
-      return { content: [{ type: "text" as const, text: `${state.outcome}; accepted without classification.` }], details: { outcome: args.outcome } };
-    },
-  });
   pi.registerTool({ name: "stopping_report", label: "Stopping report", parameters: reportSchema,
-    description: 'Report the whole current goal at an ambiguous normal stopping point. progress: brief progress; remaining: known unfinished work, null only if none, "unknown" if uncertain; blocker: external obstacle or null. Invalid reports must be corrected and retried with the same facts.',
+    description: 'Report whole-goal remaining work, next useful action, dependency (none/human/external/unknown with detail), and whether completion including applicable approval gates is explicitly asserted. The assessor only routes CONTINUE, WAIT or COMPLETE.',
     async execute(_id, args, signal, _update, toolCtx) {
-      const report = validateReport(args);
       if (!state || state.status !== "Active" || state.session !== toolCtx.sessionManager.getSessionId()) throw new Error("No active goal.");
-      if (workerWaits.size) throw new Error("Wait for known asynchronous worker delivery before reporting a stopping point.");
+      let report: ReturnType<typeof validateReport>;
+      try { report = validateReport(args); }
+      catch (error) { transition("Error", "Malformed goal report; human clarification needed before automatic execution", "runtime"); throw error; }
+      state.remaining = report.remaining; state.dependency = report.dependency.kind === "none" ? null : `${report.dependency.kind}: ${report.dependency.detail}`;
+      record("foreground report", JSON.stringify(report));
       const backend = backendFactory(toolCtx);
       // Fit failures known before inference are foreground errors, not classification attempts.
-      await backend.checkFit(report);
+      try { await backend.checkFit(report); }
+      catch { transition("Error", "Assessor input exceeded context budget; automatic execution stopped", "runtime"); throw new Error("Assessor input exceeded context budget; automatic execution stopped"); }
       const current = state, generation = current.generation, id = randomUUID();
       const controller = new AbortController();
       const abort = () => controller.abort(); signal?.addEventListener("abort", abort, { once: true });
       pending = { id, controller };
       const owned = () => pending?.id === id && state === current && current.generation === generation && current.status === "Classifying" && current.session === toolCtx.sessionManager.getSessionId();
       transition("Classifying", `Classifier starting: ${backend.label()}`, "runtime");
+      const serializeInput = JSON.stringify(report);
       const onEvent = (event: StageEvent) => {
         if (!owned()) return;
         current.stages.push(event); current.stages = current.stages.slice(-30);
-        const reason = event.status === "failed" ? `Classifier ${event.code}; pausing` :
-          `Classifier: ${event.label} · ${event.status}${event.disposition ? ` ${event.disposition}` : ""}`;
-        current.reason = reason; save(); header(); announce(reason);
+        const reason = event.status === "failed" ? `Assessor ${event.code}; automatic execution stopped` :
+          `Assessor: ${event.label} · ${event.status}${event.disposition ? ` ${event.disposition}` : ""}`;
+        current.reason = reason; record("assessment", reason, { ...event, input: event.input ?? serializeInput }); header(); announce(reason);
       };
       void classifyReport(report, backend, controller.signal, onEvent, owned).then(result => {
         if (!owned()) return;
         pending = undefined; signal?.removeEventListener("abort", abort);
-        if (!result.disposition || result.disposition === "unclear") {
-          transition("Paused", `Classifier ${result.failure ?? "unclear"}; resume after restoring access or clarifying the report`, "runtime"); return; }
-        current.outcome = `${result.disposition} classified by assessor`;
-        if (result.disposition === "continue") { if (++stagnant > 2) pause("Repeated continuation without substantive progress; diagnose before resuming");
-          else { transition("Active", "Reported work remains · classified by assessor", "runtime"); continueGoal(); } }
-        else { invalidate(); transition(result.disposition === "done" ? "Completed" : "Blocked", `Reported ${result.disposition} · classified by assessor`, "runtime"); }
-      }).catch(() => { if (owned()) { pending = undefined; transition("Paused", "Classifier inference error; resume after restoring access", "runtime"); } });
+        if (!result.disposition) { transition("Error", `Assessor ${result.failure ?? "failed"}; automatic continuation stopped`, "runtime"); record("runtime", "Assessment failed; no continuation", undefined, "suppressed"); return; }
+        // Never allow even a malformed assessor interpretation to complete an unknown or unapproved goal.
+        const decision = (result.disposition === "COMPLETE" && !report.complete) ||
+          (result.disposition === "CONTINUE" && (!report.nextAction || report.complete)) ? "WAIT" : result.disposition;
+        if (decision === "CONTINUE") {
+          transition("Active", "Useful work remains", "runtime"); continuationScheduled = true; continueGoal();
+        } else if (decision === "WAIT") {
+          transition("Waiting", current.dependency ?? "Ambiguous report; human clarification needed", "runtime");
+          record("runtime", "No automatic turn until dependency resolves", undefined, "waiting");
+        } else { current.outcome = "Whole goal asserted complete by foreground and routed COMPLETE";
+          invalidate(); transition("Completed", "Whole goal asserted complete by foreground", "runtime");
+          record("runtime", "Completion recorded; no further automatic turn", undefined, "completed"); }
+      }).catch(() => { if (owned()) { pending = undefined; transition("Error", "Assessor inference error; automatic continuation stopped", "runtime"); } });
       return { content: [{ type: "text" as const, text: "Valid stopping report accepted; narrow assessor classification started. Result will be delivered asynchronously." }], details: { id } };
     },
   });
@@ -247,21 +255,18 @@ export function registerCompletionGuard(pi: ExtensionAPI, _run?: unknown,
     replacement = undefined;
     if (choice.decision === "Replace goal") {
       if (activate(choice.request, choice.skill, ctx, true)) pi.sendUserMessage(choice.skill ? `/skill:dev-${choice.skill} ${choice.request}` : choice.request, { expandPromptTemplates: !!choice.skill });
-    } else if (choice.decision === "Refine existing goal") { state.clarifications.push(choice.request); save(); resume(ctx); }
+    } else if (choice.decision === "Refine existing goal") { state.clarifications.push(choice.request); record("human clarification", choice.request); resume(ctx); }
     else transition("Paused", choice.decision === "dismissed" ? "Goal decision dismissed; old obligation preserved" : "Kept old obligation; explicit resume required", "human decision");
   });
   pi.on("agent_before_settle", event => {
     if (event.outcome === "aborted") { pause("Turn interrupted (Escape or cancellation)"); return; }
     if (!state || state.session !== ctx?.sessionManager.getSessionId()) return;
-    if (event.outcome === "error" && unfinished(state) && state.status !== "Paused" && state.status !== "Blocked") { pause("Model or resource failure interrupted execution"); return; }
+    if (event.outcome === "error" && unfinished(state) && state.status === "Active") { transition("Error", "Model or resource failure interrupted automation", "runtime"); return; }
     if (state.status !== "Active" || event.outcome !== "completed") return;
-    if (workerWaits.size) return;
-    if (state.skill === "spec" || state.skill === "review") return;
     if (continuationScheduled) { continuationScheduled = false; return; }
-    if (!event.context.canContinue) { pause("Native continuation unavailable; resume after restoring capacity"); return; }
-    // A normal stop without an explicit outcome or a valid report cannot be classified by fabricating input.
-    pause("Settled without a valid stopping report or explicit disposition; resume and report the same facts");
+    if (workerWaits.size) { state.dependency = "external: awaiting owned worker result"; transition("Waiting", state.dependency, "runtime"); return; }
+    transition("Waiting", "No whole-goal report; human clarification needed", "runtime");
   });
   const shutdown = () => { if (state && (state.status === "Active" || state.status === "Classifying")) pause("Extension shutdown interrupted execution"); ctx?.ui.setWidget("dev-goal", undefined); };
-  return { activate, pause, cancel: pause, resume, abandon, show, shutdown, currentSkill, workerOwner, workerStarted, workerFinished, workerDeliveryFailed };
+  return { activate, pause, cancel: pause, resume, abandon, show, shutdown, currentSkill, workerOwner, workerStarted, workerFinished, workerReceived, workerDeliveryFailed };
 }

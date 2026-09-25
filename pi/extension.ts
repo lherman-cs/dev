@@ -9,6 +9,7 @@ import { registerCompletionGuard } from "./lib/completion-guard.ts";
 import { createVerifierTool } from "./lib/verifier.ts";
 import { registerVerifier } from "./lib/verifier-hub.ts";
 import { packageReviewedCandidate } from "./lib/ship.ts";
+import { registerGoalHub } from "./lib/goal-hub.ts";
 
 export const explorerOnlyTools = new Set(["web_search", "source_check", "fetch_content", "get_search_content"]);
 type HubUI = ReturnType<typeof registerWorkerHubUI>;
@@ -41,6 +42,7 @@ export default function extension(pi: ExtensionAPI, dependencies: ExtensionDepen
   hub.onRelated = (record, text) => run.related(record, text);
   const hubUI: HubUI = (dependencies.registerWorkerHubUI || registerWorkerHubUI)(pi, hub);
   const guard = registerCompletionGuard(pi, run);
+  registerGoalHub(pi);
 
   pi.on("session_start", async (_event, nextCtx) => {
     ctx = nextCtx;
@@ -56,6 +58,7 @@ export default function extension(pi: ExtensionAPI, dependencies: ExtensionDepen
     const content = renderAsyncWorkerCompletion(completion);
     try {
       pi.sendMessage({ customType: "dev-worker-result", content, display: true, details: completion }, { triggerTurn: true, deliverAs: "steer" });
+      guard.workerReceived(owner);
     } catch (error) { guard.workerDeliveryFailed(owner, error); warn(error); }
   };
   const currentSession = (): string | undefined => ctx?.sessionManager.getSessionId();

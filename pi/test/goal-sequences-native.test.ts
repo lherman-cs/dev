@@ -58,7 +58,7 @@ async function fixture(t: TestContext, answer: (model: Model, call: number, cont
   const manager = SessionManager.inMemory(cwd);
   const { session } = await createAgentSession({ cwd, agentDir: cwd, model: getModel("openai", "gpt-4o-mini"),
     modelRuntime: runtime, resourceLoader: loader, settingsManager: settings, sessionManager: manager,
-    tools: ["finish", "goal_control", "ask_user_question", "bash", ...(workerTools ? ["explore", "review"] : [])],
+    tools: ["stopping_report", "goal_control", "ask_user_question", "bash", ...(workerTools ? ["explore", "review"] : [])],
     ...(questionAnswer ? { customTools: [{ name: "ask_user_question", label: "Question fixture", description: "Deterministic human choice",
       parameters: Type.Object({ questions: Type.Array(Type.Any()) }),
       execute: async (_id: string, args: { questions: { question: string }[] }) => ({
@@ -155,7 +155,7 @@ test("native side question and quoted cancellation preserve scope; direct resume
   await f.session.waitForIdle();
   assert.equal(f.history().at(-1)?.id, id);
   assert.deepEqual(f.history().at(-1)?.clarifications, []);
-  assert.equal(f.history().at(-1)?.status, "Paused");
+  assert.equal(f.history().at(-1)?.status, "Waiting");
   intent = "resume"; submitted = false;
   await f.session.prompt("Please continue the original goal");
   await f.session.waitForIdle();
