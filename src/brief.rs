@@ -510,6 +510,7 @@ fn generate(root: &Path, args: &BriefArgs, dir: &Path) -> Result<Revision> {
         None
     };
     let scope = args.scope.join(" ");
+    eprintln!("Capturing brief comparison...");
     let capture = capture(
         root,
         args,
@@ -550,7 +551,9 @@ fn generate(root: &Path, args: &BriefArgs, dir: &Path) -> Result<Revision> {
         ),
         spec_text
     );
+    eprintln!("Generating brief with Pi (this may take a minute)...");
     let output = super::agent::generate_brief(root, &input)?;
+    eprintln!("Validating and saving brief...");
     let trimmed = output.trim();
     let json = trimmed
         .strip_prefix("```json")

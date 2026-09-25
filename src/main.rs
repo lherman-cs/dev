@@ -2,7 +2,8 @@ mod agent;
 mod agent_stats;
 mod brief;
 use anyhow::{Context, Result, anyhow, bail};
-use clap::{Parser, Subcommand};
+use clap::{CommandFactory, Parser, Subcommand};
+use clap_complete::{Shell, generate};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -23,7 +24,7 @@ const DEFAULT_RESOLVER: &str = "fd -H '^.git$' * | xargs -I{} dirname {}";
 const MAKE_FILENAME: &str = "workspace.mk";
 
 #[derive(Parser)]
-#[command(name = "toolbox")]
+#[command(name = "dev")]
 #[command(about = "Personal developer toolbox", version, long_about = None)]
 struct Cli {
     #[command(subcommand)]
@@ -32,6 +33,12 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
+    /// Print shell completion script for installation
+    Completions {
+        #[arg(value_enum)]
+        shell: Shell,
+    },
+
     /// Generate or reopen a consequence-focused local brief (default: merge-base to current tree)
     Brief(brief::BriefArgs),
 
@@ -1715,6 +1722,10 @@ fn main() {
     let cli = Cli::parse();
 
     let result = match cli.command {
+        Commands::Completions { shell } => {
+            generate(shell, &mut Cli::command(), "dev", &mut io::stdout());
+            Ok(())
+        }
         Commands::Brief(args) => brief::run(args),
         Commands::Init { pattern } => cmd_init(pattern),
         Commands::Sync => cmd_sync(),

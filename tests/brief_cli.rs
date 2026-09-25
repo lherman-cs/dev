@@ -7,6 +7,8 @@ use std::{
     os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
     process::{Child, Command, Stdio},
+    sync::mpsc,
+    time::Duration,
 };
 
 fn git(root: &Path, args: &[&str]) {
@@ -43,7 +45,7 @@ fn fixture() -> (PathBuf, PathBuf, PathBuf) {
     )
     .unwrap();
     let script = bin.join("pi");
-    fs::write(&script,"#!/bin/sh\ncat > \"$BRIEF_TEST_INPUT\"\nprintf '%s\\n' '{\"bottom_line\":\"Behavior changes at entry\",\"findings\":[{\"title\":\"Entry point\",\"body\":\"The caller receives a new outcome.\",\"anchors\":[\"change.txt:1\"]}],\"diagrams\":[{\"title\":\"Before and after\",\"takeaway\":\"New flow\",\"mermaid\":\"flowchart LR\\nA-->B\",\"anchors\":[\"change.txt:1\"]}],\"closing\":\"Check rollout.\"}'\n").unwrap();
+    fs::write(&script,"#!/bin/sh\ncat > \"$BRIEF_TEST_INPUT\"\nif [ -n \"${BRIEF_TEST_WAIT_FOR:-}\" ]; then while [ ! -f \"$BRIEF_TEST_WAIT_FOR\" ]; do sleep 0.05; done; fi\nprintf '%s\\n' '{\"bottom_line\":\"Behavior changes at entry\",\"findings\":[{\"title\":\"Entry point\",\"body\":\"The caller receives a new outcome.\",\"anchors\":[\"change.txt:1\"]}],\"diagrams\":[{\"title\":\"Before and after\",\"takeaway\":\"New flow\",\"mermaid\":\"flowchart LR\\nA-->B\",\"anchors\":[\"change.txt:1\"]}],\"closing\":\"Check rollout.\"}'\n").unwrap();
     let mut perms = fs::metadata(&script).unwrap().permissions();
     perms.set_mode(0o755);
     fs::set_permissions(&script, perms).unwrap();
@@ -131,6 +133,67 @@ fn request(
     (status, data)
 }
 #[test]
+fn generation_reports_progress_before_pi_finishes() {
+    let (root, repo, pkg) = fixture();
+    let release = root.join("release-pi");
+    let mut child = Command::new(env!("CARGO_BIN_EXE_dev"))
+        .current_dir(&repo)
+        .args(["brief", "--base", "main"])
+        .env("DEV_PI_PACKAGE", &pkg)
+        .env("XDG_DATA_HOME", root.join("data"))
+        .env("BRIEF_TEST_INPUT", root.join("model-input.txt"))
+        .env("BRIEF_TEST_WAIT_FOR", &release)
+        .env(
+            "PATH",
+            format!("{}:{}", root.display(), std::env::var("PATH").unwrap()),
+        )
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let stderr = child.stderr.take().unwrap();
+    let (sender, receiver) = mpsc::channel();
+    std::thread::spawn(move || {
+        for line in BufReader::new(stderr).lines() {
+            if sender.send(line.unwrap()).is_err() {
+                break;
+            }
+        }
+    });
+    let mut messages = Vec::new();
+    loop {
+        let line = receiver
+            .recv_timeout(Duration::from_secs(5))
+            .unwrap_or_else(|_| {
+                child.kill().unwrap();
+                panic!("No generation progress while Pi is pending: {messages:?}");
+            });
+        messages.push(line.clone());
+        if line.contains("Generating brief with Pi") {
+            break;
+        }
+    }
+    assert!(
+        messages
+            .iter()
+            .any(|line| line.contains("Capturing brief comparison"))
+    );
+    assert!(
+        child.try_wait().unwrap().is_none(),
+        "Pi should still be pending"
+    );
+    fs::write(&release, "go").unwrap();
+    let mut first = String::new();
+    BufReader::new(child.stdout.take().unwrap())
+        .read_line(&mut first)
+        .unwrap();
+    assert!(first.contains("http://127.0.0.1:"), "{first}");
+    child.kill().unwrap();
+    child.wait().unwrap();
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn cli_generation_feedback_reopen_and_export_do_not_regenerate() {
     let (root, repo, pkg) = fixture();
     let (mut child, url, dir) = start(&repo, &root, &pkg, &["--base", "main"]);
@@ -153,7 +216,10 @@ fn cli_generation_feedback_reopen_and_export_do_not_regenerate() {
     assert!(page.contains("href=\"/style.css\""));
     assert!(page.contains("src=\"/app.js\""));
     assert!(page.contains("src=\"/mermaid.js\""));
-    assert!(!page.contains("https://"), "viewer assets must remain local");
+    assert!(
+        !page.contains("https://"),
+        "viewer assets must remain local"
+    );
     assert!(
         fs::read_to_string(root.join("model-input.txt"))
             .unwrap()

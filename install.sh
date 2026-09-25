@@ -49,6 +49,8 @@ export PATH="$HOME/.cargo/bin:$PATH"
 
 log "Installing dev command"
 cargo install --path . --locked
+log "Installing dev shell completions"
+bash "$PWD/scripts/install-dev-completions.sh"
 
 log "Reconciling managed dotfiles and Pi config (preserving credentials)"
 dev reconcile --from "$PWD/dotfiles" --apply
