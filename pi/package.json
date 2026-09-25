@@ -7,7 +7,8 @@
   "scripts": {
     "test": "node --test test/*.test.ts",
     "typecheck": "tsc --noEmit",
-    "check": "npm run typecheck && npm test"
+    "build:web": "npm --prefix web run build",
+    "check": "npm run typecheck && npm --prefix web run check && npm test"
   },
   "pi": {
     "extensions": [

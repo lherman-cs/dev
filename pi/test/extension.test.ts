@@ -43,9 +43,12 @@ test("four current-session aliases and supporting tools register without work", 
     getActiveTools: () => ["read"],
     setActiveTools: () => undefined,
   });
-  assert.deepEqual([...commands.keys()].sort(), ["dev-build", "dev-goal", "dev-review", "dev-review-view", "dev-ship", "dev-spec"]);
+  assert.deepEqual([...commands.keys()].sort(), ["dev-build", "dev-goal", "dev-review", "dev-review-view", "dev-ship", "dev-spec", "dev-spec-view"]);
   assert.ok(shortcuts.has("alt+a"));
   assert.ok(shortcuts.has("alt+r"));
+  assert.ok(shortcuts.has("alt+s"));
+  assert.ok(tools.some(tool => tool.name === "spec_publish"));
+  assert.ok(tools.some(tool => tool.name === "spec_reply"));
   assert.ok(tools.some(tool => tool.name === "review_publish"));
   assert.ok(tools.some(tool => tool.name === "review_reply"));
   assert.ok(tools.some(tool => tool.name === "verify"));

@@ -11,7 +11,7 @@ export type ReviewDecision = { id: string; subject: string; recommendation: stri
 export type ReviewMessage = { id: string; subject: string; version: string; author: "human" | "agent"; text: string; status?: "queued" | "answered" | "failed" };
 export type ReviewCandidate = { head: string; main: string; clean: boolean; fingerprint: string };
 export type ReviewAssessment = { version: string; candidate: ReviewCandidate; sections: ReviewSection[]; decisions: ReviewDecision[]; recommendation: string; at: number };
-export type ReviewState = { schema: 1; current?: ReviewAssessment; pending?: ReviewAssessment; updates: ReviewAssessment[]; discussions: ReviewMessage[]; drafts: Record<string, string>; selection: string; scroll: Record<string, number>; approval?: { fingerprint: string; version: string; at: number }; notice?: string; recovered: boolean };
+export type ReviewState = { schema: 1; current?: ReviewAssessment; pending?: ReviewAssessment; updates: ReviewAssessment[]; discussions: ReviewMessage[]; drafts: Record<string, string>; selection: string; scroll: Record<string, number>; approval?: { fingerprint: string; version: string; at: number }; changeRequest?: { version: string; id: string; at: number }; notice?: string; recovered: boolean };
 const initial = (): ReviewState => ({ schema: 1, updates: [], discussions: [], drafts: {}, selection: "outcome", scroll: {}, recovered: false });
 const sha = (value: string) => createHash("sha256").update(value).digest("hex");
 const git = async (cwd: string, ...args: string[]) => (await exec("git", args, { cwd, maxBuffer: 32 * 1024 * 1024 })).stdout.trim();
@@ -91,28 +91,36 @@ export class ReviewWorkspace {
   async check(): Promise<{ candidate: ReviewCandidate; current: boolean; reason: string }> {
     const candidate = await reviewCandidate(this.cwd);
     const current = this.state.current;
-    const match = !!current && !this.state.recovered && !this.state.pending && candidate.clean && current.candidate.clean &&
+    const match = !!current && !this.state.recovered && !this.state.pending && this.state.changeRequest?.version !== current.version && candidate.clean && current.candidate.clean &&
       candidate.fingerprint === current.candidate.fingerprint;
     return { candidate, current: match, reason: !current ? "No assessment has been published" : this.state.recovered ? "Restored assessment awaits agent reconciliation" :
-      this.state.pending ? "A newer assessment awaits inspection" : !candidate.clean ? "Candidate has uncommitted changes" :
+      this.state.pending ? "A newer assessment awaits inspection" : this.state.changeRequest?.version === current.version ? "Changes requested; await a new assessment" : !candidate.clean ? "Candidate has uncommitted changes" :
       current.candidate.fingerprint !== candidate.fingerprint ? "Candidate or integration baseline changed" : "Current candidate" };
   }
-  async approve() {
+  async approve(expectedVersion?: string) {
     const before = await this.check();
-    if (!before.current || !this.state.current) throw new Error(`Approval unavailable: ${before.reason}`);
+    if (!before.current || !this.state.current || (expectedVersion && this.state.current.version !== expectedVersion)) throw new Error(`Approval unavailable: ${before.reason}. Displayed revision may be stale.`);
+    const version = this.state.current.version;
     if (this.state.current.decisions.some(d => d.status === "open")) throw new Error("Resolve consequential decisions before approval.");
     const after = await reviewCandidate(this.cwd);
-    if (!after.clean || after.fingerprint !== before.candidate.fingerprint) throw new Error("Candidate changed during approval. Reassess it first.");
-    this.state.approval = { fingerprint: after.fingerprint, version: this.state.current.version, at: Date.now() };
+    if (!after.clean || after.fingerprint !== before.candidate.fingerprint || this.state.current?.version !== version || this.state.pending) throw new Error("Candidate or assessment changed during approval. Reassess it first.");
+    this.state.approval = { fingerprint: after.fingerprint, version, at: Date.now() };
     await this.persist();
   }
-  async decide(id: string, status: "accepted" | "waived") {
+  async decide(id: string, status: "accepted" | "waived", expectedVersion?: string) {
     const check = await this.check();
-    if (!check.current) throw new Error(`Decision unavailable: ${check.reason}`);
+    if (!check.current || (expectedVersion && this.state.current?.version !== expectedVersion)) throw new Error(`Decision unavailable: ${check.reason}. Displayed revision may be stale.`);
     const decision = this.state.current?.decisions.find(d => d.id === id);
     if (!decision || decision.status !== "open") throw new Error("Decision is not open on this assessment.");
     if (status === "waived" && decision.kind !== "risk") throw new Error("Only disclosed risks can be waived; choose a direction for a design decision.");
     decision.status = status; delete this.state.approval;
+    await this.persist();
+  }
+  async requestChanges(id: string) {
+    const check = await this.check();
+    if (!check.current || !this.state.current) throw new Error(`Request unavailable: ${check.reason}`);
+    this.state.changeRequest = { version: this.state.current.version, id, at: Date.now() };
+    delete this.state.approval;
     await this.persist();
   }
   async addHuman(subject: string, text: string) {
@@ -124,6 +132,7 @@ export class ReviewWorkspace {
     const message = this.state.discussions.find(m => m.id === id);
     if (message) {
       message.status = "failed";
+      if (this.state.changeRequest?.id === id) delete this.state.changeRequest;
       const current = message.version === this.state.current?.version;
       if (current && !this.state.drafts[message.subject]) this.state.drafts[message.subject] = message.text;
       this.state.notice = current ? `Not delivered; draft restored. Reason: ${reason}. No automatic retry.` :

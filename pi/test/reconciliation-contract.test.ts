@@ -27,7 +27,7 @@ test("dev-spec converges on a narrow coherent build target", () => {
     /Implementation design belongs to build/,
     /scope exclusions are explicit/,
     /little room to solve the wrong problem/,
-    /explicit human approval/,
+    /explicitly approves the exact current displayed revision/, 
   ]) assert.match(spec, requirement);
 });
 
@@ -45,7 +45,7 @@ test("dev-review owns technical convergence and CTO understanding", () => {
     /materially change approved behavior, architecture, scope, or accepted risk/,
     /findings as working engineering evidence, not PASS\/FAIL judgments/,
     /clean, fully committed reviewed candidate/,
-    /dedicated terminal review workspace/,
+    /local Review webpage/, 
     /explicit current-candidate approval/,
     /Do not rewrite history/,
   ]) assert.match(review, requirement);
@@ -81,7 +81,7 @@ test("documentation exposes the four phase boundary", () => {
 
 test("user-wide input preference has one owner", () => {
   const user = text("AGENTS.md");
-  assert.match(user, /Use `ask_user_question` whenever requesting human input/);
-  assert.match(user, /except inside the dedicated dev-review terminal workspace/);
+  assert.match(user, /local webpage for all human discussion and decisions during dev-spec and dev-review/);
+  assert.match(user, /Outside those phases, use `ask_user_question` whenever requesting human input/);
   for (const name of ["dev-spec", "dev-build", "dev-review", "dev-ship", "dev-explore"]) assert.doesNotMatch(skill(name), /`ask_user_question`/);
 });

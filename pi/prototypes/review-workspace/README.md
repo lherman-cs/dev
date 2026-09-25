@@ -1,15 +1,25 @@
-# Discussion-first review workspace · design preview
+# Decision-first engineering review · isolated design preview
 
-A standalone, clickable design exploration for `plans/dev/spec.md`. This is **sample content**, not the Spec or Review application. No requests reach the agent or the workspace; sample decisions and comment delivery remain local to this page and reset on reload.
+A clickable, **sample-only** exploration for [`plans/dev/spec.md`](../../../plans/dev/spec.md). It is not the real Spec or Review application. Nothing here publishes an artifact, contacts the agent, approves real work, or changes the workspace.
 
 From the repository root:
 
 ```sh
-python3 -m http.server 8765 --bind 127.0.0.1 --directory pi/prototypes/review-workspace
+npm ci --prefix pi/prototypes/review-workspace
+npm run dev --prefix pi/prototypes/review-workspace -- --port 8766
 ```
 
-Open `http://127.0.0.1:8765/`. Inspect in light mode first, then use the moon button for dark mode. Resize below 850px and then below 540px to try the topic-to-context drill-in and return path. The prototype has no network dependencies, aside from the local HTTP server; it bundles its font.
+Open **http://127.0.0.1:8766/**. This isolated React/Vite preview uses Material UI and community MUI X Charts and Data Grid. The bundled font and sample data need no remote service. The package is separate from the Pi application.
 
-Suggested route: inspect the proposed revision, compare it with r03, apply it (not approval), open the choice topic, compare alternatives, record a sample choice, switch among the six evidence canvases, add a comment to review, observe the older-anchor recheck after applying r04, resolve/reopen a topic, and inspect the review submission. Native buttons, dialog and textarea support keyboard operation. Full spec is a representative reading destination rather than the real document. Nothing here asserts a real review outcome or publishes an artifact.
+## Try the core review loop
 
-**Boundary:** This preview is intentionally isolated. Integration, persistence, real revision gates, and evidence publication are to be implemented only after human design-direction review.
+1. Start in **Spec**. There is one current human decision, a recommendation distinguished from your choice, a minimal visual model, and a concrete finish line. Choose an alternative and **Record decision & continue**. The next unresolved item appears automatically.
+2. On a decision, open **Why?**, **How does this work?**, **Show evidence**, **Show code**, or **Ask the agent**. Each deeper view returns to the same decision; an illustrative anchored reply never makes the decision for you.
+3. Inspect sample r04, then explicitly apply it. Applying is not approving. The **Submit review** dialog still requires a separate exact-target outcome.
+4. Switch to **Implementation review** using the small left rail. Work through the anchor-drift finding and evidence gap. A choice requesting a fix remains an approval blocker; a risk waiver needs confirmation.
+5. Open **See all items** or the rail queue only when needed. The full artifact is a subordinate reference, not the default landing page. Use **J/K** to move between items and **Cmd/Ctrl+K** to search.
+6. Try wide and narrow windows in light and dark modes. On narrow screens, deeper context takes focus with a clear return to the current decision.
+
+Sample choices, revision inspection/application state and topic drafts persist in this browser's local storage; discussion and navigation reset on reload. Clear this origin's site data to restart the walkthrough.
+
+**Boundary:** This is a direction prototype, not proof of integrated authority or acceptance. Diagrams, source excerpts, checks and agent responses are illustrative. The working app must retain its existing revision, local-origin, recovery and human-approval gates when and only when this direction is accepted.

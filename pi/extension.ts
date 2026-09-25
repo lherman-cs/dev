@@ -10,6 +10,8 @@ import { createVerifierTool } from "./lib/verifier.ts";
 import { registerVerifier } from "./lib/verifier-hub.ts";
 import { packageReviewedCandidate } from "./lib/ship.ts";
 import { registerReviewWorkspace } from "./lib/review-controller.ts";
+import { registerSpecWorkspace } from "./lib/spec-controller.ts";
+import { WorkspaceWeb } from "./lib/workspace-web.ts";
 
 export const explorerOnlyTools = new Set(["web_search", "source_check", "fetch_content", "get_search_content"]);
 type HubUI = ReturnType<typeof registerWorkerHubUI>;
@@ -41,18 +43,28 @@ export default function extension(pi: ExtensionAPI, dependencies: ExtensionDepen
   const run: WorkerRunner = (dependencies.createWorkerRunner || createWorkerRunner)({ hub, getHistory: () => history, ownerCwd: () => ctx?.cwd, askHuman });
   hub.onRelated = (record, text) => run.related(record, text);
   const hubUI: HubUI = (dependencies.registerWorkerHubUI || registerWorkerHubUI)(pi, hub);
+  const web = new WorkspaceWeb();
   let review: ReturnType<typeof registerReviewWorkspace>;
+  let spec: ReturnType<typeof registerSpecWorkspace>;
   const guard = registerCompletionGuard(pi, run, undefined, async next => {
+    if (guard.currentSkill() === "spec") {
+      await spec.setContext(next);
+      const store = spec.getStore();
+      if (!store?.state.approval || !store.state.current) return false;
+      const check = await store.check();
+      return check.current && store.state.approval.version === store.state.current.version && store.state.approval.digest === check.digest;
+    }
     await review.setContext(next);
     const store = review.getStore();
     if (!store?.state.approval || !store.state.current) return false;
     const check = await store.check();
     return check.current && store.state.approval.version === store.state.current.version && store.state.approval.fingerprint === check.candidate.fingerprint;
   });
-  review = registerReviewWorkspace(pi, () => guard.currentSkill() === "review" && guard.isActive() && phase === "review");
+  review = registerReviewWorkspace(pi, () => guard.currentSkill() === "review" && guard.isActive() && phase === "review", web);
+  spec = registerSpecWorkspace(pi, () => guard.currentSkill() === "spec" && guard.isActive() && phase === "spec", web);
 
   pi.on("session_start", async (_event, nextCtx) => {
-    ctx = nextCtx;
+    web.invalidate(); ctx = nextCtx;
     setPhase(undefined);
     history = new WorkerHistory(ctx.sessionManager as unknown as ConstructorParameters<typeof WorkerHistory>[0], warn);
     hub.setHistory(history); hubUI.setContext(ctx);
@@ -92,6 +104,7 @@ export default function extension(pi: ExtensionAPI, dependencies: ExtensionDepen
     if (!event.isError && event.toolName === "goal_control" && event.input?.["action"] === "resume") setPhase(guard.currentSkill());
   });
   const stopForSessionChange = (): void => {
+    web.invalidate();
     // Workers own disposable read-only snapshots. Request cancellation without
     // making session navigation depend on an unresponsive child or its cleanup.
     verifier.cancelAll();
@@ -114,7 +127,7 @@ export default function extension(pi: ExtensionAPI, dependencies: ExtensionDepen
       if (!await guard.activate(request, next, nextCtx)) return { action: "handled" }; // Do not execute an unauthorized replacement.
     }
     setPhase(next);
-    if (next === "review" && nextCtx?.mode === "tui") setImmediate(() => { void review.show(nextCtx).catch(warn); });
+    if ((next === "review" || next === "spec") && nextCtx?.hasUI) setImmediate(() => { void (next === "review" ? review.show(nextCtx) : spec.show(nextCtx, event.text.slice(match[0].length).trim())).catch(warn); });
     return { action: "continue" };
   });
 
@@ -138,7 +151,7 @@ export default function extension(pi: ExtensionAPI, dependencies: ExtensionDepen
       setPhase(commandPhase);
       hubUI.setContext(nextCtx);
       pi.sendUserMessage(`/skill:dev-${commandPhase}${args ? ` ${args}` : ""}`, { expandPromptTemplates: true });
-      if (commandPhase === "review" && nextCtx.mode === "tui") setImmediate(() => { void review.show(nextCtx).catch(warn); });
+      if ((commandPhase === "review" || commandPhase === "spec") && nextCtx.hasUI) setImmediate(() => { void (commandPhase === "review" ? review.show(nextCtx) : spec.show(nextCtx, args.trim())).catch(warn); });
     },
   });
   pi.registerCommand("dev-goal", {
@@ -161,6 +174,6 @@ export default function extension(pi: ExtensionAPI, dependencies: ExtensionDepen
   });
   pi.on("session_shutdown", async () => {
     guard.shutdown(); closing = true; lifetime.abort(); verifier.cancelAll();
-    await run.stopAll(); hub.flush(); hubUI.dispose(); hub.dispose();
+    await web.close(); await run.stopAll(); hub.flush(); hubUI.dispose(); hub.dispose();
   });
 }

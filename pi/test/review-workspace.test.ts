@@ -37,6 +37,22 @@ test("approval requires explicit current clean candidate and resolved decisions"
   await assert.rejects(f.store.approve(), /Resolve consequential/);
 });
 
+test("a submitted change request blocks approval until a new assessment is applied", async t => {
+  const f = fixture(t); await f.store.restore(); await f.publish();
+  const message = await f.store.addHuman("general", "Please revise evidence");
+  await f.store.requestChanges(message.id);
+  assert.match((await f.store.check()).reason, /Changes requested/);
+  await assert.rejects(f.store.approve(), /Changes requested/);
+  await f.store.fail(message.id, "agent unavailable");
+  assert.equal((await f.store.check()).current, true);
+  const second = await f.store.addHuman("general", "Please revise evidence");
+  await f.store.requestChanges(second.id);
+  await f.store.publish({ sections: f.sections, decisions: [], recommendation: "Revised evidence" });
+  assert.match((await f.store.check()).reason, /newer assessment/);
+  await f.store.applyUpdate();
+  assert.equal((await f.store.check()).current, true);
+});
+
 test("restoration preserves drafts and version-bound discussions but revokes approval and uncertain submissions", async t => {
   const f = fixture(t); await f.store.restore(); const first = await f.publish();
   f.store.state.drafts["outcome"] = "A question not yet sent";
