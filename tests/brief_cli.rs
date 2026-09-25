@@ -140,6 +140,20 @@ fn cli_generation_feedback_reopen_and_export_do_not_regenerate() {
     let id = data["revision"]["id"].as_str().unwrap();
     let token = data["token"].as_str().unwrap();
     assert_eq!(data["revision"]["findings"][0]["title"], "Entry point");
+    for (path, marker) in [
+        ("/", "Branch consequence brief"),
+        ("/style.css", ".comment-button"),
+        ("/app.js", "aria-controls"),
+    ] {
+        let (status, body) = request(&url, "GET", path, &[], "");
+        assert_eq!(status, 200, "{path} must be locally served");
+        assert!(body.contains(marker), "{path} must contain {marker}");
+    }
+    let (_, page) = request(&url, "GET", "/", &[], "");
+    assert!(page.contains("href=\"/style.css\""));
+    assert!(page.contains("src=\"/app.js\""));
+    assert!(page.contains("src=\"/mermaid.js\""));
+    assert!(!page.contains("https://"), "viewer assets must remain local");
     assert!(
         fs::read_to_string(root.join("model-input.txt"))
             .unwrap()

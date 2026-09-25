@@ -3,6 +3,7 @@
   const main = document.querySelector('#brief');
   const identity = document.querySelector('#identity');
   const provenance = document.querySelector('#provenance');
+  const revisionId = document.querySelector('#revision-id');
   const general = document.querySelector('#general');
   const exportButton = document.querySelector('#export');
   const exportState = document.querySelector('#export-state');
@@ -24,25 +25,30 @@
     }).catch(err => { keys.forEach(id => show(id, `Not saved: ${err.message}`, true)); throw err; });
     return saving;
   }
-  function control(id, value) {
+  function control(id, value, title) {
     const wrapper = el('div', 'controls');
-    const button = el('button', '', 'Comment'); button.type = 'button'; button.setAttribute('aria-expanded', value ? 'true' : 'false');
-    const box = el('div'); box.hidden = !value;
-    const label = el('label', '', 'Comment on this statement'); label.htmlFor = `note-${id}`;
+    const button = el('button', 'comment-button', 'Comment'); button.type = 'button';
+    button.setAttribute('aria-label', `Comment on ${title}`);
+    button.setAttribute('aria-controls', `editor-${id}`);
+    button.setAttribute('aria-expanded', value ? 'true' : 'false');
+    const box = el('div', 'editor'); box.id = `editor-${id}`; box.hidden = !value;
+    const label = el('label', '', `Comment on ${title}`); label.htmlFor = `note-${id}`;
     const input = el('textarea'); input.id = `note-${id}`; input.rows = 3; input.value = value || '';
     const status = el('p', 'save-state', value ? 'Saved locally' : ''); status.id = `${id}-state`; status.setAttribute('role','status');
     input.addEventListener('input', () => { drafts[id] = input.value; show(id, 'Unsaved changes'); clearTimeout(timer); timer = setTimeout(() => { save().catch(() => {}); }, 600); });
     input.addEventListener('blur', () => { if (state(id).textContent === 'Unsaved changes') save().catch(() => {}); });
     button.addEventListener('click', () => { box.hidden = !box.hidden; button.setAttribute('aria-expanded', String(!box.hidden)); if (!box.hidden) input.focus(); });
-    box.append(label,input,status); wrapper.append(button,box); return wrapper;
+    box.append(label,input); wrapper.append(button,box,status); return wrapper;
   }
   try {
     const response = await fetch('/data'); if (!response.ok) throw Error(await response.text());
     const data = await response.json(); ({ token, revision } = data); drafts = data.feedback.notes || {};
-    identity.textContent = `${revision.comparison} · ${revision.created} · ${revision.id}`;
+    identity.textContent = `${revision.comparison} · ${revision.created} · Revision details`;
+    revisionId.textContent = `Revision ${revision.id}`;
     showStale(data.stale);
-    main.replaceChildren(); main.append(el('div','eyebrow','THE CONSEQUENCE'),el('h1','', 'Bottom line'));
-    main.append(el('p','body',revision.bottom_line));
+    const lead = el('section', 'lead');
+    lead.append(el('div','section-label','The consequence'),el('h1','', 'Bottom line'),el('p','body',revision.bottom_line));
+    main.replaceChildren(lead);
     if (revision.omissions?.length) {
       const limit = el('aside','coverage');
       limit.append(el('strong','', 'Evidence limit: '),document.createTextNode('Some material was omitted from the snapshot. Claims about it remain uncertain.'));
@@ -53,22 +59,25 @@
     revision.findings.forEach((f,i) => {
       const section = el('section','finding'); section.append(el('h2','',f.title),el('p','body',f.body));
       const target = revision.targets.find(t => t.id === `f${i}`);
-      const details = el('details'); details.append(el('summary','', 'Supporting anchors'),el('p','',target?.anchors?.join(', ') || 'No precise anchor available'));
-      section.append(details,control(`f${i}`,drafts[`f${i}`])); main.append(section);
+      const details = el('details','support'); details.append(el('summary','', 'Supporting anchors'),el('p','',target?.anchors?.join(', ') || 'No precise anchor available'));
+      section.append(details,control(`f${i}`,drafts[`f${i}`],f.title)); main.append(section);
     });
     revision.diagrams.forEach(async (d,i) => {
-      const section = el('section','finding'); section.append(el('h2','',d.title),el('p','body',d.takeaway));
+      const section = el('section','finding diagram-section'); section.append(el('h2','',d.title),el('p','body',d.takeaway));
       const diagram = el('div','diagram'); diagram.setAttribute('role','img'); diagram.setAttribute('aria-label',d.takeaway);
       section.append(diagram);
       const target = revision.targets.find(t => t.id === `d${i}`);
-      const details = el('details'); details.append(el('summary','','Supporting anchors'),el('p','',target?.anchors?.join(', ') || 'No precise anchor available'));
-      section.append(details,control(`d${i}`,drafts[`d${i}`])); main.append(section);
+      const details = el('details','support'); details.append(el('summary','','Supporting anchors'),el('p','',target?.anchors?.join(', ') || 'No precise anchor available'));
+      section.append(details,control(`d${i}`,drafts[`d${i}`],d.title)); main.append(section);
       try {
         if (!window.mermaid) throw Error('Mermaid library unavailable');
         window.mermaid.initialize({ startOnLoad: false, securityLevel: 'strict', theme: 'neutral' });
         const result = await window.mermaid.render(`diagram-${i}`, d.mermaid);
         // SVG in an image cannot execute scripts, even if a malformed graph reaches the renderer.
         const image = el('img'); image.alt = d.takeaway; image.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(result.svg);
+        // Mermaid emits width="100%"; keep its viewBox width so narrow windows scroll instead of scaling labels down.
+        const viewBox = result.svg.match(/\bviewBox="-?[\d.]+ -?[\d.]+ ([\d.]+) [\d.]+"/);
+        if (viewBox && Number(viewBox[1]) > 0) image.style.width = `${viewBox[1]}px`;
         diagram.replaceChildren(image);
       } catch (error) { diagram.replaceChildren(el('p','diagram-error',`Diagram unavailable: ${error.message}. ${d.takeaway}`)); }
     });
