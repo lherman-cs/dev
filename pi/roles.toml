@@ -16,7 +16,7 @@ spec = "openai/gpt-6-astra:medium"
 build = "openai/gpt-6-sol:high"
 
 # Role: Explain material branch consequences for human comprehension.
-brief = "openai/gpt-6-astra:medium"
+brief = "openai/gpt-6-sol:medium"
 
 # Role: Review candidate changes against agreed intent, repair defects, and obtain consequential approvals.
 # Signals: FrontierCode, DeepSWE, AutomationBench, factual error.
