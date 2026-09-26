@@ -163,6 +163,11 @@ textarea { display: block; width: 100%; max-width: 100%; min-height: 5rem; borde
 .save-state, #export-state { font-size: 10px; color: var(--muted); overflow-wrap: anywhere; }
 .save-state:not(:empty) { margin-top: .3rem; }
 .save-state.error, #export-state.error { color: var(--error); font-weight: 650; }
+.conflict-resolution { margin-top: .5rem; padding: .6rem; border: 1px solid var(--error); background: #fff6e9; font-size: 12px; }
+.conflict-resolution[hidden] { display: none; }
+.conflict-resolution pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 9rem; overflow-y: auto; }
+.conflict-resolution button { margin: .3rem .45rem .15rem 0; }
+.feedback .conflict-resolution { grid-column: 1 / -1; }
 .closing { border-top: 1px solid var(--line); padding-top: .8rem; margin: .3rem 0 1rem; font-family: Georgia, 'Times New Roman', serif; font-size: 16px; }
 .feedback { position: fixed; z-index: 3; bottom: 0; left: 0; right: 0; display: grid; grid-template-columns: minmax(150px, 1fr) minmax(170px, 3fr) auto; gap: .35rem .8rem; align-items: center; padding: .6rem max(.85rem, calc((100vw - 1390px) / 2 + .85rem)); border-top: 2px solid var(--accent); background: var(--paper); box-shadow: 0 -4px 18px #152e2414; }
 .feedback .section-label, .feedback h2, .feedback-intro, .feedback label { grid-column: 1; }

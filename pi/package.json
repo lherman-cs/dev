@@ -5,7 +5,7 @@
   "type": "module",
   "description": "Personal Pi role aliases and bounded child-session tools",
   "scripts": {
-    "test": "node --test test/*.test.ts",
+    "test": "node --test test/*.test.ts test/*.test.cjs",
     "typecheck": "tsc --noEmit",
     "check": "npm run typecheck && npm test"
   },

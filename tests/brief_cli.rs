@@ -298,7 +298,9 @@ fn reference_markdown_drives_full_viewer_and_reopens_unchanged() {
     assert!(app.contains("case 'columns'"));
     assert!(app.contains("case 'timeline'"));
     assert!(app.contains("case 'icon_list'"));
-    let feedback = json!({"notes":{"s-system-map":"Keep architecture distinction"}}).to_string();
+    let feedback =
+        json!({"target":"s-system-map","expected":"","value":"Keep architecture distinction"})
+            .to_string();
     assert_eq!(
         request(
             &url,
@@ -362,7 +364,8 @@ fn invalid_directives_leave_existing_revision_untouched() {
         .unwrap();
     assert!(!output.status.success());
     assert!(
-        String::from_utf8_lossy(&output.stdout).contains("invalid typed Markdown"),
+        String::from_utf8_lossy(&output.stdout)
+            .contains("could not be validated after three attempts"),
         "{}",
         String::from_utf8_lossy(&output.stdout)
     );
@@ -378,6 +381,33 @@ fn invalid_directives_leave_existing_revision_untouched() {
         fs::read(Path::new(&dir).join(format!("{id}.json"))).unwrap(),
         original
     );
+    fs::remove_dir_all(root).unwrap();
+}
+#[test]
+fn invalid_first_response_is_corrected_against_the_same_snapshot() {
+    let (root, repo, pkg) = fixture();
+    let script = pkg.join("node_modules/.bin/pi");
+    fs::write(&script, r#"#!/bin/sh
+cat > "$BRIEF_TEST_INPUT"
+if [ ! -f "$BRIEF_TEST_INPUT.attempt" ]; then
+  touch "$BRIEF_TEST_INPUT.attempt"
+  printf '# Branch consequence brief\n\n```brief-lead\n{"title":"Bottom line","body":"Unsupported","anchors":["missing.txt:999"]}\n```\n\n## Evidence\n\n```brief-section\n{"id":"s-evidence","anchors":["missing.txt:999"],"blocks":[{"type":"text","text":"Unknown"}]}\n```\n'
+else
+  printf '# Branch consequence brief\n\n```brief-lead\n{"title":"Bottom line","body":"Verified","anchors":["change.txt:1"]}\n```\n\n## Evidence\n\n```brief-section\n{"id":"s-evidence","anchors":["change.txt:1"],"blocks":[{"type":"text","text":"Observed"}]}\n```\n'
+fi
+"#).unwrap();
+    let mut perms = fs::metadata(&script).unwrap().permissions();
+    perms.set_mode(0o755);
+    fs::set_permissions(&script, perms).unwrap();
+    let (mut child, url, _) = start(&repo, &root, &pkg, &["--base", "main"]);
+    let (_, data) = request(&url, "GET", "/data", &[], "");
+    let parsed: Value = serde_json::from_str(&data).unwrap();
+    assert_eq!(parsed["revision"]["document"]["lead"]["body"], "Verified");
+    let prompt = fs::read_to_string(root.join("model-input.txt")).unwrap();
+    assert!(prompt.contains("previous response was rejected"));
+    assert!(prompt.contains("missing.txt:999"));
+    child.kill().unwrap();
+    child.wait().unwrap();
     fs::remove_dir_all(root).unwrap();
 }
 #[test]
@@ -427,9 +457,29 @@ fn cli_generation_feedback_reopen_and_export_do_not_regenerate() {
         .0,
         403
     );
-    let notes =
-        json!({"notes":{"s-entry":"Preserve this precise comment","general":"Cross-cutting concern"}})
-            .to_string();
+    for (target, value) in [
+        ("s-entry", "Preserve this precise comment"),
+        ("general", "Cross-cutting concern"),
+    ] {
+        let notes = json!({"target":target,"expected":"","value":value}).to_string();
+        assert_eq!(
+            request(
+                &url,
+                "POST",
+                "/feedback",
+                &[
+                    ("Content-Type", "application/json"),
+                    ("X-Brief-Token", token)
+                ],
+                &notes
+            )
+            .0,
+            200
+        );
+    }
+    // Per-target compare-and-swap merges independent tabs and rejects a stale
+    // edit to the same comment without erasing either saved comment.
+    let other = json!({"target":"general","expected":"Cross-cutting concern","value":"Updated across tabs"}).to_string();
     assert_eq!(
         request(
             &url,
@@ -439,10 +489,27 @@ fn cli_generation_feedback_reopen_and_export_do_not_regenerate() {
                 ("Content-Type", "application/json"),
                 ("X-Brief-Token", token)
             ],
-            &notes
+            &other
         )
         .0,
         200
+    );
+    let stale = json!({"target":"general","expected":"Cross-cutting concern","value":"Stale note"})
+        .to_string();
+    let (status, current) = request(
+        &url,
+        "POST",
+        "/feedback",
+        &[
+            ("Content-Type", "application/json"),
+            ("X-Brief-Token", token),
+        ],
+        &stale,
+    );
+    assert_eq!(status, 409);
+    assert_eq!(
+        serde_json::from_str::<String>(&current).unwrap(),
+        "Updated across tabs"
     );
     child.kill().unwrap();
     child.wait().unwrap();
@@ -467,7 +534,8 @@ fn cli_generation_feedback_reopen_and_export_do_not_regenerate() {
     );
     let exported = fs::read_to_string(Path::new(&dir).join(format!("{id}-feedback.md"))).unwrap();
     assert!(exported.contains("Preserve this precise comment"));
-    assert!(exported.contains("Cross-cutting concern"));
+    assert!(exported.contains("Updated across tabs"));
+    assert!(!exported.contains("Stale note"));
     assert!(exported.contains("change.txt:1"));
     assert!(!exported.contains("The caller receives a new outcome."));
     fs::write(repo.join("change.txt"), "modified after capture\n").unwrap();
@@ -495,6 +563,20 @@ fn cli_generation_feedback_reopen_and_export_do_not_regenerate() {
     );
     newer.kill().unwrap();
     newer.wait().unwrap();
+    for n in 0..120 {
+        let synthetic = format!("20000101T000000{:06}-fixture", n);
+        fs::write(
+            Path::new(&dir).join(format!("{synthetic}.json")),
+            "payload is deliberately not a revision",
+        )
+        .unwrap();
+        fs::write(
+            Path::new(&dir).join(format!("{synthetic}.meta")),
+            json!({"id":synthetic,"created":"2000-01-01","comparison":"saved fixture","scope":""})
+                .to_string(),
+        )
+        .unwrap();
+    }
     let output = Command::new(env!("CARGO_BIN_EXE_dev"))
         .current_dir(&repo)
         .args(["brief", "--list"])

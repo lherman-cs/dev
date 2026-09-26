@@ -9,7 +9,7 @@ use std::fs::{self, OpenOptions};
 use std::io::{Read, Write};
 use std::net::{Ipv4Addr, SocketAddrV4, TcpListener};
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 use tiny_http::{Header, Method, Response, Server, StatusCode};
 
 #[derive(Args, Debug)]
@@ -384,6 +384,13 @@ struct Feedback {
     #[serde(default)]
     notes: BTreeMap<String, String>,
 }
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct FeedbackUpdate {
+    target: String,
+    expected: String,
+    value: String,
+}
 
 fn hash(data: impl AsRef<[u8]>) -> String {
     format!("{:x}", Sha256::digest(data.as_ref()))
@@ -405,6 +412,33 @@ fn git(root: &Path, args: &[&str], index: Option<&Path>) -> Result<Vec<u8>> {
         );
     }
     Ok(out.stdout)
+}
+fn git_bounded(root: &Path, args: &[&str], max: usize) -> Result<Option<Vec<u8>>> {
+    let mut child = Command::new("git")
+        .current_dir(root)
+        .args(args)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()?;
+    let mut output = Vec::new();
+    let read = child
+        .stdout
+        .take()
+        .unwrap()
+        .take(max as u64 + 1)
+        .read_to_end(&mut output);
+    if output.len() > max || read.is_err() {
+        let _ = child.kill();
+    }
+    let status = child.wait()?;
+    read?;
+    if output.len() > max {
+        return Ok(None);
+    }
+    if !status.success() {
+        bail!("git {} failed", args.join(" "));
+    }
+    Ok(Some(output))
 }
 fn git_text(root: &Path, args: &[&str], index: Option<&Path>) -> Result<String> {
     Ok(String::from_utf8(git(root, args, index)?)?
@@ -490,7 +524,8 @@ fn effective_tree(root: &Path, head: &str) -> Result<(String, Vec<String>)> {
     git(root, &["read-tree", head], Some(&index.0))?;
     // Select only changed, non-sensitive paths before Git writes any new blobs.
     // Filtering the diff afterwards would leave excluded secrets as dangling objects in .git.
-    let raw = git(root, &["status", "--porcelain=v1", "-z", "-uall"], None)?;
+    let raw = git_bounded(root, &["status", "--porcelain=v1", "-z", "-uall"], 8_000_000)?
+        .ok_or_else(|| anyhow!("Too many working-tree paths to snapshot safely (8 MB status limit); narrow the working tree or use --range"))?;
     let mut fields = raw.split(|b| *b == 0).filter(|f| !f.is_empty());
     let mut paths = BTreeSet::new();
     let mut excluded_changed = false;
@@ -522,10 +557,13 @@ fn effective_tree(root: &Path, head: &str) -> Result<(String, Vec<String>)> {
         }
         for name in names {
             paths.insert(name?.to_owned());
+            if paths.len() > 12_000 {
+                bail!("Working tree exceeds 12,000 changed paths; narrow it or use --range");
+            }
         }
     }
-    if !paths.is_empty() {
-        let specs: Vec<_> = paths
+    for chunk in paths.iter().collect::<Vec<_>>().chunks(64) {
+        let specs: Vec<_> = chunk
             .iter()
             .map(|path| format!(":(literal){path}"))
             .collect();
@@ -606,20 +644,9 @@ fn capture(root: &Path, args: &BriefArgs, spec: Option<(&str, &str)>) -> Result<
             omissions,
         )
     };
-    let raw = git(
-        root,
-        &[
-            "diff",
-            "--no-ext-diff",
-            "--name-status",
-            "-z",
-            "-M",
-            &from,
-            &to,
-            "--",
-        ],
-        None,
-    )?;
+    let raw = git_bounded(root, &[
+        "diff", "--no-ext-diff", "--name-status", "-z", "-M", &from, &to, "--"
+    ], 8_000_000)?.ok_or_else(|| anyhow!("Comparison contains too many paths to capture safely (8 MB name limit); narrow the comparison"))?;
     let mut entries = raw.split(|b| *b == 0).filter(|p| !p.is_empty());
     let mut evidence = String::new();
     let mut omissions = local_omissions;
@@ -628,7 +655,11 @@ fn capture(root: &Path, args: &BriefArgs, spec: Option<(&str, &str)>) -> Result<
     let hunk = Regex::new(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")?;
     const MAX_FILE: usize = 36_000;
     const MAX_TOTAL: usize = 210_000;
+    const MAX_PATHS: usize = 1200;
+    let mut visited = 0usize;
+    let mut omitted_count = 0usize;
     while let Some(status) = entries.next() {
+        visited += 1;
         let status = String::from_utf8_lossy(status);
         let old = entries
             .next()
@@ -642,6 +673,14 @@ fn capture(root: &Path, args: &BriefArgs, spec: Option<(&str, &str)>) -> Result<
         };
         let path = String::from_utf8_lossy(name).to_string();
         let source = String::from_utf8_lossy(old).to_string();
+        if visited > MAX_PATHS {
+            omitted_count += 1;
+            continue;
+        }
+        if omissions.len() >= 100 {
+            omitted_count += 1;
+            continue;
+        }
         if excluded(&path) || excluded(&source) {
             omissions.push(format!(
                 "{path}: known sensitive or generated path excluded"
@@ -652,7 +691,7 @@ fn capture(root: &Path, args: &BriefArgs, spec: Option<(&str, &str)>) -> Result<
             omissions.push("Path with newline omitted".into());
             continue;
         }
-        let patch = git(
+        let patch = git_bounded(
             root,
             &[
                 "diff",
@@ -665,24 +704,14 @@ fn capture(root: &Path, args: &BriefArgs, spec: Option<(&str, &str)>) -> Result<
                 &source,
                 &path,
             ],
-            None,
-        );
-        // Use the two explicit trees and a pathspec; never read current files after capture.
-        let patch = match patch {
-            Ok(bytes) => bytes,
-            Err(_) => git(
-                root,
-                &[
-                    "diff",
-                    "--no-ext-diff",
-                    "--no-textconv",
-                    &from,
-                    &to,
-                    "--",
-                    &path,
-                ],
-                None,
-            )?,
+            MAX_FILE,
+        )?;
+        // Use only captured trees. Large outputs are omitted before buffering in memory.
+        let Some(patch) = patch else {
+            omissions.push(format!(
+                "{path}: oversized diff omitted (over {MAX_FILE} bytes)"
+            ));
+            continue;
         };
         if patch.contains(&0)
             || String::from_utf8_lossy(&patch).contains("Binary files ")
@@ -734,17 +763,31 @@ fn capture(root: &Path, args: &BriefArgs, spec: Option<(&str, &str)>) -> Result<
             .collect();
         allowed.insert(path, ranges);
     }
+    if omitted_count > 0 {
+        omissions.push(format!("{omitted_count} additional changed paths not inspected (capture limit: {MAX_PATHS} paths / 100 omission details); confidence is limited"));
+    }
+    if args.range.is_none() {
+        let (rechecked, _) = effective_tree(root, &head)?;
+        if rechecked != to {
+            bail!("Working tree changed during capture; retry for one coherent snapshot");
+        }
+    }
     if let Some((path, text)) = spec {
         allowed.insert(path.to_owned(), vec![(1, text.lines().count().max(1))]);
     }
     // Context comes from the selected endpoint tree, never the current checkout for --range.
     let mut context = String::new();
     for path in ["README.md", "Cargo.toml", "package.json"] {
-        let Ok(bytes) = git(root, &["show", &format!("{to}:{path}")], None) else {
-            continue;
+        let bytes = match git_bounded(root, &["show", &format!("{to}:{path}")], 12_000) {
+            Ok(Some(bytes)) => bytes,
+            Ok(None) => {
+                omissions.push(format!("{path}: repository context too large"));
+                continue;
+            }
+            Err(_) => continue,
         };
-        if bytes.len() > 12_000 || bytes.contains(&0) {
-            omissions.push(format!("{path}: repository context too large or binary"));
+        if bytes.contains(&0) {
+            omissions.push(format!("{path}: binary repository context"));
             continue;
         }
         if let Ok(text) = String::from_utf8(bytes) {
@@ -776,11 +819,7 @@ fn capture(root: &Path, args: &BriefArgs, spec: Option<(&str, &str)>) -> Result<
 }
 // The only accepted Markdown is a titled document with typed JSON directives.
 // No HTML, arbitrary Markdown extensions, or implied structure is interpreted.
-fn parse_document(
-    source: &str,
-    allowed: &HashMap<String, Vec<(usize, usize)>>,
-    captured_text: &str,
-) -> Result<Document> {
+fn parse_document_raw(source: &str) -> Result<Document> {
     if source.len() > 120_000 {
         bail!("Brief exceeds 120 KB");
     }
@@ -834,9 +873,145 @@ fn parse_document(
         }
         sections.push(section);
     }
-    let document = Document { lead, sections };
+    Ok(Document { lead, sections })
+}
+#[cfg(test)]
+fn parse_document(
+    source: &str,
+    allowed: &HashMap<String, Vec<(usize, usize)>>,
+    captured_text: &str,
+) -> Result<Document> {
+    let document = parse_document_raw(source)?;
     validate_document(&document, allowed, captured_text)?;
     Ok(document)
+}
+fn document_anchors(doc: &Document) -> Vec<String> {
+    let mut result = doc.lead.anchors.clone();
+    if let Some(aside) = &doc.lead.aside {
+        result.extend(aside.anchors.clone());
+    }
+    for section in &doc.sections {
+        result.extend(section.anchors.clone());
+        result.extend(section.blocks.iter().flat_map(BriefBlock::all_anchors));
+    }
+    result
+}
+fn endpoint_evidence(
+    root: &Path,
+    tree: &str,
+    doc: &Document,
+    allowed: &mut HashMap<String, Vec<(usize, usize)>>,
+) -> Result<String> {
+    let anchors = document_anchors(doc);
+    if anchors.len() > 256 {
+        bail!("Too many snapshot references (maximum 256)");
+    }
+    let mut content = String::new();
+    let paths: BTreeSet<_> = anchors
+        .iter()
+        .filter_map(|anchor| anchor.rsplit_once(':').map(|(path, _)| path.to_owned()))
+        .collect();
+    if paths.len() > 64 {
+        bail!("Too many referenced files (maximum 64)");
+    }
+    for path in paths {
+        if allowed.contains_key(&path) && path.starts_with("plans/") {
+            continue;
+        }
+        if excluded(&path) || path.contains('\n') || path.contains('\0') || path.contains(':') {
+            continue;
+        }
+        let Ok(record) = git_text(root, &["ls-tree", tree, "--", &path], None) else {
+            continue;
+        };
+        if !record.starts_with("100644 blob ") && !record.starts_with("100755 blob ") {
+            continue;
+        }
+        let Some((_, name)) = record.split_once('\t') else {
+            continue;
+        };
+        if name != path {
+            continue;
+        }
+        let Some(oid) = record.split_whitespace().nth(2) else {
+            continue;
+        };
+        let size = git_text(root, &["cat-file", "-s", oid], None)?.parse::<usize>()?;
+        if size > 120_000 {
+            continue;
+        }
+        let bytes = git(root, &["cat-file", "blob", oid], None)?;
+        if bytes.contains(&0) {
+            continue;
+        }
+        let Ok(text) = String::from_utf8(bytes) else {
+            continue;
+        };
+        let count = text.lines().count();
+        if count == 0 {
+            continue;
+        }
+        allowed.entry(path.clone()).or_default().push((1, count));
+        content.push_str(&format!("\n{path}\n{text}\n"));
+    }
+    Ok(content)
+}
+fn validate_excerpt_locations(doc: &Document, root: &Path, tree: &str) -> Result<()> {
+    fn check(block: &BriefBlock, root: &Path, tree: &str) -> Result<()> {
+        match block {
+            BriefBlock::Columns { columns, .. } => {
+                for child in columns.iter().flatten() {
+                    check(child, root, tree)?;
+                }
+            }
+            BriefBlock::Code {
+                status: CodeStatus::Excerpt,
+                text,
+                anchors,
+                ..
+            } => {
+                let mut found = false;
+                for anchor in anchors {
+                    let Some((path, range)) = anchor.rsplit_once(':') else {
+                        continue;
+                    };
+                    let (a, b) = range.split_once('-').unwrap_or((range, range));
+                    let (Ok(a), Ok(b)) = (a.parse::<usize>(), b.parse::<usize>()) else {
+                        continue;
+                    };
+                    let Ok(Some(bytes)) =
+                        git_bounded(root, &["show", &format!("{tree}:{path}")], 120_000)
+                    else {
+                        continue;
+                    };
+                    let Ok(source) = String::from_utf8(bytes) else {
+                        continue;
+                    };
+                    let slice = source
+                        .lines()
+                        .skip(a.saturating_sub(1))
+                        .take(b - a + 1)
+                        .collect::<Vec<_>>()
+                        .join("\n");
+                    if slice.contains(text.as_str()) {
+                        found = true;
+                        break;
+                    }
+                }
+                if !found {
+                    bail!("Exact excerpt is not present at its cited endpoint line range");
+                }
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+    for section in &doc.sections {
+        for block in &section.blocks {
+            check(block, root, tree)?;
+        }
+    }
+    Ok(())
 }
 fn validate_document(
     doc: &Document,
@@ -862,8 +1037,15 @@ fn validate_document(
         Ok(())
     }
     fn anchors(values: &[String], allowed: &HashMap<String, Vec<(usize, usize)>>) -> Result<()> {
-        if values.len() > 24 || validated(values, allowed).len() != values.len() {
-            bail!("Brief contains an ungrounded or excessive snapshot anchor");
+        if values.len() > 24 {
+            bail!("Too many anchors on one item (maximum 24)");
+        }
+        for value in values {
+            if validated(std::slice::from_ref(value), allowed).is_empty() {
+                bail!(
+                    "Invalid snapshot reference {value:?}: use an eligible captured path and existing endpoint line or range"
+                );
+            }
         }
         Ok(())
     }
@@ -1065,6 +1247,9 @@ fn generate(root: &Path, args: &BriefArgs, dir: &Path) -> Result<Revision> {
         if excluded(&relative) {
             bail!("Refusing to send known sensitive spec path");
         }
+        if fs::metadata(&full)?.len() > 80_000 {
+            bail!("Spec exceeds 80 KB");
+        }
         let bytes = fs::read(&full)?;
         if bytes.len() > 80_000 || bytes.contains(&0) {
             bail!("Spec is binary or exceeds 80 KB; provide a smaller text spec");
@@ -1119,15 +1304,50 @@ fn generate(root: &Path, args: &BriefArgs, dir: &Path) -> Result<Revision> {
         spec_text
     );
     eprintln!("Generating brief with Pi (this may take a minute)...");
-    let output = super::agent::generate_brief(root, &input)?;
-    eprintln!("Validating and saving brief...");
-    let source = output.trim();
-    let document = parse_document(
-        source,
-        &capture.allowed,
-        &format!("{}\n{}", capture.evidence, spec_text),
-    )
-    .context("Pi returned an invalid typed Markdown brief; no revision saved")?;
+    let mut correction = String::new();
+    let mut accepted = None;
+    for attempt in 0..3 {
+        let output =
+            super::agent::generate_brief(root, &capture.to, &format!("{input}{correction}"))?;
+        eprintln!("Validating brief (attempt {})...", attempt + 1);
+        let source = output.trim();
+        let checked = (|| {
+            let document = parse_document_raw(source)?;
+            let mut allowed = capture.allowed.clone();
+            let inspected = endpoint_evidence(root, &capture.to, &document, &mut allowed)?;
+            validate_document(
+                &document,
+                &allowed,
+                &format!("{}\n{}\n{inspected}", capture.evidence, spec_text),
+            )?;
+            validate_excerpt_locations(&document, root, &capture.to)?;
+            Ok::<_, anyhow::Error>(document)
+        })();
+        match checked {
+            Ok(document) => {
+                accepted = Some((source.to_owned(), document));
+                break;
+            }
+            Err(error) if attempt < 2 => {
+                correction = format!(
+                    "\nYour previous response was rejected before saving: {error:#}. Correct it against the SAME captured comparison. Do not invent, drop, or relabel references to hide unsupported claims. Previous response:\n{}\n",
+                    source.chars().take(120_000).collect::<String>()
+                );
+                eprintln!("Brief validation: {error:#}; requesting correction...");
+            }
+            Err(error) => bail!(
+                "Brief could not be validated after three attempts: {error:#}. No revision saved. Narrow the scope or retry with verifiable source references."
+            ),
+        }
+    }
+    let (source, document) = accepted.expect("bounded validation attempts");
+    if let Some((path, content)) = &spec {
+        if fs::read(root.join(path))? != content.as_bytes() {
+            bail!(
+                "Spec changed during generation; no revision saved. Retry for a coherent snapshot"
+            );
+        }
+    }
     let targets: Vec<Target> = document
         .sections
         .iter()
@@ -1181,7 +1401,7 @@ fn generate(root: &Path, args: &BriefArgs, dir: &Path) -> Result<Revision> {
         worktree: args.range.is_none(),
         omissions: capture.omissions,
         change_stats: Some(capture.stats),
-        markdown: source.to_owned(),
+        markdown: source,
         bottom_line: document.lead.body.clone(),
         closing: String::new(),
         findings: Vec::new(),
@@ -1196,10 +1416,12 @@ fn generate(root: &Path, args: &BriefArgs, dir: &Path) -> Result<Revision> {
         fs::set_permissions(dir, fs::Permissions::from_mode(0o700))?;
     }
     let path = dir.join(format!("{}.json", revision.id));
+    let listing_path = dir.join(format!("{}.meta", revision.id));
     // The original input is private provenance, not part of the browser response or exported feedback.
     let snapshot_path = dir.join(format!("{}-snapshot.txt", revision.id));
     let mut created_snapshot = false;
     let mut created_revision = false;
+    let mut created_listing = false;
     let result = (|| {
         let mut snapshot = OpenOptions::new()
             .write(true)
@@ -1215,6 +1437,13 @@ fn generate(root: &Path, args: &BriefArgs, dir: &Path) -> Result<Revision> {
         created_revision = true;
         file.write_all(&serde_json::to_vec_pretty(&revision)?)?;
         file.sync_all()?;
+        let mut listing = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&listing_path)?;
+        created_listing = true;
+        listing.write_all(&serde_json::to_vec(&RevisionMeta::from(&revision))?)?;
+        listing.sync_all()?;
         Ok::<(), anyhow::Error>(())
     })();
     if let Err(e) = result {
@@ -1223,6 +1452,9 @@ fn generate(root: &Path, args: &BriefArgs, dir: &Path) -> Result<Revision> {
         }
         if created_revision {
             let _ = fs::remove_file(&path);
+        }
+        if created_listing {
+            let _ = fs::remove_file(&listing_path);
         }
         return Err(e);
     }
@@ -1254,6 +1486,23 @@ fn validated(anchors: &[String], allowed: &HashMap<String, Vec<(usize, usize)>>)
         .cloned()
         .collect()
 }
+#[derive(Serialize, Deserialize)]
+struct RevisionMeta {
+    id: String,
+    created: String,
+    comparison: String,
+    scope: String,
+}
+impl From<&Revision> for RevisionMeta {
+    fn from(r: &Revision) -> Self {
+        Self {
+            id: r.id.clone(),
+            created: r.created.clone(),
+            comparison: r.comparison.clone(),
+            scope: r.scope.chars().take(500).collect(),
+        }
+    }
+}
 fn load(dir: &Path, id: &str) -> Result<Revision> {
     if id == "latest" {
         let mut files: Vec<_> = fs::read_dir(dir)
@@ -1271,11 +1520,14 @@ fn load(dir: &Path, id: &str) -> Result<Revision> {
     if !id.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-') || id.is_empty() {
         bail!("Invalid revision ID");
     }
-    serde_json::from_slice(
-        &fs::read(dir.join(format!("{id}.json")))
-            .with_context(|| format!("Brief revision {id} not found"))?,
-    )
-    .context("Invalid saved revision")
+    let path = dir.join(format!("{id}.json"));
+    let size = fs::metadata(&path)
+        .with_context(|| format!("Brief revision {id} not found"))?
+        .len();
+    if size > 16_000_000 {
+        bail!("Saved revision {id} exceeds the 16 MB read limit");
+    }
+    serde_json::from_slice(&fs::read(path)?).context("Invalid saved revision")
 }
 fn atomic_json(path: &Path, value: &impl Serialize) -> Result<()> {
     let temp = path.with_extension(format!("tmp-{}", std::process::id()));
@@ -1385,7 +1637,16 @@ pub fn run(args: BriefArgs) -> Result<()> {
         for entry in fs::read_dir(&dir)? {
             let name = entry?.file_name().to_string_lossy().to_string();
             if name.ends_with(".json") && !name.ends_with("-feedback.json") {
-                let r = load(&dir, name.trim_end_matches(".json"))?;
+                let id = name.trim_end_matches(".json");
+                let meta = dir.join(format!("{id}.meta"));
+                let r = if meta.exists() {
+                    if fs::metadata(&meta)?.len() > 4096 {
+                        bail!("Brief listing {id} is oversized");
+                    }
+                    serde_json::from_slice::<RevisionMeta>(&fs::read(meta)?)?
+                } else {
+                    RevisionMeta::from(&load(&dir, id)?) // older saved revisions
+                };
                 revisions.push(format!(
                     "{}  {}  {}  {}",
                     r.id, r.created, r.comparison, r.scope
@@ -1542,13 +1803,34 @@ fn serve(dir: &Path, r: &Revision) -> Result<()> {
                     if body.len() > 120_000 {
                         bail!("Feedback too large");
                     }
-                    let notes: Feedback = serde_json::from_slice(&body)?;
-                    if notes.notes.iter().any(|(k, v)| {
-                        (k != "general" && !r.targets.iter().any(|t| t.id == *k))
-                            || v.len() > 32_000
-                    }) {
+                    let update: FeedbackUpdate = serde_json::from_slice(&body)?;
+                    if (update.target != "general"
+                        && !r.targets.iter().any(|t| t.id == update.target))
+                        || update.value.len() > 32_000
+                        || update.expected.len() > 32_000
+                    {
                         bail!("Invalid feedback target or size");
                     }
+                    let mut notes = feedback(dir, &r.id)?;
+                    if notes
+                        .notes
+                        .get(&update.target)
+                        .map(String::as_str)
+                        .unwrap_or("")
+                        != update.expected
+                    {
+                        return Ok(format!(
+                            "CONFLICT:{}",
+                            serde_json::to_string(
+                                notes
+                                    .notes
+                                    .get(&update.target)
+                                    .map(String::as_str)
+                                    .unwrap_or("")
+                            )?
+                        ));
+                    }
+                    notes.notes.insert(update.target, update.value);
                     atomic_json(&feedback_path(dir, &r.id), &notes)?;
                     Ok("Saved".into())
                 } else {
@@ -1559,6 +1841,12 @@ fn serve(dir: &Path, r: &Revision) -> Result<()> {
                 }
             })();
             match result {
+                Ok(message) if message.starts_with("CONFLICT:") => respond(
+                    request,
+                    409,
+                    "application/json; charset=utf-8",
+                    &message[9..],
+                )?,
                 Ok(message) => respond(request, 200, "text/plain; charset=utf-8", message)?,
                 Err(e) => respond(
                     request,
@@ -1775,6 +2063,55 @@ mod tests {
             list: false,
             scope: vec![],
         }
+    }
+    #[test]
+    fn many_binary_changes_report_aggregate_omissions() {
+        let (root, _, _) = fixture();
+        for n in 0..110 {
+            fs::write(root.join(format!("binary-{n:03}.bin")), [0, 255, 0]).unwrap();
+        }
+        let captured = capture(&root, &args(Some("main"), None), None).unwrap();
+        assert!(
+            captured
+                .omissions
+                .iter()
+                .any(|s| s.contains("additional changed paths not inspected"))
+        );
+        assert!(captured.omissions.len() <= 101);
+        fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn capture_omits_oversized_patch_before_buffering_it() {
+        let (root, _, _) = fixture();
+        fs::write(root.join("change.txt"), format!("{}\n", "x".repeat(90_000))).unwrap();
+        let captured = capture(&root, &args(Some("main"), None), None).unwrap();
+        assert!(
+            captured
+                .omissions
+                .iter()
+                .any(|s| s.contains("oversized diff"))
+        );
+        assert!(!captured.evidence.contains(&"x".repeat(1000)));
+        fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn unchanged_endpoint_source_is_eligible_but_live_edits_are_not() {
+        let (root, _base, head) = fixture();
+        let doc = parse_document_raw("# Branch consequence brief\n\n```brief-lead\n{\"title\":\"Result\",\"body\":\"Observed\",\"anchors\":[\"rename.txt:1\"]}\n```\n\n## Evidence\n\n```brief-section\n{\"id\":\"s-source\",\"anchors\":[\"rename.txt:1\"],\"blocks\":[{\"type\":\"code\",\"status\":\"excerpt\",\"label\":\"Source\",\"language\":\"text\",\"text\":\"rename source\",\"anchors\":[\"rename.txt:1\"]}]}\n```\n").unwrap();
+        fs::write(root.join("rename.txt"), "changed after capture\n").unwrap();
+        let mut allowed = HashMap::new();
+        let inspected = endpoint_evidence(&root, &head, &doc, &mut allowed).unwrap();
+        assert!(inspected.contains("rename source"));
+        assert!(!inspected.contains("changed after capture"));
+        validate_document(&doc, &allowed, &inspected).unwrap();
+        validate_excerpt_locations(&doc, &root, &head).unwrap();
+        assert!(!allowed.contains_key("missing.txt"));
+        let mut wrong = doc.clone();
+        if let BriefBlock::Code { text, .. } = &mut wrong.sections[0].blocks[0] {
+            *text = "not at that line".into();
+        }
+        assert!(validate_excerpt_locations(&wrong, &root, &head).is_err());
+        fs::remove_dir_all(root).unwrap();
     }
     #[test]
     fn snapshot_includes_net_worktree_and_exact_ranges_exclude_it() {

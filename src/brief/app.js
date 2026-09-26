@@ -10,20 +10,50 @@
   const stale = document.querySelector('#stale');
   const nav = document.querySelector('#section-nav');
   const showStale = message => { stale.hidden = !message; stale.textContent = message || ''; };
-  let token, revision, drafts = {}, timer, saving = Promise.resolve();
+  let token, revision, drafts = {}, baseline = {}, pending = {}, conflicts = {}, timer, saving = Promise.resolve(), draftKey;
   const el = (tag, className, text) => { const node = document.createElement(tag); if (className) node.className = className; if (text != null) node.textContent = text; return node; };
   const state = id => document.getElementById(`${id}-state`);
   const show = (id, message, error = false) => { const node = state(id); node.textContent = message; node.classList.toggle('error', error); };
+  function persistDrafts() {
+    try {
+      if (Object.keys(pending).length) localStorage.setItem(draftKey, JSON.stringify(pending));
+      else localStorage.removeItem(draftKey);
+      return true;
+    } catch (_) { return false; }
+  }
+  function changed(id, value) {
+    drafts[id] = value;
+    pending[id] = { value, expected: baseline[id] || '' };
+    const durable = persistDrafts();
+    show(id, conflicts[id] ? 'Conflict: your draft is recoverable; resolve below' :
+      durable ? 'Unsaved draft stored in this browser' : 'Unsaved; browser draft storage unavailable', !durable || !!conflicts[id]);
+    clearTimeout(timer);
+    if (!conflicts[id]) timer = setTimeout(() => { save().catch(() => {}); }, 600);
+  }
   async function save() {
     clearTimeout(timer);
-    const snapshot = { ...drafts };
-    const keys = Object.keys(snapshot);
-    keys.forEach(id => show(id, 'Saving…'));
+    // Queue complete rounds, not stale whole-document snapshots. A newer keystroke
+    // is flushed in the next round before export can report success.
     saving = saving.catch(() => {}).then(async () => {
-      const response = await fetch('/feedback', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Brief-Token': token }, body: JSON.stringify({ notes: snapshot }) });
-      if (!response.ok) throw new Error(await response.text());
-      keys.forEach(id => show(id, drafts[id] === snapshot[id] ? 'Saved locally' : 'Unsaved changes'));
-    }).catch(err => { keys.forEach(id => show(id, `Not saved: ${err.message}`, true)); throw err; });
+      while (Object.keys(pending).some(id => !conflicts[id])) {
+        const id = Object.keys(pending).find(key => !conflicts[key]);
+        const { value, expected } = pending[id];
+        show(id, 'Saving…');
+        const response = await fetch('/feedback', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Brief-Token': token }, body: JSON.stringify({ target: id, value, expected }) });
+        if (response.status === 409) {
+          conflicts[id] = await response.json();
+          show(id, 'Conflict: another tab changed this comment. Your draft is retained; resolve below.', true);
+          continue;
+        }
+        if (!response.ok) { show(id, `Not saved: ${await response.text()}`, true); throw Error(`Comment ${id} could not be saved`); }
+        baseline[id] = value;
+        if (pending[id]?.value === value && pending[id]?.expected === expected) delete pending[id];
+        else pending[id].expected = value;
+        if (!persistDrafts()) { show(id, 'Saved on server; browser draft storage unavailable', true); }
+        else show(id, pending[id] ? 'Unsaved changes' : 'Saved locally');
+      }
+      if (Object.keys(conflicts).length) throw Error('Resolve conflicting comments before exporting');
+    });
     return saving;
   }
   function control(id, value, title) {
@@ -36,10 +66,26 @@
     const label = el('label', '', `Comment on ${title}`); label.htmlFor = `note-${id}`;
     const input = el('textarea'); input.id = `note-${id}`; input.rows = 3; input.value = value || '';
     const status = el('p', 'save-state', value ? 'Saved locally' : ''); status.id = `${id}-state`; status.setAttribute('role', 'status');
-    input.addEventListener('input', () => { drafts[id] = input.value; show(id, 'Unsaved changes'); clearTimeout(timer); timer = setTimeout(() => { save().catch(() => {}); }, 600); });
-    input.addEventListener('blur', () => { if (state(id).textContent === 'Unsaved changes') save().catch(() => {}); });
+    input.addEventListener('input', () => changed(id, input.value));
+    input.addEventListener('blur', () => { if (pending[id] && !conflicts[id]) save().catch(() => {}); });
     button.addEventListener('click', () => { box.hidden = !box.hidden; button.setAttribute('aria-expanded', String(!box.hidden)); if (!box.hidden) input.focus(); });
-    box.append(label, input); wrapper.append(button, box, status); return wrapper;
+    const resolution = el('div', 'conflict-resolution');
+    const remote = el('pre'); const useMine = el('button', '', 'Use my draft instead'); useMine.type = 'button';
+    useMine.addEventListener('click', () => {
+      baseline[id] = conflicts[id]; delete conflicts[id];
+      changed(id, input.value); save().catch(() => {});
+    });
+    const useTheirs = el('button', '', 'Use saved comment instead'); useTheirs.type = 'button';
+    useTheirs.addEventListener('click', () => {
+      input.value = conflicts[id]; drafts[id] = input.value; baseline[id] = input.value;
+      delete conflicts[id]; delete pending[id]; persistDrafts(); show(id, 'Saved locally');
+    });
+    resolution.append(el('strong', '', 'Another tab saved this comment:'), remote, useMine, useTheirs);
+    function refreshConflict() { resolution.hidden = !Object.hasOwn(conflicts, id); remote.textContent = conflicts[id] || '(empty comment)'; }
+    refreshConflict();
+    // Status updates also reveal conflicts discovered after the editor was created.
+    const observer = new MutationObserver(refreshConflict); observer.observe(status, { childList: true });
+    box.append(label, input, resolution); wrapper.append(button, box, status); return wrapper;
   }
   function evidence(anchors, title) {
     const details = el('details', 'support');
@@ -230,7 +276,18 @@
   }
   try {
     const response = await fetch('/data'); if (!response.ok) throw Error(await response.text());
-    const data = await response.json(); ({ token, revision } = data); drafts = data.feedback.notes || {};
+    const data = await response.json(); ({ token, revision } = data);
+    baseline = data.feedback.notes || {}; drafts = { ...baseline }; draftKey = `dev-brief-draft:${revision.id}`;
+    try {
+      const recovered = JSON.parse(localStorage.getItem(draftKey) || '{}');
+      for (const [id, entry] of Object.entries(recovered)) {
+        if (id !== 'general' && !revision.targets.some(target => target.id === id)) continue;
+        if (typeof entry?.value !== 'string' || typeof entry?.expected !== 'string') continue;
+        if (entry.value === (baseline[id] || '')) continue;
+        drafts[id] = entry.value; pending[id] = entry;
+        if (entry.expected !== (baseline[id] || '')) conflicts[id] = baseline[id] || '';
+      }
+    } catch (_) { /* The server copy remains authoritative if local storage is unavailable. */ }
     identity.textContent = 'View details';
     document.querySelector('#base').textContent = revision.from.slice(0, 12);
     document.querySelector('#endpoint').textContent = revision.to.slice(0, 12);
@@ -253,17 +310,37 @@
       const list = el('ul'); for (const item of revision.omissions) list.append(el('li', '', item));
       details.append(list); limit.append(details); main.querySelector('.lead').after(limit);
     }
-    general.value = drafts.general || ''; show('general', drafts.general ? 'Saved locally' : '');
-    general.addEventListener('input', () => { drafts.general = general.value; show('general', 'Unsaved changes'); clearTimeout(timer); timer = setTimeout(() => { save().catch(() => {}); }, 600); });
-    general.addEventListener('blur', () => { if (state('general').textContent === 'Unsaved changes') save().catch(() => {}); });
+    general.value = drafts.general || ''; show('general', conflicts.general ? 'Conflict: another tab changed this note; your draft is retained' : pending.general ? 'Recovered unsaved browser draft' : drafts.general ? 'Saved locally' : '', !!conflicts.general);
+    general.addEventListener('input', () => changed('general', general.value));
+    general.addEventListener('blur', () => { if (pending.general && !conflicts.general) save().catch(() => {}); });
+    const generalResolution = el('div', 'conflict-resolution');
+    const savedGeneral = el('pre');
+    const mine = el('button', '', 'Use my draft instead'); mine.type = 'button';
+    mine.onclick = () => { baseline.general = conflicts.general; delete conflicts.general; changed('general', general.value); save().catch(() => {}); };
+    const theirs = el('button', '', 'Use saved note instead'); theirs.type = 'button';
+    theirs.onclick = () => { general.value = conflicts.general; drafts.general = general.value; baseline.general = general.value; delete conflicts.general; delete pending.general; persistDrafts(); show('general', 'Saved locally'); };
+    generalResolution.append(el('strong', '', 'Another tab saved this note:'), savedGeneral, mine, theirs);
+    const refreshGeneral = () => { generalResolution.hidden = !Object.hasOwn(conflicts, 'general'); savedGeneral.textContent = conflicts.general || '(empty note)'; };
+    refreshGeneral(); new MutationObserver(refreshGeneral).observe(state('general'), { childList: true });
+    state('general').after(generalResolution);
+    for (const id of Object.keys(pending)) if (id !== 'general') show(id, conflicts[id] ? 'Conflict: another tab changed this comment; your draft is retained' : 'Recovered unsaved browser draft', !!conflicts[id]);
+    if (Object.keys(pending).some(id => !conflicts[id])) save().catch(() => {});
     exportButton.addEventListener('click', async () => {
       exportState.textContent = 'Exporting…'; exportState.classList.remove('error');
       try {
         const current = await fetch('/status'); if (current.ok) showStale((await current.json()).stale);
         await save();
+        if (Object.keys(pending).length) throw Error('Comments remain unsaved or conflicted');
+        exportButton.disabled = true;
         const result = await fetch('/export', { method: 'POST', headers: { 'X-Brief-Token': token } });
-        if (!result.ok) throw Error(await result.text()); exportState.textContent = await result.text();
+        if (!result.ok) throw Error(await result.text());
+        const exported = await result.text();
+        if (Object.keys(pending).length) {
+          exportState.textContent = `${exported}; a newer edit is still unsaved. Export again after saving.`;
+          exportState.classList.add('error');
+        } else exportState.textContent = exported;
       } catch (error) { exportState.textContent = `Not exported: ${error.message}`; exportState.classList.add('error'); }
+      finally { exportButton.disabled = false; }
     });
   } catch (error) { main.replaceChildren(el('p', 'diagram-error', `Cannot load brief: ${error.message}`)); }
 })();

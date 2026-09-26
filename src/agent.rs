@@ -119,7 +119,7 @@ fn run_pi(mut command: Command) -> Result<()> {
     }
 }
 
-pub fn generate_brief(root: &Path, input: &str) -> Result<String> {
+pub fn generate_brief(root: &Path, tree: &str, input: &str) -> Result<String> {
     let executable = installed_pi()?;
     let package = executable
         .parent()
@@ -128,7 +128,7 @@ pub fn generate_brief(root: &Path, input: &str) -> Result<String> {
         .ok_or_else(|| anyhow!("Invalid Pi package path"))?;
     let args = phase_args(&load_roles(package)?, "brief", &[])?;
     let skill = package.join("skills/dev-brief/SKILL.md");
-    let mut child = Command::new(executable)
+    let mut child = Command::new(&executable)
         .current_dir(root)
         .args(args)
         .args([
@@ -136,15 +136,19 @@ pub fn generate_brief(root: &Path, input: &str) -> Result<String> {
             "--no-extensions",
             "--no-skills",
             "--no-context-files",
-            "--no-tools",
-            "--append-system-prompt",
+            "--tools",
+            "brief_files,brief_read",
+            "--extension",
         ])
+        .arg(package.join("brief-inspect.ts"))
+        .args(["--append-system-prompt"])
         .arg(skill)
         .args([
             "--print",
             "--",
-            "Produce the dev-brief typed Markdown from the captured input. Do not use tools.",
+            "Produce the dev-brief typed Markdown from the captured input. Inspect relevant captured source with brief_files and brief_read when the diff is insufficient. Do not execute commands or modify files.",
         ])
+        .env("DEV_BRIEF_TREE", tree)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
